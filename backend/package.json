@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "test": "node --test",
+    "test": "node --test --test-concurrency=1",
     "lint": "echo \"lint: pendiente de configurar\" && exit 0",
     "format": "echo \"format: pendiente de configurar\" && exit 0"
   },

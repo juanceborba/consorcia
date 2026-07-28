@@ -140,4 +140,70 @@ describe('edificios', () => {
       await prisma.organizacion.delete({ where: { id: orgPruebaId } });
     }
   });
+
+  it('CRUD edificio (S2-01): POST → PATCH → soft delete, y la lista filtra inactivos', async () => {
+    let creadoId;
+    try {
+      // POST — alta con tipo explícito
+      const post = await apiFetch(baseUrl, '/api/edificios', {
+        method: 'POST',
+        token: admin.accessToken,
+        body: {
+          nombre: 'Test S2 CRUD Edificio',
+          direccion: 'Av. de Prueba 456',
+          codigoPostal: 'C1425BGW',
+          tipo: 'barrio_privado',
+          totalM2: 800,
+          fechaInicioAdmin: '2026-07-01',
+        },
+      });
+      assert.equal(post.status, 201);
+      creadoId = post.data.id;
+      assert.equal(post.data.tipo, 'barrio_privado');
+      assert.equal(post.data.activo, true);
+      assert.equal(post.data.ciudad, 'CABA'); // default del schema Zod
+
+      // Validación Zod: body inválido → 422 del contrato
+      const invalido = await apiFetch(baseUrl, '/api/edificios', {
+        method: 'POST',
+        token: admin.accessToken,
+        body: { nombre: 'ab', direccion: 'x', codigoPostal: '12', totalM2: -5 },
+      });
+      assert.equal(invalido.status, 422);
+      assert.equal(invalido.data.error.code, 'VALIDACION_FALLIDA');
+
+      // PATCH — edición parcial
+      const patch = await apiFetch(baseUrl, `/api/edificios/${creadoId}`, {
+        method: 'PATCH',
+        token: admin.accessToken,
+        body: { nombre: 'Test S2 CRUD Editado', amenities: ['sum'] },
+      });
+      assert.equal(patch.status, 200);
+      assert.equal(patch.data.nombre, 'Test S2 CRUD Editado');
+      assert.deepEqual(patch.data.amenities, ['sum']);
+
+      // DELETE — soft delete (204) y el edificio queda inaccesible
+      const del = await apiFetch(baseUrl, `/api/edificios/${creadoId}`, {
+        method: 'DELETE',
+        token: admin.accessToken,
+      });
+      assert.equal(del.status, 204);
+
+      const detalle = await apiFetch(baseUrl, `/api/edificios/${creadoId}`, {
+        token: admin.accessToken,
+      });
+      assert.equal(detalle.status, 404);
+      assert.equal(detalle.data.error.code, 'EDIFICIO_NO_ENCONTRADO');
+
+      // La lista filtra inactivos: el edificio recién dado de baja no aparece
+      // (no se afirma un total exacto: otros archivos de test corren en
+      // paralelo contra la misma org demo y pueden tener edificios propios)
+      const lista = await apiFetch(baseUrl, '/api/edificios', { token: admin.accessToken });
+      assert.equal(lista.status, 200);
+      assert.ok(!lista.data.some((e) => e.id === creadoId));
+    } finally {
+      // Limpieza: baja física del edificio de prueba (el API solo da baja lógica)
+      if (creadoId) await prisma.edificio.deleteMany({ where: { id: creadoId } });
+    }
+  });
 });
