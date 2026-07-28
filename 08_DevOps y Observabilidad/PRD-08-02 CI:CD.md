@@ -17,6 +17,8 @@ outcomes:
 # PRD-08-02: CI/CD
 
 > **El pipeline CI/CD de ConsorcIA automatiza testing, linting, build y deploy.** Cada push a main pasa por validacion exhaustiva antes de llegar a produccion. El flujo es trunk-based con feature flags.
+>
+> **Estado de implementación (2026-07-28):** está vigente en `app/.github/workflows/ci.yml` un **subconjunto MVP** de este pipeline — gate con dos jobs: tests del backend (Node 20 + Postgres/pgvector + Redis como services, migraciones + seed + `npm test`) y build del frontend. Lint, E2E Playwright, seguridad y los deploys a staging/prod (AWS) quedan pendientes según este documento.
 
 ---
 
