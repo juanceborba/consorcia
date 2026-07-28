@@ -35,5 +35,6 @@
 
 ## Backlogs por sprint
 
-- [S1 — Fundación visible](sprints/S1-fundacion.md)
-- S2 a S6: se detallan al cerrar el sprint anterior (las specs ya están en los PRDs).
+- [S1 — Fundación visible](sprints/S1-fundacion.md) ✅ (cerrado 2026-07-28)
+- [S2 — Edificios y unidades](sprints/S2-edificios-unidades.md)
+- S3 a S6: se detallan al cerrar el sprint anterior (las specs ya están en los PRDs).
