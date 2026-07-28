@@ -11,6 +11,9 @@ build/
 # Datos temporales
 tmp/
 
+# Estado local de conductor (orquestación de agentes)
+.nanostack/
+
 # Logs
 *.log
 
