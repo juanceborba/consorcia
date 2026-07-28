@@ -494,6 +494,13 @@ interface EdificioContextNav {
 
 ## 5. Breadcrumbs Dinamicos
 
+> **Implementado (S2-11):** `frontend/src/components/layout/Breadcrumbs.jsx` (integrado en `AppLayout`, sobre el `<Outlet />`) usa una config estatica con patrones `matchPath` para las rutas actuales: `/` (Inicio), `/edificios`, `/edificios/nuevo` y `/edificios/:id/overview|unidades|configuracion`. Dos divergencias con el diseño original de esta seccion:
+>
+> - El segmento dinamico `:id` se resuelve al nombre del edificio **desde el cache de TanStack Query** (lista de `useEdificios` o detalle ya cargado en `EdificioDetallePage`), **sin fetch extra** — el hook de §5.2 (fetch por breadcrumb) no se implementó. Fallback: "Edificio" mientras el dato no esta disponible.
+> - "Inicio" apunta a `/` (el dashboard); no existe ruta `/dashboard` en el router actual.
+>
+> El ultimo segmento no es link (`aria-current="page"`); los intermedios son `Link` de react-router. Separador: chevron de lucide, texto muted para intermedios.
+
 ### 5.1 Configuracion de breadcrumbs por ruta
 
 ```typescript
