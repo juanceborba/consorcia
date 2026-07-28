@@ -3,7 +3,8 @@
 // Table según PRD-07-02 §3.5 — sort por número/tipo/m²/coeficiente, fila
 // TOTAL al pie (Σm² y Σcoeficiente en 6 decimales, success si cierra en
 // 1.000000 / danger si no), badges de categorías A/B/C (tokens S2-05),
-// empty state (§6.2) y skeleton de carga.
+// empty state (§6.2) y skeleton de carga. El botón "+ Agregar" del header
+// (wireframe §3.5) abre el modal de alta de S2-09 (UnidadAltaDialog).
 //
 // Datos: GET /api/edificios/:id/unidades con TanStack Query
 // (queryKeys.edificios.unidades). El contrato pagina (?page=&limit=, máx
@@ -26,12 +27,16 @@ import {
   ArrowUp,
   ArrowUpDown,
   Building2,
+  Plus,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
+import UnidadAltaDialog from '@/pages/edificio/UnidadAltaDialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -185,6 +190,7 @@ function EmptyState() {
 export default function EdificioUnidadesTab() {
   const { edificio } = useOutletContext();
   const [sorting, setSorting] = useState([{ id: 'numero', desc: false }]);
+  const [altaOpen, setAltaOpen] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.edificios.unidades(edificio.id),
@@ -237,6 +243,12 @@ export default function EdificioUnidadesTab() {
         <CardDescription>
           {total === 1 ? '1 unidad' : `${total} unidades`} del edificio
         </CardDescription>
+        <CardAction>
+          <Button onClick={() => setAltaOpen(true)}>
+            <Plus className="size-4" />
+            Agregar
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         {unidades.length === 0 ? (
@@ -303,6 +315,14 @@ export default function EdificioUnidadesTab() {
           </>
         )}
       </CardContent>
+
+      {/* Alta de unidades (S2-09): modal con form individual + bulk */}
+      <UnidadAltaDialog
+        edificioId={edificio.id}
+        unidadesExistentes={unidades}
+        isOpen={altaOpen}
+        onClose={() => setAltaOpen(false)}
+      />
     </Card>
   );
 }
