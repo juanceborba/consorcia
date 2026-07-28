@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
+import { TIPOS_EDIFICIO } from '@/lib/tipos-edificio';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -29,13 +30,6 @@ import { Select } from '@/components/ui/select';
 
 // Espeja crearEdificioSchema de backend/src/routes/edificios.routes.js
 // (misma regex de CP: numérico "1425" o CPA argentino "C1425BGW").
-const TIPOS_EDIFICIO = [
-  { value: 'ph', label: 'PH / Consorcio' },
-  { value: 'barrio_privado', label: 'Barrio privado' },
-  { value: 'centro_comercial', label: 'Centro comercial' },
-  { value: 'otro', label: 'Otro' },
-];
-
 const schema = z.object({
   nombre: z
     .string()
@@ -104,7 +98,7 @@ export default function EdificioNuevoPage() {
       toast.success('Edificio creado', {
         description: `${edificio.nombre} ya está disponible.`,
       });
-      navigate(`/edificios/${edificio.id}`);
+      navigate(`/edificios/${edificio.id}/unidades`);
     },
     onError: (err) => {
       toast.error('No se pudo crear el edificio', {

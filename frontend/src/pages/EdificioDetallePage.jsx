@@ -1,54 +1,30 @@
 // frontend/src/pages/EdificioDetallePage.jsx — ConsorcIA
-// Detalle de edificio (S1-13): datos generales + tabla de unidades desde
-// GET /api/edificios/:id. Maneja 403 (sin acceso) y 404 (no existe).
-// Las unidades siguen el schema de PRD-02-04: numero, tipo, m2, coeficiente
-// y categorías de distribución A/B/C (no existe "piso" en el modelo).
-import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router';
+// Layout del detalle de edificio (S2-07): datos generales + tabs anidados
+// (overview / unidades / configuracion) como nested routes según PRD-07-03
+// §2. Carga el edificio con TanStack Query (queryKeys.edificios.detail) y lo
+// pasa a los tabs por Outlet context; sincroniza el selector del header
+// (edificio.store) con el edificio que se está viendo.
+// Maneja 403 (sin acceso) y 404 (no existe).
+import { useEffect } from 'react';
+import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router';
 import { ArrowLeft, Building2, MapPin } from 'lucide-react';
-import { api, ApiError } from '@/lib/api';
-import { Badge } from '@/components/ui/badge';
+import { ApiError } from '@/lib/api';
+import { useEdificio } from '@/hooks/useEdificio';
+import { useEdificioStore } from '@/stores/edificio.store';
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Tabs, TabsList, TabsTab } from '@/components/ui/tabs';
 
-// Categorías de distribución de gastos (Ley 941): A = gastos generales,
-// B = servicios específicos (lista), C = sector específico.
-function CategoriasUnidad({ unidad }) {
-  const partes = [];
-  if (unidad.categoriaA) partes.push('A');
-  for (const b of unidad.categoriaB ?? []) partes.push(`B: ${b}`);
-  if (unidad.categoriaC) partes.push(`C: ${unidad.categoriaC}`);
-  if (partes.length === 0) return <span>—</span>;
-  return (
-    <span className="flex flex-wrap gap-1">
-      {partes.map((p) => (
-        <Badge key={p} variant="secondary">
-          {p}
-        </Badge>
-      ))}
-    </span>
-  );
-}
-
-// El coeficiente viene como string decimal ("0.138" = 13,8 % de las expensas).
-function formatearCoeficiente(coeficiente) {
-  const numero = Number.parseFloat(coeficiente);
-  if (Number.isNaN(numero)) return coeficiente;
-  return `${(numero * 100).toFixed(2)} %`;
-}
+// Tabs del detalle (rutas hijas según PRD-07-03 §2). Labels en español.
+const TABS = [
+  { value: 'overview', label: 'Resumen' },
+  { value: 'unidades', label: 'Unidades' },
+  { value: 'configuracion', label: 'Configuración' },
+];
 
 // Estado de error amigable para 403/404 y errores genéricos.
 function EstadoError({ status }) {
@@ -71,29 +47,15 @@ function EstadoError({ status }) {
 
 export default function EdificioDetallePage() {
   const { id } = useParams();
-  const [edificio, setEdificio] = useState(null);
-  const [cargando, setCargando] = useState(true);
-  const [error, setError] = useState(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { edificio, cargando, error } = useEdificio(id);
+  const setEdificioId = useEdificioStore((s) => s.setEdificioId);
 
+  // Sincroniza el selector del header con el edificio que se está viendo.
   useEffect(() => {
-    let cancelado = false;
-    setCargando(true);
-    setError(null);
-    api
-      .get(`/api/edificios/${id}`)
-      .then((data) => {
-        if (!cancelado) setEdificio(data);
-      })
-      .catch((err) => {
-        if (!cancelado) setError(err);
-      })
-      .finally(() => {
-        if (!cancelado) setCargando(false);
-      });
-    return () => {
-      cancelado = true;
-    };
-  }, [id]);
+    if (edificio) setEdificioId(edificio.id);
+  }, [edificio, setEdificioId]);
 
   if (cargando) {
     return (
@@ -110,6 +72,13 @@ export default function EdificioDetallePage() {
       <EstadoError status={error instanceof ApiError ? error.status : null} />
     );
   }
+
+  // /edificios/:id a secas redirige a /unidades (ver router); el fallback
+  // evita un value inválido en Tabs durante ese instante.
+  const ultimoSegmento = location.pathname.split('/').pop();
+  const tabActual = TABS.some((t) => t.value === ultimoSegmento)
+    ? ultimoSegmento
+    : 'unidades';
 
   return (
     <div className="flex flex-col gap-6">
@@ -135,53 +104,21 @@ export default function EdificioDetallePage() {
         </CardHeader>
       </Card>
 
-      {/* Unidades funcionales */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Unidades</CardTitle>
-          <CardDescription>
-            {edificio.unidades.length}{' '}
-            {edificio.unidades.length === 1 ? 'unidad' : 'unidades'} del
-            edificio
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {edificio.unidades.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Este edificio todavía no tiene unidades cargadas.
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Número</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead className="text-right">m²</TableHead>
-                  <TableHead className="text-right">Coeficiente</TableHead>
-                  <TableHead>Categorías</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {edificio.unidades.map((unidad) => (
-                  <TableRow key={unidad.id}>
-                    <TableCell className="font-medium">
-                      {unidad.numero}
-                    </TableCell>
-                    <TableCell>{unidad.tipo}</TableCell>
-                    <TableCell className="text-right">{unidad.m2}</TableCell>
-                    <TableCell className="text-right">
-                      {formatearCoeficiente(unidad.coeficiente)}
-                    </TableCell>
-                    <TableCell>
-                      <CategoriasUnidad unidad={unidad} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      {/* Tabs anidados: la selección navega a la ruta hija */}
+      <Tabs
+        value={tabActual}
+        onValueChange={(tab) => navigate(`/edificios/${id}/${tab}`)}
+      >
+        <TabsList>
+          {TABS.map((tab) => (
+            <TabsTab key={tab.value} value={tab.value}>
+              {tab.label}
+            </TabsTab>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      <Outlet context={{ edificio }} />
     </div>
   );
 }

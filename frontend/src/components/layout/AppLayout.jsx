@@ -129,7 +129,7 @@ export default function AppLayout() {
                     key={edificio.id}
                     onClick={() => {
                       setEdificioId(edificio.id);
-                      navigate(`/edificios/${edificio.id}`);
+                      navigate(`/edificios/${edificio.id}/unidades`);
                     }}
                   >
                     <span

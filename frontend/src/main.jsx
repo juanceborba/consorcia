@@ -6,7 +6,7 @@
 // AppLayout (S1-12).
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router';
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { queryClient } from '@/lib/query-client';
@@ -18,6 +18,9 @@ import DashboardPage from '@/pages/DashboardPage';
 import EdificiosPage from '@/pages/EdificiosPage';
 import EdificioNuevoPage from '@/pages/EdificioNuevoPage';
 import EdificioDetallePage from '@/pages/EdificioDetallePage';
+import EdificioOverviewTab from '@/pages/edificio/EdificioOverviewTab';
+import EdificioUnidadesTab from '@/pages/edificio/EdificioUnidadesTab';
+import EdificioConfiguracionTab from '@/pages/edificio/EdificioConfiguracionTab';
 import './index.css';
 
 const router = createBrowserRouter([
@@ -32,7 +35,18 @@ const router = createBrowserRouter([
           { path: '/', element: <DashboardPage /> },
           { path: '/edificios', element: <EdificiosPage /> },
           { path: '/edificios/nuevo', element: <EdificioNuevoPage /> },
-          { path: '/edificios/:id', element: <EdificioDetallePage /> },
+          {
+            // Detalle con tabs anidados (S2-07, PRD-07-03 §2): /edificios/:id
+            // redirige a /unidades (tab default).
+            path: '/edificios/:id',
+            element: <EdificioDetallePage />,
+            children: [
+              { index: true, element: <Navigate to="unidades" replace /> },
+              { path: 'overview', element: <EdificioOverviewTab /> },
+              { path: 'unidades', element: <EdificioUnidadesTab /> },
+              { path: 'configuracion', element: <EdificioConfiguracionTab /> },
+            ],
+          },
         ],
       },
     ],
