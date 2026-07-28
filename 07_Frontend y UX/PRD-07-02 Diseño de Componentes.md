@@ -106,6 +106,8 @@ outcomes:
 --color-extraordinario: #F59E0B;    /* Gasto extraordinario */
 ```
 
+> **Implementado (S2-05):** los estados y categorías viven como tokens de Tailwind 4 en `frontend/src/index.css` (bloque `@theme`): `--color-success` (= accent #10B981), `--color-warning`, `--color-danger`, `--color-info` (con sus `-hover`) y `--color-cat-a/b/c`. El resto de la paleta sigue siendo el tema shadcn base-nova (`:root` oklch) pendiente de migración completa.
+
 ### 2.2 Tipografía
 
 ```css
@@ -367,7 +369,10 @@ interface ModalProps {
 
 ```typescript
 interface BadgeProps {
-  variant: 'default' | 'success' | 'warning' | 'danger' | 'info' | 'outline';
+  variant: 'default' | 'success' | 'warning' | 'danger' | 'info'
+         | 'categoriaA' | 'categoriaB' | 'categoriaC'
+         | 'outline'
+         | 'secondary' | 'destructive' | 'ghost' | 'link';  // base shadcn base-nova
   size?: 'sm' | 'md';
   dot?: boolean;            // Punto de color antes del texto
   pulse?: boolean;          // Animación de pulso (alertas)
@@ -383,6 +388,9 @@ interface BadgeProps {
 | `danger` | Moroso, Rechazado, Vencido, Crítico |
 | `info` | En progreso, Enviado, Nuevo |
 | `outline` | Estados secundarios |
+| `categoriaA` | Unidad en categoría A (gastos generales) — token `cat-a` |
+| `categoriaB` | Unidad en categoría B (servicios específicos) — token `cat-b` |
+| `categoriaC` | Unidad en categoría C (sectores específicos) — token `cat-c` |
 
 ```
 Estados de cobro:
