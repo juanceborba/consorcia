@@ -348,6 +348,8 @@ interface DataTableProps<T> {
 └─────────────────────────────────────────────────────────────┘
 ```
 
+> **Nota de implementación (S2-08, tabla de unidades):** la fila TOTAL necesita el set completo de unidades para verificar la invariante de coeficientes, así que el tab pide `GET /api/edificios/:id/unidades?limit=100` (el máximo del contrato) en una sola página y ordena client-side con TanStack Table — no implementa controles de paginación. Si un edificio supera las 100 unidades, el pie aclara que los totales son parciales. El coeficiente se muestra siempre con 6 decimales (`0.027742`), no como porcentaje.
+
 ### 3.6 Modal `<Modal />`
 
 ```typescript
