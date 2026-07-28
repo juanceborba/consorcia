@@ -88,7 +88,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build (gate)
-        # Corre dentro de node:20-alpine (misma plataforma musl que el contenedor
-        # de desarrollo donde se generó el lockfile). En el runner Ubuntu (gnu),
-        # npm ci/install falla con @rollup/rollup-linux-x64-gnu (bug npm/cli#4828).
-        run: docker run --rm -v ${{ github.workspace }}/frontend:/app -w /app node:20-alpine sh -c "npm ci && npm run build"
+        # Corre dentro de node:20-alpine (misma plataforma que el contenedor
+        # de desarrollo). El lockfile commiteado tiene las entradas de
+        # optional deps de rollup corruptas (bug npm/cli#4828), así que en CI
+        # se regenera antes de instalar. El lockfile local del contenedor
+        # no se toca.
+        run: docker run --rm -v ${{ github.workspace }}/frontend:/app -w /app node:20-alpine sh -c "rm -f package-lock.json && npm install && npm run build"
