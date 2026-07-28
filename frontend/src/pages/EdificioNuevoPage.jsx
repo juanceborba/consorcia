@@ -8,13 +8,13 @@
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import { Link, useBlocker, useNavigate } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
+import { edificioFormSchema } from '@/lib/edificio-schema';
 import { TIPOS_EDIFICIO } from '@/lib/tipos-edificio';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,30 +27,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
-
-// Espeja crearEdificioSchema de backend/src/routes/edificios.routes.js
-// (misma regex de CP: numérico "1425" o CPA argentino "C1425BGW").
-const schema = z.object({
-  nombre: z
-    .string()
-    .trim()
-    .min(3, 'Mínimo 3 caracteres')
-    .max(100, 'Máximo 100 caracteres'),
-  direccion: z
-    .string()
-    .trim()
-    .min(5, 'Mínimo 5 caracteres')
-    .max(200, 'Máximo 200 caracteres'),
-  codigoPostal: z
-    .string()
-    .trim()
-    .regex(/^[A-Za-z]?\d{4}[A-Za-z]{0,3}$/, 'CP inválido (4 dígitos o CPA, ej. C1425BGW)'),
-  ciudad: z.string().trim().min(2, 'Mínimo 2 caracteres').max(100),
-  provincia: z.string().trim().min(2, 'Mínimo 2 caracteres').max(100),
-  tipo: z.enum(['ph', 'barrio_privado', 'centro_comercial', 'otro']),
-  totalM2: z.coerce.number().positive('Ingresá los m² totales (mayor a 0)'),
-  fechaInicioAdmin: z.string().optional(),
-});
 
 function Campo({ id, label, obligatorio = true, error, children }) {
   return (
@@ -74,7 +50,7 @@ export default function EdificioNuevoPage() {
     handleSubmit,
     formState: { errors, isValid, isDirty },
   } = useForm({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(edificioFormSchema),
     // PRD-07-02 §6.1: validación onBlur por campo; revalida onChange una vez
     // tocado para que el botón se habilite apenas el form queda válido.
     mode: 'onBlur',
