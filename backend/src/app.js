@@ -13,6 +13,7 @@ import cors from 'cors';
 import authRoutes from './routes/auth.routes.js';
 import organizacionesRoutes from './routes/organizaciones.routes.js';
 import edificiosRoutes from './routes/edificios.routes.js';
+import unidadesRoutes from './routes/unidades.routes.js';
 import { errorHandler, rutaNoEncontrada } from './middleware/error.middleware.js';
 
 const app = express();
@@ -64,6 +65,7 @@ app.get('/', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/organizaciones', organizacionesRoutes);
 app.use('/api/edificios', edificiosRoutes);
+app.use('/api/unidades', unidadesRoutes);
 
 // 404 para rutas /api no matcheadas + handler central de errores
 app.use('/api', rutaNoEncontrada);

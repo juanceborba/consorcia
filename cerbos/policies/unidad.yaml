@@ -1,0 +1,38 @@
+# cerbos/policies/unidad.yaml — Recurso `unidad` (S2-02)
+# Spec: PRD-05-04 Cerbos RBAC §3.1 (misma estructura canónica que edificio.yaml).
+#   superadmin global · org_admin CRUD en su organización ·
+#   gestor CRUD solo en edificios asignados (modelo S2: "lectura + unidades")
+# Scope doble: organizacion_id del recurso == del principal, y para gestores
+# edificio_id del recurso ∈ principal.attr.edificios_asignados.
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: "default"
+  resource: "unidad"
+  rules:
+    # Superadmin puede todo
+    - actions: ['*']
+      effect: EFFECT_ALLOW
+      roles:
+        - superadmin
+
+    # Org admin administra las unidades de toda su organización
+    - actions: ['read', 'create', 'update', 'delete']
+      effect: EFFECT_ALLOW
+      roles:
+        - org_admin
+      condition:
+        match:
+          expr: request.resource.attr.organizacion_id == request.principal.attr.organizacion_id
+
+    # Gestor opera unidades solo en sus edificios asignados
+    - actions: ['read', 'create', 'update', 'delete']
+      effect: EFFECT_ALLOW
+      roles:
+        - gestor
+      condition:
+        match:
+          all:
+            of:
+              - expr: request.resource.attr.organizacion_id == request.principal.attr.organizacion_id
+              - expr: request.resource.attr.edificio_id in request.principal.attr.edificios_asignados
+# Sin regla DENY global: el default cuando ninguna regla matchea ya es DENY.
