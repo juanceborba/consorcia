@@ -602,6 +602,8 @@ interface ConfirmDialogProps {
 └─────────────────────────────────────────────────────────────┘
 ```
 
+> **Implementado (S2-10):** `frontend/src/components/ui/confirm-dialog.jsx`, sobre `AlertDialog` de Base UI (modal: no cierra por click fuera). Además de las props de la interfaz, expone `loading?: boolean` — cubre el paso "Procesando..." del flujo destructivo §6.3 con spinner en el botón de confirmar y deshabilita cancelar/teclear mientras tanto. La comparación de `requireText` es exacta (case-sensitive) y el texto tipeado se limpia al cerrar.
+
 ---
 
 ## 5. Layouts y Templates
