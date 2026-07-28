@@ -1,9 +1,13 @@
 // frontend/src/pages/DashboardPage.jsx — ConsorcIA
-// Placeholder (S1-10): el dashboard del administrador se implementa en S1-13.
+// Placeholder (S1-10): el dashboard del administrador llega en un sprint posterior.
+// Ya vive dentro de AppLayout, así que no define estructura de pantalla completa.
 export default function DashboardPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
-      <h1 className="text-2xl font-semibold">DashboardPage</h1>
-    </main>
+    <div>
+      <h1 className="text-2xl font-semibold">Dashboard</h1>
+      <p className="text-sm text-muted-foreground">
+        Próximamente: resumen de tu organización.
+      </p>
+    </div>
   );
 }

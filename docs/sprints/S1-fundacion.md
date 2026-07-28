@@ -15,18 +15,18 @@
 
 ## Backend — auth y autorización
 
-- [ ] **S1-04 Auth JWT.** Endpoints `POST /api/auth/register` (crea organización + org_admin), `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`. Access token 15 min con claims `{ sub, email, org_id, roles, edificios_asignados }`; refresh UUID en Redis (7 días). bcrypt para passwords.
+- [x] **S1-04 Auth JWT.** Endpoints `POST /api/auth/register` (crea organización + org_admin), `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`. Access token 15 min con claims `{ sub, email, org_id, roles, edificios_asignados }`; refresh UUID en Redis (7 días). bcrypt para passwords.
   - _Spec: PRD-08-05 §1. Depende de: S1-02._
-- [ ] **S1-05 Middleware de organización.** `tenant.middleware.js`: extrae `org_id` del JWT, lo inyecta en `req`, y valida que el `edificio_id` del request (params/body) pertenezca a la organización. 403 si no.
+- [x] **S1-05 Middleware de organización.** `tenant.middleware.js`: extrae `org_id` del JWT, lo inyecta en `req`, y valida que el `edificio_id` del request (params/body) pertenezca a la organización. 403 si no.
   - _Spec: PRD-02-01 §6.2. Depende de: S1-04._
-- [ ] **S1-06 Políticas Cerbos base.** `cerbos/policies/organizacion.yaml` (org_admin full, gestor read) y `edificio.yaml` (scope por `organizacion_id` + `edificios_asignados` para gestores). `rbac.middleware.js` que consulta Cerbos PDP.
+- [x] **S1-06 Políticas Cerbos base.** `cerbos/policies/organizacion.yaml` (org_admin full, gestor read) y `edificio.yaml` (scope por `organizacion_id` + `edificios_asignados` para gestores). `rbac.middleware.js` que consulta Cerbos PDP.
   - _Spec: PRD-05-04 §3. Depende de: S1-05._
 
 ## Backend — API mínima del slice
 
-- [ ] **S1-07 Endpoint organizaciones.** `GET /api/organizaciones/me` (org del JWT con sus edificios), `PATCH /api/organizaciones/me` (solo org_admin).
+- [x] **S1-07 Endpoint organizaciones.** `GET /api/organizaciones/me` (org del JWT con sus edificios), `PATCH /api/organizaciones/me` (solo org_admin).
   - _Depende de: S1-05._
-- [ ] **S1-08 Endpoint edificios (read).** `GET /api/edificios` (de la org, filtrado por `edificios_asignados` si es gestor), `GET /api/edificios/:id` (con unidades). Scope doble `{ organizacionId, id }`.
+- [x] **S1-08 Endpoint edificios (read).** `GET /api/edificios` (de la org, filtrado por `edificios_asignados` si es gestor), `GET /api/edificios/:id` (con unidades). Scope doble `{ organizacionId, id }`.
   - _Spec: PRD-04-01 §3. Depende de: S1-06._
 - [ ] **S1-09 Tests de API del slice.** Tests de integración: login → me → edificios; aislamiento (usuario de org A no ve edificios de org B); gestor solo ve edificios asignados.
   - _Depende de: S1-07, S1-08._

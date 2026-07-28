@@ -1,0 +1,36 @@
+# cerbos/policies/organizacion.yaml — Recurso `organizacion` (tenant raíz)
+# Spec: PRD-05-04 Cerbos RBAC §3.2:
+#   superadmin global · org_admin full sobre SU organización · gestor solo lectura
+# Scope: el recurso debe ser la organización del principal (attr id ==
+# principal.attr.organizacion_id). Hot reload vía watchForChanges.
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: "default"
+  resource: "organizacion"
+  rules:
+    # Superadmin (staff ConsorcIA) puede todo
+    - actions: ['*']
+      effect: EFFECT_ALLOW
+      roles:
+        - superadmin
+
+    # Org admin: full sobre su propia organización
+    - actions: ['*']
+      effect: EFFECT_ALLOW
+      roles:
+        - org_admin
+      condition:
+        match:
+          expr: request.resource.attr.id == request.principal.attr.organizacion_id
+
+    # Gestor: solo lectura de su propia organización
+    - actions: ['read']
+      effect: EFFECT_ALLOW
+      roles:
+        - gestor
+      condition:
+        match:
+          expr: request.resource.attr.id == request.principal.attr.organizacion_id
+
+# Sin regla DENY global: en Cerbos un EFFECT_DENY matcheado tiene precedencia
+# sobre cualquier ALLOW, y el default cuando ninguna regla matchea ya es DENY.

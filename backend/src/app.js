@@ -1,14 +1,26 @@
-// src/app.js — ConsorcIA Backend (scaffold inicial)
+// src/app.js — ConsorcIA Backend
 // Spec: PRD-02-02 Stack Tecnológico (NodeJS 20 + Express 5)
-// El motor contable determinístico y los agentes Swarm viven en módulos
-// separados que se agregan en PRDs posteriores. Este scaffold expone solo
-// los endpoints de infraestructura requeridos por docker-compose y Prometheus.
+// Expone los endpoints de infraestructura (health/metrics para docker-compose
+// y Prometheus) y monta la API del sprint S1: auth JWT (S1-04), aislamiento
+// multi-tenant (S1-05), autorización Cerbos (S1-06), organizaciones (S1-07)
+// y edificios (S1-08).
 
 import express from 'express';
+import cors from 'cors';
+import authRoutes from './routes/auth.routes.js';
+import organizacionesRoutes from './routes/organizaciones.routes.js';
+import edificiosRoutes from './routes/edificios.routes.js';
+import { errorHandler, rutaNoEncontrada } from './middleware/error.middleware.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const startedAt = Date.now();
+
+// CORS — el frontend Vite (:5173) y nginx (:80) llaman a la API cross-origin
+const corsOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',')
+  : ['http://localhost:5173', 'http://localhost'];
+app.use(cors({ origin: corsOrigins, credentials: true }));
 
 app.use(express.json());
 
@@ -45,6 +57,15 @@ app.get('/', (req, res) => {
     docs: 'ver vault/02_Arquitectura y Stack/PRD-02-02 Stack Tecnológico.md',
   });
 });
+
+// API del sprint S1 (contrato: docs/sprints/S1-fundacion.md)
+app.use('/api/auth', authRoutes);
+app.use('/api/organizaciones', organizacionesRoutes);
+app.use('/api/edificios', edificiosRoutes);
+
+// 404 para rutas /api no matcheadas + handler central de errores
+app.use('/api', rutaNoEncontrada);
+app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`ConsorcIA backend escuchando en puerto ${PORT}`);

@@ -1,0 +1,50 @@
+# cerbos/policies/edificio.yaml — Recurso `edificio`
+# Spec: PRD-05-04 Cerbos RBAC §3.1 (estructura canónica de la policy).
+#   superadmin global · org_admin read/update en su organización ·
+#   gestor read/update solo en edificios asignados · residente solo el suyo
+# Scope doble: organizacion_id del recurso == del principal, y para gestores
+# el id del edificio ∈ principal.attr.edificios_asignados.
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: "default"
+  resource: "edificio"
+  rules:
+    # Superadmin puede todo
+    - actions: ['*']
+      effect: EFFECT_ALLOW
+      roles:
+        - superadmin
+
+    # Org admin ve todos los edificios de su organización
+    - actions: ['read', 'update']
+      effect: EFFECT_ALLOW
+      roles:
+        - org_admin
+      condition:
+        match:
+          expr: request.resource.attr.organizacion_id == request.principal.attr.organizacion_id
+
+    # Gestor solo ve los edificios asignados dentro de su organización
+    - actions: ['read', 'update']
+      effect: EFFECT_ALLOW
+      roles:
+        - gestor
+      condition:
+        match:
+          all:
+            of:
+              - expr: request.resource.attr.organizacion_id == request.principal.attr.organizacion_id
+              - expr: request.resource.attr.id in request.principal.attr.edificios_asignados
+
+    # Propietario/inquilino solo ve su edificio (portal del residente,
+    # PRD-04-05; el attr edificio_id lo agregará ese módulo al principal)
+    - actions: ['read']
+      effect: EFFECT_ALLOW
+      roles:
+        - propietario
+        - inquilino
+      condition:
+        match:
+          expr: request.resource.attr.id == request.principal.attr.edificio_id
+# Sin regla DENY global: en Cerbos un EFFECT_DENY matcheado tiene precedencia
+# sobre cualquier ALLOW, y el default cuando ninguna regla matchea ya es DENY.
