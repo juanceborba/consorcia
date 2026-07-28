@@ -2,13 +2,13 @@
 // Layout de la app autenticada (S1-12): sidebar con módulos (solo Edificios
 // activo en S1) y header con organización, selector de edificio de trabajo
 // y menú de usuario con logout.
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router';
 import { Building2, ChevronsUpDown, LogOut, UserRound } from 'lucide-react';
-import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
 import { useEdificioStore } from '@/stores/edificio.store';
 import { useEdificios } from '@/hooks/useEdificios';
+import { useOrganizacion } from '@/hooks/useOrganizacion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,15 +37,8 @@ export default function AppLayout() {
   const { edificios, cargando } = useEdificios();
   const edificioId = useEdificioStore((s) => s.edificioId);
   const setEdificioId = useEdificioStore((s) => s.setEdificioId);
-  const [organizacion, setOrganizacion] = useState(null);
-
   // Nombre de la organización para el header (GET /api/organizaciones/me).
-  useEffect(() => {
-    api
-      .get('/api/organizaciones/me')
-      .then(setOrganizacion)
-      .catch(() => setOrganizacion(null));
-  }, []);
+  const { organizacion } = useOrganizacion();
 
   // Si no hay edificio elegido (o el guardado ya no es visible), usar el primero.
   useEffect(() => {

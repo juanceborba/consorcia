@@ -1,31 +1,16 @@
 // frontend/src/hooks/useEdificios.js — ConsorcIA
 // Hook compartido: edificios visibles para el usuario (GET /api/edificios).
 // Lo usan el selector del header (AppLayout) y el listado (EdificiosPage).
-import { useEffect, useState } from 'react';
+// S2-04: migrado a TanStack Query (cache compartido entre consumidores).
+import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query-keys';
 
 export function useEdificios() {
-  const [edificios, setEdificios] = useState([]);
-  const [cargando, setCargando] = useState(true);
-  const [error, setError] = useState(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: queryKeys.edificios.lists(),
+    queryFn: () => api.get('/api/edificios'),
+  });
 
-  useEffect(() => {
-    let cancelado = false;
-    api
-      .get('/api/edificios')
-      .then((data) => {
-        if (!cancelado) setEdificios(data);
-      })
-      .catch((err) => {
-        if (!cancelado) setError(err);
-      })
-      .finally(() => {
-        if (!cancelado) setCargando(false);
-      });
-    return () => {
-      cancelado = true;
-    };
-  }, []);
-
-  return { edificios, cargando, error };
+  return { edificios: data ?? [], cargando: isLoading, error: error ?? null };
 }

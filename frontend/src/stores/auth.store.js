@@ -3,6 +3,7 @@
 // Usa fetch directo (no api.js) para no crear dependencia circular: api.js importa este store.
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { queryClient } from '@/lib/query-client';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -42,7 +43,8 @@ export const useAuthStore = create()(
         });
       },
 
-      // POST /api/auth/logout (best effort) y limpia la sesión local.
+      // POST /api/auth/logout (best effort), limpia la sesión local y el
+      // cache de TanStack Query (S2-04: datos del tenant no sobreviven al logout).
       async logout() {
         const { refreshToken } = get();
         if (refreshToken) {
@@ -52,6 +54,7 @@ export const useAuthStore = create()(
             // El logout remoto es best effort: la sesión local se limpia igual.
           }
         }
+        queryClient.clear();
         set({ user: null, accessToken: null, refreshToken: null });
       },
 
