@@ -1,10 +1,12 @@
-// src/routes/edificios.routes.js — Edificios de la organización (S1-08, S2-01)
+// src/routes/edificios.routes.js — Edificios de la organización (S1-08, S2-01, S2-02)
 // Spec: PRD-04-01 Gestión de Edificios §3. Contrato de API:
-//   GET    /api/edificios      → [ { id, nombre, direccion, ciudad, _count: { unidades } } ] (activos)
-//   GET    /api/edificios/:id  → edificio completo + unidades
-//   POST   /api/edificios      → crea edificio (org_admin) — S2-01
-//   PATCH  /api/edificios/:id  → actualiza datos (org_admin / gestor asignado) — S2-01
-//   DELETE /api/edificios/:id  → soft delete (activo=false, org_admin) — S2-01
+//   GET    /api/edificios             → [ { id, nombre, direccion, ciudad, _count: { unidades } } ] (activos)
+//   GET    /api/edificios/:id         → edificio completo + unidades
+//   POST   /api/edificios             → crea edificio (org_admin) — S2-01
+//   PATCH  /api/edificios/:id         → actualiza datos (org_admin / gestor asignado) — S2-01
+//   DELETE /api/edificios/:id         → soft delete (activo=false, org_admin) — S2-01
+//   GET    /api/edificios/:id/unidades → unidades paginadas (?page=&limit=) — S2-02
+//   POST   /api/edificios/:id/unidades → alta bulk con invariante de coeficientes — S2-02
 //
 // Aislamiento (PRD-02-01 §6.2): TODAS las queries scopean por
 // `organizacionId` (del JWT) + `edificioId`. El gestor además queda
@@ -18,6 +20,8 @@ import { requireAuth } from '../middleware/auth.middleware.js';
 import { tenant, validarEdificio } from '../middleware/tenant.middleware.js';
 import { autorizar } from '../middleware/rbac.middleware.js';
 import { validarBody } from '../middleware/validation.middleware.js';
+import { bulkUnidadesSchema } from '../schemas/unidad.schema.js';
+import { sumarCoeficientes, cuadra, errorCoeficientes } from '../services/coeficientes.js';
 
 const router = Router();
 
@@ -126,6 +130,107 @@ router.get(
       });
       return res.json({ ...req.edificio, unidades });
     } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+// GET /:id/unidades — unidades del edificio con paginación (S2-02).
+// ?page= (default 1) y ?limit= (default 50, máx 100).
+router.get(
+  '/:id/unidades',
+  requireAuth,
+  tenant,
+  validarEdificio,
+  autorizar('unidad', 'read', (req) => ({
+    id: req.edificio.id,
+    attr: {
+      id: req.edificio.id,
+      organizacion_id: req.edificio.organizacionId,
+      edificio_id: req.edificio.id,
+    },
+  })),
+  async (req, res, next) => {
+    try {
+      const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+      const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
+      const where = { organizacionId: req.organizacionId, edificioId: req.edificio.id };
+
+      const [total, data] = await Promise.all([
+        prisma.unidad.count({ where }),
+        prisma.unidad.findMany({
+          where,
+          orderBy: { numero: 'asc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+      ]);
+
+      return res.json({
+        data,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+// POST /:id/unidades — alta bulk de unidades (S2-02). Body: array de UFs.
+// Invariante (PRD-04-01 §1.3): la suma de coeficientes del edificio
+// (existentes + lote) debe cerrar en 1.000000 — si no, 422
+// COEFICIENTES_NO_CUADRAN con suma y delta. En la práctica el lote inicial
+// de un edificio nuevo debe ser el set completo de UFs.
+router.post(
+  '/:id/unidades',
+  requireAuth,
+  tenant,
+  validarEdificio,
+  autorizar('unidad', 'create', (req) => ({
+    id: 'nueva',
+    attr: {
+      id: 'nueva',
+      organizacion_id: req.edificio.organizacionId,
+      edificio_id: req.edificio.id,
+    },
+  })),
+  validarBody(bulkUnidadesSchema),
+  async (req, res, next) => {
+    try {
+      // Duplicados dentro del lote (el unique de DB es org+edificio+numero)
+      const numeros = req.body.map((u) => u.numero);
+      if (new Set(numeros).size !== numeros.length) {
+        return res.status(422).json({
+          error: { code: 'VALIDACION_FALLIDA', message: 'El lote tiene números de unidad repetidos' },
+        });
+      }
+
+      const existentes = await prisma.unidad.findMany({
+        where: { organizacionId: req.organizacionId, edificioId: req.edificio.id },
+        select: { coeficiente: true },
+      });
+      const suma = sumarCoeficientes([
+        ...existentes.map((u) => u.coeficiente),
+        ...req.body.map((u) => u.coeficiente),
+      ]);
+      if (!cuadra(suma)) {
+        return res.status(422).json(errorCoeficientes(suma));
+      }
+
+      const creadas = await prisma.$transaction(
+        req.body.map((u) =>
+          prisma.unidad.create({
+            data: { ...u, organizacionId: req.organizacionId, edificioId: req.edificio.id },
+          })
+        )
+      );
+      return res.status(201).json(creadas);
+    } catch (err) {
+      if (err.code === 'P2002') {
+        return res.status(409).json({
+          error: { code: 'UNIDAD_DUPLICADA', message: 'Ya existe una unidad con ese número en el edificio' },
+        });
+      }
       return next(err);
     }
   }
