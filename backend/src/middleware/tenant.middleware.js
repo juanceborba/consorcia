@@ -41,6 +41,13 @@ export async function validarEdificio(req, res, next) {
       });
     }
 
+    // Soft delete (S2-01): un edificio dado de baja se comporta como inexistente
+    if (edificio.activo === false) {
+      return res.status(404).json({
+        error: { code: 'EDIFICIO_NO_ENCONTRADO', message: 'El edificio no existe' },
+      });
+    }
+
     const esGestor = req.user.roles.includes('gestor');
     if (esGestor && !req.user.edificiosAsignados.includes(edificio.id)) {
       return res.status(403).json({

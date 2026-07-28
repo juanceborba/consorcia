@@ -1,6 +1,6 @@
 # cerbos/policies/edificio.yaml — Recurso `edificio`
 # Spec: PRD-05-04 Cerbos RBAC §3.1 (estructura canónica de la policy).
-#   superadmin global · org_admin read/update en su organización ·
+#   superadmin global · org_admin CRUD en su organización ·
 #   gestor read/update solo en edificios asignados · residente solo el suyo
 # Scope doble: organizacion_id del recurso == del principal, y para gestores
 # el id del edificio ∈ principal.attr.edificios_asignados.
@@ -15,8 +15,8 @@ resourcePolicy:
       roles:
         - superadmin
 
-    # Org admin ve todos los edificios de su organización
-    - actions: ['read', 'update']
+    # Org admin administra todos los edificios de su organización
+    - actions: ['read', 'create', 'update', 'delete']
       effect: EFFECT_ALLOW
       roles:
         - org_admin
