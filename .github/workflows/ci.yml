@@ -52,7 +52,7 @@ jobs:
       - name: Migraciones + seed
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://consorcia:consorcia_dev_2026@localhost:5432/consorcia
+          DATABASE_URL: postgresql://consorcia:consorcia_dev_2026@localhost:5432/consorcia?schema=consorcia
         run: |
           npx prisma migrate deploy
           npx prisma db seed
@@ -60,7 +60,7 @@ jobs:
       - name: Tests de API (gate)
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://consorcia:consorcia_dev_2026@localhost:5432/consorcia
+          DATABASE_URL: postgresql://consorcia:consorcia_dev_2026@localhost:5432/consorcia?schema=consorcia
           REDIS_HOST: localhost
           REDIS_PORT: 6379
           JWT_SECRET: ci_test_secret
@@ -82,7 +82,10 @@ jobs:
 
       - name: Instalar dependencias
         working-directory: frontend
-        run: npm ci
+        # npm install en vez de npm ci: el lockfile se generó en Alpine (musl)
+        # y npm ci no resuelve los optional deps de rollup para linux-gnu
+        # (bug npm/cli#4828). npm install los completa.
+        run: npm install
 
       - name: Build (gate)
         working-directory: frontend
