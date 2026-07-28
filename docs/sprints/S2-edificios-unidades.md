@@ -35,7 +35,7 @@
 
 ## Cierre
 
-- [ ] **S2-11 Breadcrumbs.** Componente en AppLayout según 07-03 §5: config estática para las rutas actuales + resolución dinámica del nombre del edificio (desde el store de edificio activo, sin fetch extra).
+- [x] **S2-11 Breadcrumbs.** Componente en AppLayout según 07-03 §5: config estática para las rutas actuales + resolución dinámica del nombre del edificio (desde el store de edificio activo, sin fetch extra).
   - _Depende de: S2-07._
 - [ ] **S2-12 Tests E2E + smoke + docs.** Extender `scripts/smoke.sh` (crear edificio + bulk unidades + invariante 422). Playwright: spec "crear edificio y agregar unidades". README y checkboxes. `npm test` backend en verde (S1 + S2).
   - _Depende de: S2-03, S2-09, S2-10._
