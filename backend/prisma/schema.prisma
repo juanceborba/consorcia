@@ -1,6 +1,5 @@
 // prisma/schema.prisma — ConsorcIA
-// Placeholder: el modelo de datos completo se define según
-// vault/02_Arquitectura y Stack/PRD-02-04 Base de Datos.md
+// Spec canónica: vault/02_Arquitectura y Stack/PRD-02-04 Base de Datos.md (§2)
 
 generator client {
   provider = "prisma-client-js"
@@ -9,4 +8,647 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// EXTENSIONES
+// ==========================================
+// pgvector se habilita vía migration SQL, no en Prisma schema
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum RolUsuario {
+  SUPERADMIN  // Staff ConsorcIA
+  ORG_ADMIN   // Dueño de la organización: facturación, alta de edificios/usuarios
+  GESTOR      // Staff de la organización que opera edificios asignados
+  CONSEJO     // Scope edificio
+  PROPIETARIO // Scope edificio/UF
+  INQUILINO   // Scope edificio/UF
+  ENCARGADO   // Scope edificio
+  PROVEEDOR   // Scope edificio
+}
+
+enum EstadoUnidad {
+  ACTIVA
+  INACTIVA
+  EN_VENTA
+  ALQUILADA
+}
+
+enum CategoriaGasto {
+  A // Gastos generales → todas las UF
+  B // Servicios específicos → solo UF que los usan
+  C // Sectores específicos → solo UF del sector
+}
+
+enum EstadoLiquidacion {
+  BORRADOR
+  PENDIENTE_APROBACION
+  APROBADA
+  ENVIADA
+  COBRADA
+  ANULADA
+}
+
+enum EstadoCobro {
+  PENDIENTE
+  PAGADO
+  PARCIAL
+  MOROSO
+  PERDONADO
+}
+
+enum EstadoTicket {
+  NUEVO
+  ASIGNADO
+  EN_PROGRESO
+  ESPERA_PROPIETARIO
+  RESUELTO
+  CERRADO
+  REABIERTO
+}
+
+enum PrioridadTicket {
+  BAJA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+enum TipoComunicacion {
+  EMAIL
+  WHATSAPP
+  NOTIFICACION_PUSH
+  SMS
+}
+
+enum TipoDocumento {
+  RECIBO_EXPENSA
+  FACTURA
+  COMPROBANTE_PAGO
+  ACTA_ASAMBLEA
+  CONTRATO
+  SEGURO
+  OTRO
+}
+
+// ==========================================
+// ORGANIZACIONES (TENANT RAÍZ)
+// ==========================================
+
+model Organizacion {
+  id              String   @id @default(uuid())
+
+  // Identificación
+  nombre          String
+  cuit            String   @unique // CUIT de la administración/estudio
+  plan            String   @default("starter") // Plan de suscripción SaaS
+
+  // Ley 941 CABA: la matrícula es del administrador responsable, no del edificio
+  matriculaRPA    String   @map("matricula_rpa")
+
+  // Relaciones
+  edificios       Edificio[]
+  miembros        OrganizacionUsuario[]
+  config          OrganizacionConfig?
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("organizaciones")
+}
+
+// Membresía: usuario ↔ organización (staff: org_admin, gestor)
+model OrganizacionUsuario {
+  id              String   @id @default(uuid())
+  organizacionId  String   @map("organizacion_id")
+  usuarioId       String   @map("usuario_id")
+
+  // Rol de organización: ORG_ADMIN o GESTOR
+  rol             RolUsuario
+
+  // Relaciones
+  organizacion    Organizacion @relation(fields: [organizacionId], references: [id])
+  usuario         Usuario      @relation(fields: [usuarioId], references: [id])
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([organizacionId, usuarioId])
+  @@index([usuarioId])
+  @@map("organizacion_usuarios")
+}
+
+// Edificios asignados a cada gestor
+model GestorEdificio {
+  id              String   @id @default(uuid())
+  usuarioId       String   @map("usuario_id")
+  edificioId      String   @map("edificio_id")
+
+  // Relaciones
+  gestor          Usuario  @relation(fields: [usuarioId], references: [id])
+  edificio        Edificio @relation(fields: [edificioId], references: [id])
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([usuarioId, edificioId])
+  @@index([edificioId])
+  @@map("gestor_edificios")
+}
+
+// ==========================================
+// USUARIOS Y AUTENTICACIÓN
+// ==========================================
+
+model Usuario {
+  id              String   @id @default(uuid())
+  organizacionId  String   @map("organizacion_id")
+  email           String
+  passwordHash    String   @map("password_hash")
+  nombre          String
+  apellido        String
+  telefono        String?
+  rol             RolUsuario
+  activo          Boolean  @default(true)
+
+  // Relaciones
+  organizaciones  OrganizacionUsuario[]
+  edificiosGestionados GestorEdificio[]
+  unidades        UnidadUsuario[]
+  ticketsCreados  Ticket[]         @relation("TicketCreador")
+  ticketsAsignados Ticket[]        @relation("TicketAsignado")
+  auditLogs       AuditLog[]
+
+  // Timestamps
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  @@unique([organizacionId, email])
+  @@index([organizacionId, rol])
+  @@index([organizacionId, activo])
+  @@map("usuarios")
+}
+
+// ==========================================
+// EDIFICIOS Y UNIDADES
+// ==========================================
+
+model Edificio {
+  id              String   @id @default(uuid())
+  organizacionId  String   @map("organizacion_id")
+  nombre          String
+  direccion       String
+  ciudad          String
+  provincia       String
+  codigoPostal    String   @map("codigo_postal")
+
+  // Propiedad Horizontal
+  reglamentoPH    String?  @map("reglamento_ph") // URL al documento
+  fechaInicioAdmin DateTime? @map("fecha_inicio_admin")
+
+  // Características
+  antiguedad      Int?     // Años
+  totalM2         Decimal  @map("total_m2") @db.Decimal(10, 2)
+  amenities       String[] // pileta, gimnasio, sum, etc.
+
+  // Relaciones
+  organizacion    Organizacion @relation(fields: [organizacionId], references: [id])
+  gestores        GestorEdificio[]
+  unidades        Unidad[]
+  gastos          Gasto[]
+  liquidaciones   Liquidacion[]
+  tickets         Ticket[]
+  comunicaciones  Comunicacion[]
+  documentos      Documento[]
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([organizacionId])
+  @@index([organizacionId, ciudad])
+  @@map("edificios")
+}
+
+model Unidad {
+  id              String   @id @default(uuid())
+  organizacionId        String   @map("organizacion_id")
+  edificioId      String   @map("edificio_id")
+
+  // Identificación
+  numero          String   // "3A", "PB", "Coch-12", etc.
+  tipo            String   // "departamento", "local", "cochera", "baulera", "oficina"
+
+  // Propiedad Horizontal
+  m2              Decimal  @db.Decimal(10, 2)
+  coeficiente     Decimal  @db.Decimal(10, 6) // 0.076543 = 7.6543%
+
+  // Categorías de distribución
+  categoriaA      Boolean  @default(true) @map("categoria_a") // Gastos generales
+  categoriaB      String[] @map("categoria_b") // Servicios específicos: ["ascensor", "calefaccion"]
+  categoriaC      String?  @map("categoria_c") // Sector específico: "torre_a", "pileta"
+
+  // Estado
+  estado          EstadoUnidad @default(ACTIVA)
+
+  // Relaciones
+  edificio        Edificio @relation(fields: [edificioId], references: [id])
+  usuarios        UnidadUsuario[]
+  liquidaciones   LiquidacionDetalle[]
+  cobros          Cobro[]
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([organizacionId, edificioId, numero])
+  @@index([organizacionId, edificioId])
+  @@index([organizacionId, edificioId, tipo])
+  @@map("unidades")
+}
+
+model UnidadUsuario {
+  id          String   @id @default(uuid())
+  organizacionId    String   @map("organizacion_id")
+  unidadId    String   @map("unidad_id")
+  usuarioId   String   @map("usuario_id")
+
+  // Rol específico en esta unidad
+  esPropietario Boolean @default(false) @map("es_propietario")
+  esInquilino   Boolean @default(false) @map("es_inquilino")
+  fechaInicio   DateTime @map("fecha_inicio")
+  fechaFin      DateTime? @map("fecha_fin")
+
+  // Relaciones
+  unidad      Unidad   @relation(fields: [unidadId], references: [id])
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+
+  // Timestamps
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([organizacionId, unidadId, usuarioId])
+  @@index([organizacionId, usuarioId])
+  @@map("unidad_usuarios")
+}
+
+// ==========================================
+// GASTOS
+// ==========================================
+
+model Gasto {
+  id              String   @id @default(uuid())
+  organizacionId        String   @map("organizacion_id")
+  edificioId      String   @map("edificio_id")
+
+  // Datos del gasto
+  concepto        String
+  descripcion     String?
+  monto           Decimal  @db.Decimal(12, 2)
+  moneda          String   @default("ARS")
+
+  // Categorización
+  categoria       CategoriaGasto
+  servicioEspecifico String? @map("servicio_especifico") // Para cat B: "ascensor"
+  sectorEspecifico   String? @map("sector_especifico")   // Para cat C: "torre_a"
+
+  // Clasificación
+  esOrdinario     Boolean  @default(true) @map("es_ordinario") // true = ordinario, false = extraordinario
+
+  // Documento soporte
+  comprobanteUrl  String?  @map("comprobante_url")
+
+  // Fechas
+  fechaGasto      DateTime @map("fecha_gasto")
+  periodo         String   // "2026-07"
+
+  // Relaciones
+  edificio        Edificio @relation(fields: [edificioId], references: [id])
+  liquidaciones   LiquidacionDetalle[]
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdBy       String   @map("created_by")
+
+  @@index([organizacionId, edificioId])
+  @@index([organizacionId, edificioId, periodo])
+  @@index([organizacionId, edificioId, categoria])
+  @@index([organizacionId, edificioId, esOrdinario])
+  @@map("gastos")
+}
+
+// ==========================================
+// LIQUIDACIONES
+// ==========================================
+
+model Liquidacion {
+  id              String   @id @default(uuid())
+  organizacionId        String   @map("organizacion_id")
+  edificioId      String   @map("edificio_id")
+
+  // Período
+  periodo         String   // "2026-07"
+  fechaLiquidacion DateTime @map("fecha_liquidacion")
+
+  // Estado
+  estado          EstadoLiquidacion @default(BORRADOR)
+
+  // Totales
+  totalOrdinarias Decimal  @map("total_ordinarias") @db.Decimal(12, 2)
+  totalExtraordinarias Decimal @map("total_extraordinarias") @db.Decimal(12, 2)
+  totalGeneral    Decimal  @map("total_general") @db.Decimal(12, 2)
+
+  // Ley 941
+  matriculaRPA    String   @map("matricula_rpa")
+  qrData          String?  @map("qr_data") // JSON con datos para QR
+
+  // Relaciones
+  edificio        Edificio @relation(fields: [edificioId], references: [id])
+  detalles        LiquidacionDetalle[]
+  cobros          Cobro[]
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  approvedBy      String?  @map("approved_by")
+  approvedAt      DateTime? @map("approved_at")
+
+  @@unique([organizacionId, edificioId, periodo])
+  @@index([organizacionId, edificioId])
+  @@index([organizacionId, edificioId, estado])
+  @@map("liquidaciones")
+}
+
+model LiquidacionDetalle {
+  id              String   @id @default(uuid())
+  organizacionId        String   @map("organizacion_id")
+  liquidacionId   String   @map("liquidacion_id")
+  unidadId        String   @map("unidad_id")
+  gastoId         String   @map("gasto_id")
+
+  // Distribución
+  coeficienteAplicado Decimal @map("coeficiente_aplicado") @db.Decimal(10, 6)
+  montoAsignado   Decimal  @db.Decimal(12, 2)
+
+  // Relaciones
+  liquidacion     Liquidacion @relation(fields: [liquidacionId], references: [id])
+  unidad          Unidad   @relation(fields: [unidadId], references: [id])
+  gasto           Gasto    @relation(fields: [gastoId], references: [id])
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([organizacionId, liquidacionId, unidadId, gastoId])
+  @@index([organizacionId, liquidacionId])
+  @@index([organizacionId, unidadId])
+  @@map("liquidacion_detalles")
+}
+
+// ==========================================
+// COBROS
+// ==========================================
+
+model Cobro {
+  id              String   @id @default(uuid())
+  organizacionId        String   @map("organizacion_id")
+  liquidacionId   String   @map("liquidacion_id")
+  unidadId        String   @map("unidad_id")
+
+  // Montos
+  montoTotal      Decimal  @map("monto_total") @db.Decimal(12, 2)
+  montoPagado     Decimal  @default(0) @map("monto_pagado") @db.Decimal(12, 2)
+  montoPendiente  Decimal  @map("monto_pendiente") @db.Decimal(12, 2)
+
+  // Estado
+  estado          EstadoCobro @default(PENDIENTE)
+
+  // Pago
+  metodoPago      String?  @map("metodo_pago") // "mercadopago", "transferencia", "efectivo"
+  referenciaPago  String?  @map("referencia_pago")
+  fechaPago       DateTime? @map("fecha_pago")
+
+  // Relaciones
+  liquidacion     Liquidacion @relation(fields: [liquidacionId], references: [id])
+  unidad          Unidad   @relation(fields: [unidadId], references: [id])
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([organizacionId, unidadId])
+  @@index([organizacionId, estado])
+  @@index([organizacionId, liquidacionId])
+  @@map("cobros")
+}
+
+// ==========================================
+// TICKETS / KANBAN
+// ==========================================
+
+model Ticket {
+  id              String   @id @default(uuid())
+  organizacionId        String   @map("organizacion_id")
+  edificioId      String   @map("edificio_id")
+
+  // Datos
+  titulo          String
+  descripcion     String
+  estado          EstadoTicket @default(NUEVO)
+  prioridad       PrioridadTicket @default(MEDIA)
+
+  // Categorización IA
+  categoriaIA     String?  @map("categoria_ia") // Clasificación automática
+  confianzaIA     Decimal? @map("confianza_ia") @db.Decimal(3, 2) // 0.00 - 1.00
+
+  // Asignación
+  creadorId       String   @map("creador_id")
+  asignadoId      String?  @map("asignado_id")
+
+  // Origen
+  fuente          String   @default("manual") // "email", "whatsapp", "portal", "manual"
+  referenciaExterna String? @map("referencia_externa") // ID de email, etc.
+
+  // Relaciones
+  edificio        Edificio @relation(fields: [edificioId], references: [id])
+  creador         Usuario  @relation("TicketCreador", fields: [creadorId], references: [id])
+  asignado        Usuario? @relation("TicketAsignado", fields: [asignadoId], references: [id])
+  comentarios     TicketComentario[]
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  resueltoAt      DateTime? @map("resuelto_at")
+
+  @@index([organizacionId, edificioId])
+  @@index([organizacionId, estado])
+  @@index([organizacionId, prioridad])
+  @@index([organizacionId, creadorId])
+  @@map("tickets")
+}
+
+model TicketComentario {
+  id          String   @id @default(uuid())
+  organizacionId    String   @map("organizacion_id")
+  ticketId    String   @map("ticket_id")
+
+  contenido   String
+  esInterno   Boolean  @default(false) @map("es_interno") // true = solo admin
+
+  // Relaciones
+  ticket      Ticket   @relation(fields: [ticketId], references: [id])
+
+  // Timestamps
+  createdAt   DateTime @default(now()) @map("created_at")
+  createdBy   String   @map("created_by")
+
+  @@index([organizacionId, ticketId])
+  @@map("ticket_comentarios")
+}
+
+// ==========================================
+// COMUNICACIONES
+// ==========================================
+
+model Comunicacion {
+  id              String   @id @default(uuid())
+  organizacionId        String   @map("organizacion_id")
+  edificioId      String   @map("edificio_id")
+
+  // Datos
+  tipo            TipoComunicacion
+  asunto          String
+  contenido       String
+  contenidoHtml   String?  @map("contenido_html")
+
+  // Destinatarios
+  destinatarios   String[] // Array de emails
+
+  // Estado
+  enviado         Boolean  @default(false)
+  fechaEnvio      DateTime? @map("fecha_envio")
+
+  // Métricas
+  abiertos        Int      @default(0)
+  clicks          Int      @default(0)
+
+  // Relaciones
+  edificio        Edificio @relation(fields: [edificioId], references: [id])
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  createdBy       String   @map("created_by")
+
+  @@index([organizacionId, edificioId])
+  @@index([organizacionId, tipo])
+  @@map("comunicaciones")
+}
+
+// ==========================================
+// DOCUMENTOS
+// ==========================================
+
+model Documento {
+  id              String   @id @default(uuid())
+  organizacionId        String   @map("organizacion_id")
+  edificioId      String   @map("edificio_id")
+
+  // Datos
+  tipo            TipoDocumento
+  nombre          String
+  url             String
+  mimeType        String   @map("mime_type")
+  tamaño          Int      // Bytes
+
+  // OCR / IA
+  textoExtraido   String?  @map("texto_extraido")
+  embedding       Unsupported("vector(768)")? // pgvector
+
+  // Relaciones
+  edificio        Edificio @relation(fields: [edificioId], references: [id])
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  uploadedBy      String   @map("uploaded_by")
+
+  @@index([organizacionId, edificioId])
+  @@index([organizacionId, tipo])
+  @@map("documentos")
+}
+
+// ==========================================
+// AUDITORÍA
+// ==========================================
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  organizacionId    String   @map("organizacion_id")
+
+  // Qué pasó
+  tabla       String
+  registroId  String   @map("registro_id")
+  accion      String   // "CREATE", "UPDATE", "DELETE"
+
+  // Datos
+  datosAnteriores Json?  @map("datos_anteriores")
+  datosNuevos   Json?    @map("datos_nuevos")
+  diff          Json?    // Solo los campos cambiados
+
+  // Quién
+  usuarioId   String   @map("usuario_id")
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+
+  // Relaciones
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+
+  // Timestamp
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([organizacionId, tabla])
+  @@index([organizacionId, registroId])
+  @@index([organizacionId, usuarioId])
+  @@index([organizacionId, createdAt])
+  @@map("audit_logs")
+}
+
+// ==========================================
+// CONFIGURACIÓN POR ORGANIZACIÓN
+// ==========================================
+
+model OrganizacionConfig {
+  id              String   @id @default(uuid())
+  organizacionId  String   @unique @map("organizacion_id")
+
+  // Configuración general
+  nombrePlataforma String  @map("nombre_plataforma")
+  dominioEmail    String   @map("dominio_email") // Dominio base de la organización (consorcios.miestudio.com); los inboxes se generan por edificio (edificio-123@consorcios.miestudio.com)
+
+  // Feature flags
+  enableSwarm     Boolean  @default(true) @map("enable_swarm")
+  enableOCR       Boolean  @default(true) @map("enable_ocr")
+  enableKanban    Boolean  @default(false) @map("enable_kanban")
+  enableBenchmarking Boolean @default(false) @map("enable_benchmarking")
+
+  // MercadoPago (credenciales de la organización)
+  mpAccessToken   String?  @map("mp_access_token")
+  mpPublicKey     String?  @map("mp_public_key")
+
+  // WhatsApp (credenciales de la organización)
+  waBusinessId    String?  @map("wa_business_id")
+  waPhoneNumberId String?  @map("wa_phone_number_id")
+
+  // Relaciones
+  organizacion    Organizacion @relation(fields: [organizacionId], references: [id])
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("organizacion_configs")
 }

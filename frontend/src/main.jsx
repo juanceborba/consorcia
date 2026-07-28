@@ -1,32 +1,26 @@
-// frontend/src/main.jsx — ConsorcIA (scaffold inicial)
+// frontend/src/main.jsx — ConsorcIA
+// Entry point: React Router 7 + estilos globales (Tailwind 4 + shadcn/ui).
+// Rutas placeholder (S1-10); guards de auth y layout real llegan en S1-11 a S1-13.
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { BrowserRouter, Routes, Route } from 'react-router';
+import { Toaster } from '@/components/ui/sonner';
+import LoginPage from '@/pages/LoginPage';
+import DashboardPage from '@/pages/DashboardPage';
+import EdificiosPage from '@/pages/EdificiosPage';
+import EdificioDetallePage from '@/pages/EdificioDetallePage';
+import './index.css';
 
-function App() {
-  const [health, setHealth] = React.useState(null);
-
-  React.useEffect(() => {
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-    fetch(`${apiUrl}/health`)
-      .then((res) => res.json())
-      .then(setHealth)
-      .catch(() => setHealth({ status: 'error' }));
-  }, []);
-
-  return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 640, margin: '4rem auto', padding: '0 1rem' }}>
-      <h1>ConsorcIA</h1>
-      <p>Stack inicial levantado — scaffold de desarrollo.</p>
-      <p>
-        Backend:{' '}
-        {health === null
-          ? 'consultando…'
-          : health.status === 'ok'
-            ? '✅ /health OK'
-            : '❌ sin respuesta'}
-      </p>
-    </main>
-  );
-}
-
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/edificios" element={<EdificiosPage />} />
+        <Route path="/edificios/:id" element={<EdificioDetallePage />} />
+      </Routes>
+      <Toaster />
+    </BrowserRouter>
+  </React.StrictMode>,
+);
