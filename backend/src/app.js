@@ -4,6 +4,9 @@
 // y Prometheus) y monta la API del sprint S1: auth JWT (S1-04), aislamiento
 // multi-tenant (S1-05), autorización Cerbos (S1-06), organizaciones (S1-07)
 // y edificios (S1-08).
+//
+// Este módulo NO hace listen: exporta la app para que server.js la sirva y
+// los tests de integración (S1-09, tests/) la levanten en un puerto efímero.
 
 import express from 'express';
 import cors from 'cors';
@@ -13,7 +16,6 @@ import edificiosRoutes from './routes/edificios.routes.js';
 import { errorHandler, rutaNoEncontrada } from './middleware/error.middleware.js';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 const startedAt = Date.now();
 
 // CORS — el frontend Vite (:5173) y nginx (:80) llaman a la API cross-origin
@@ -67,6 +69,4 @@ app.use('/api/edificios', edificiosRoutes);
 app.use('/api', rutaNoEncontrada);
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`ConsorcIA backend escuchando en puerto ${PORT}`);
-});
+export default app;

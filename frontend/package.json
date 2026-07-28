@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "echo \"tests: pendiente de configurar (Vitest)\" && exit 0",
+    "test:e2e": "playwright test",
     "lint": "echo \"lint: pendiente de configurar\" && exit 0",
     "format": "echo \"format: pendiente de configurar\" && exit 0"
   },

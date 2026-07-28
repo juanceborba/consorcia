@@ -1,7 +1,7 @@
 # Makefile - ConsorcIA Platform
 .PHONY: setup up up-gpu down down-volumes restart logs logs-backend logs-frontend logs-ocr \
 	shell-backend shell-frontend shell-db shell-redis \
-	db-migrate db-seed db-studio db-reset test test-frontend lint format health clean build
+	db-migrate db-seed db-studio db-reset test test-frontend smoke lint format health clean build
 
 # Variables
 COMPOSE_FILE=docker-compose.yml
@@ -119,6 +119,10 @@ test:
 
 test-frontend:
 	@docker exec -it consorcIA-frontend npm test
+
+# Smoke E2E del slice S1 contra el stack levantado (S1-14)
+smoke:
+	@./scripts/smoke.sh
 
 # ==========================================
 # LINTING

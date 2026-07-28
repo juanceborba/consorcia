@@ -6,11 +6,11 @@
 
 ## Backend — datos
 
-- [ ] **S1-01 Schema Prisma completo.** Llevar el schema de PRD-02-04 a `backend/prisma/schema.prisma`: `Organizacion`, `OrganizacionUsuario`, `GestorEdificio`, `Usuario`, `Edificio`, `Unidad`, `UnidadUsuario`, `Gasto`, `Liquidacion`, `LiquidacionDetalle`, `Cobro`, `Ticket`, `TicketComentario`, `Comunicacion`, `Documento`, `AuditLog`, `OrganizacionConfig`. Enums con roles canónicos. Todo con `organizacion_id`.
+- [x] **S1-01 Schema Prisma completo.** Llevar el schema de PRD-02-04 a `backend/prisma/schema.prisma`: `Organizacion`, `OrganizacionUsuario`, `GestorEdificio`, `Usuario`, `Edificio`, `Unidad`, `UnidadUsuario`, `Gasto`, `Liquidacion`, `LiquidacionDetalle`, `Cobro`, `Ticket`, `TicketComentario`, `Comunicacion`, `Documento`, `AuditLog`, `OrganizacionConfig`. Enums con roles canónicos. Todo con `organizacion_id`.
   - _Spec: PRD-02-04 §2. Depende de: nada._
-- [ ] **S1-02 Migración inicial + flujo db-migrate.** `npx prisma migrate dev` dentro del contenedor, verificar tablas + extensión `vector`. Documentar en README (`make db-migrate`).
+- [x] **S1-02 Migración inicial + flujo db-migrate.** `npx prisma migrate dev` dentro del contenedor, verificar tablas + extensión `vector`. Documentar en README (`make db-migrate`).
   - _Depende de: S1-01._
-- [ ] **S1-03 Seed data rico.** `prisma/seed.js`: 1 organización demo ("Administración Demo S.A.", CUIT, matrícula RPA), 2 edificios, ~20 unidades con coeficientes A/B/C, usuarios: 1 org_admin, 1 gestor (1 edificio asignado), 3 propietarios, 1 inquilino, 1 encargado. Passwords hasheadas (bcrypt).
+- [x] **S1-03 Seed data rico.** `prisma/seed.js`: 1 organización demo ("Administración Demo S.A.", CUIT, matrícula RPA), 2 edificios, ~20 unidades con coeficientes A/B/C, usuarios: 1 org_admin, 1 gestor (1 edificio asignado), 3 propietarios, 1 inquilino, 1 encargado. Passwords hasheadas (bcrypt).
   - _Depende de: S1-02._
 
 ## Backend — auth y autorización
@@ -28,23 +28,23 @@
   - _Depende de: S1-05._
 - [x] **S1-08 Endpoint edificios (read).** `GET /api/edificios` (de la org, filtrado por `edificios_asignados` si es gestor), `GET /api/edificios/:id` (con unidades). Scope doble `{ organizacionId, id }`.
   - _Spec: PRD-04-01 §3. Depende de: S1-06._
-- [ ] **S1-09 Tests de API del slice.** Tests de integración: login → me → edificios; aislamiento (usuario de org A no ve edificios de org B); gestor solo ve edificios asignados.
+- [x] **S1-09 Tests de API del slice.** Tests de integración: login → me → edificios; aislamiento (usuario de org A no ve edificios de org B); gestor solo ve edificios asignados.
   - _Depende de: S1-07, S1-08._
 
 ## Frontend — shell
 
-- [ ] **S1-10 Setup Tailwind + shadcn/ui + router.** Tailwind 4, shadcn/ui base, React Router con rutas `/login`, `/` (dashboard placeholder), `/edificios`, `/edificios/:id`.
+- [x] **S1-10 Setup Tailwind + shadcn/ui + router.** Tailwind 4, shadcn/ui base, React Router con rutas `/login`, `/` (dashboard placeholder), `/edificios`, `/edificios/:id`.
   - _Spec: PRD-02-02 §6. Depende de: nada._
-- [ ] **S1-11 Auth store + pantalla login.** Zustand store con tokens + `organizacionId`, login form (React Hook Form + Zod), guard de rutas privadas, refresh automático.
+- [x] **S1-11 Auth store + pantalla login.** Zustand store con tokens + `organizacionId`, login form (React Hook Form + Zod), guard de rutas privadas, refresh automático.
   - _Depende de: S1-10, S1-04._
-- [ ] **S1-12 Layout app.** Sidebar (Edificios, Gastos/Liquidaciones/Cobranzas deshabilitados con badge "S2+"), header con selector de edificio de trabajo y menú de usuario (logout).
+- [x] **S1-12 Layout app.** Sidebar (Edificios, Gastos/Liquidaciones/Cobranzas deshabilitados con badge "S2+"), header con selector de edificio de trabajo y menú de usuario (logout).
   - _Depende de: S1-11._
-- [ ] **S1-13 Lista de edificios.** Página `/edificios` conectada a `GET /api/edificios`: cards con nombre, dirección, cantidad de unidades. Detalle `/edificios/:id` read-only con tabla de unidades.
+- [x] **S1-13 Lista de edificios.** Página `/edificios` conectada a `GET /api/edificios`: cards con nombre, dirección, cantidad de unidades. Detalle `/edificios/:id` read-only con tabla de unidades.
   - _Spec: PRD-04-01 §4. Depende de: S1-12, S1-08._
 
 ## Cierre
 
-- [ ] **S1-14 Smoke E2E + docs.** Script de smoke (login → edificios → detalle) corriendo contra el stack dockerizado. README actualizado con el flujo de desarrollo (up, migrate, seed, login demo con credenciales del seed).
+- [x] **S1-14 Smoke E2E + docs.** Script de smoke (login → edificios → detalle) corriendo contra el stack dockerizado. README actualizado con el flujo de desarrollo (up, migrate, seed, login demo con credenciales del seed).
   - _Depende de: S1-09, S1-13._
 
 ## Dependencias entre tareas (para ejecución paralela)

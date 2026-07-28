@@ -134,7 +134,10 @@ export default function AppLayout() {
                 {edificios.map((edificio) => (
                   <DropdownMenuItem
                     key={edificio.id}
-                    onClick={() => setEdificioId(edificio.id)}
+                    onClick={() => {
+                      setEdificioId(edificio.id);
+                      navigate(`/edificios/${edificio.id}`);
+                    }}
                   >
                     <span
                       className={cn(

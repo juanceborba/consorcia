@@ -4,10 +4,10 @@
   "description": "ConsorcIA Backend — API REST + motor contable (PRD-02-02)",
   "private": true,
   "type": "module",
-  "main": "src/app.js",
+  "main": "src/server.js",
   "scripts": {
-    "dev": "node --watch src/app.js",
-    "start": "node src/app.js",
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
     "test": "node --test",
     "lint": "echo \"lint: pendiente de configurar\" && exit 0",
     "format": "echo \"format: pendiente de configurar\" && exit 0"
