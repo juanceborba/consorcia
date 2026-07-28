@@ -30,7 +30,7 @@
   - _Depende de: S2-05, S2-07._
 - [ ] **S2-09 Alta de unidades (form + bulk).** Form de unidad individual (número, tipo, m², coeficiente, categorías A/B/C con checkboxes) + modo bulk "carga rápida" (N filas editables). Feedback inline de la invariante: "Suma actual: 0.973000 — falta 0.027000" actualizado al editar (decimal.js en cliente). Botón guardar deshabilitado si no cuadra.
   - _Depende de: S2-02, S2-08._
-- [ ] **S2-10 Editar/eliminar edificio.** Tab `configuracion`: form de edición (PATCH) + zona de peligro con eliminar usando `ConfirmDialog` con `requireText` (07-02 §4.8, flujo destructivo §6.3). Optimistic update con rollback (07-04 §2.5).
+- [x] **S2-10 Editar/eliminar edificio.** Tab `configuracion`: form de edición (PATCH) + zona de peligro con eliminar usando `ConfirmDialog` con `requireText` (07-02 §4.8, flujo destructivo §6.3). Optimistic update con rollback (07-04 §2.5).
   - _Depende de: S2-01, S2-07._
 
 ## Cierre
