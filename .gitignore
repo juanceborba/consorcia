@@ -11,6 +11,10 @@ build/
 # Datos temporales
 tmp/
 
+# Playwright (artefactos de corridas E2E)
+test-results/
+playwright-report/
+
 # Estado local de conductor (orquestación de agentes)
 .nanostack/
 

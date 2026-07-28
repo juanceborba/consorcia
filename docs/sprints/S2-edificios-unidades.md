@@ -22,13 +22,13 @@
 
 ## Frontend — features
 
-- [ ] **S2-06 Formulario nuevo edificio.** Ruta `/edificios/nuevo` (07-03). RHF + Zod con patrones 07-02 §6.1: validación onBlur por campo, submit deshabilitado hasta válido, loading en botón, toast de éxito/error, confirmación al salir con cambios sin guardar. Redirige al detalle del edificio creado.
+- [x] **S2-06 Formulario nuevo edificio.** Ruta `/edificios/nuevo` (07-03). RHF + Zod con patrones 07-02 §6.1: validación onBlur por campo, submit deshabilitado hasta válido, loading en botón, toast de éxito/error, confirmación al salir con cambios sin guardar. Redirige al detalle del edificio creado.
   - _Depende de: S2-01, S2-04._
-- [ ] **S2-07 Detalle con tabs anidados.** `/edificios/:id` → tabs `overview` (datos + stats), `unidades` (tabla, default), `configuracion` (S2-10). Nested routes según 07-03 §2. El selector del header sigue navegando a `/edificios/:id/unidades`.
+- [x] **S2-07 Detalle con tabs anidados.** `/edificios/:id` → tabs `overview` (datos + stats), `unidades` (tabla, default), `configuracion` (S2-10). Nested routes según 07-03 §2. El selector del header sigue navegando a `/edificios/:id/unidades`.
   - _Depende de: S2-04._
-- [ ] **S2-08 DataTable de unidades.** TanStack Table (instalar `@tanstack/react-table`) siguiendo 07-02 §3.5: sort por número/tipo/m²/coeficiente, fila TOTAL (Σm² y Σcoeficiente con formato 6 decimales, en verde si = 1, danger si no), badges de categorías A/B/C (tokens S2-05), empty state (07-02 §6.2), skeleton de carga.
+- [x] **S2-08 DataTable de unidades.** TanStack Table (instalar `@tanstack/react-table`) siguiendo 07-02 §3.5: sort por número/tipo/m²/coeficiente, fila TOTAL (Σm² y Σcoeficiente con formato 6 decimales, en verde si = 1, danger si no), badges de categorías A/B/C (tokens S2-05), empty state (07-02 §6.2), skeleton de carga.
   - _Depende de: S2-05, S2-07._
-- [ ] **S2-09 Alta de unidades (form + bulk).** Form de unidad individual (número, tipo, m², coeficiente, categorías A/B/C con checkboxes) + modo bulk "carga rápida" (N filas editables). Feedback inline de la invariante: "Suma actual: 0.973000 — falta 0.027000" actualizado al editar (decimal.js en cliente). Botón guardar deshabilitado si no cuadra.
+- [x] **S2-09 Alta de unidades (form + bulk).** Form de unidad individual (número, tipo, m², coeficiente, categorías A/B/C con checkboxes) + modo bulk "carga rápida" (N filas editables). Feedback inline de la invariante: "Suma actual: 0.973000 — falta 0.027000" actualizado al editar (decimal.js en cliente). Botón guardar deshabilitado si no cuadra.
   - _Depende de: S2-02, S2-08._
 - [x] **S2-10 Editar/eliminar edificio.** Tab `configuracion`: form de edición (PATCH) + zona de peligro con eliminar usando `ConfirmDialog` con `requireText` (07-02 §4.8, flujo destructivo §6.3). Optimistic update con rollback (07-04 §2.5).
   - _Depende de: S2-01, S2-07._
@@ -37,7 +37,7 @@
 
 - [x] **S2-11 Breadcrumbs.** Componente en AppLayout según 07-03 §5: config estática para las rutas actuales + resolución dinámica del nombre del edificio (desde el store de edificio activo, sin fetch extra).
   - _Depende de: S2-07._
-- [ ] **S2-12 Tests E2E + smoke + docs.** Extender `scripts/smoke.sh` (crear edificio + bulk unidades + invariante 422). Playwright: spec "crear edificio y agregar unidades". README y checkboxes. `npm test` backend en verde (S1 + S2).
+- [x] **S2-12 Tests E2E + smoke + docs.** Extender `scripts/smoke.sh` (crear edificio + bulk unidades + invariante 422). Playwright: spec "crear edificio y agregar unidades". README y checkboxes. `npm test` backend en verde (S1 + S2).
   - _Depende de: S2-03, S2-09, S2-10._
 
 ## Dependencias entre tareas

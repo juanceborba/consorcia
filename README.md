@@ -34,7 +34,7 @@ También hay 3 propietarios, 1 inquilino y 1 encargado (`propietario1..3@demo.co
 ### Verificación (smoke y tests)
 
 ```bash
-make smoke   # smoke E2E con curl: health → login → edificios → detalle → refresh → logout
+make smoke   # smoke E2E con curl (31 chequeos, S1+S2): health → login → edificios → alta con unidades → refresh → logout
 make test    # tests de API del backend (node --test, dentro del contenedor)
 ```
 
@@ -43,14 +43,20 @@ make test    # tests de API del backend (node --test, dentro del contenedor)
   rotación/revocación de refresh tokens, scope de edificios por rol y
   aislamiento entre organizaciones (crean y borran una org de prueba).
 - **Smoke E2E en browser** (`frontend/e2e/`, Playwright): corre **desde el
-  host**, no en el contenedor. Setup una sola vez:
+  host**, no en el contenedor. `@playwright/test` está declarado en
+  devDependencies — recordá que las instalaciones se hacen SIEMPRE dentro del
+  contenedor (`docker exec consorcIA-frontend npm install`), nunca en el host.
+  Para ejecutarlo se usa el CLI de Playwright del host (global, con chromium
+  ya cacheado):
 
   ```bash
   cd frontend
-  npm install -D @playwright/test
-  npx playwright install chromium
-  npm run test:e2e   # requiere el stack levantado (localhost:5173)
+  playwright test   # requiere el stack levantado (localhost:5173)
   ```
+
+  Specs: `smoke.spec.js` (S1: login → edificios → detalle → logout) y
+  `edificio-unidades.spec.js` (S2: alta de edificio + bulk de unidades con
+  invariante de coeficientes, con cleanup del edificio de prueba).
 
 ## Servicios
 
@@ -88,7 +94,7 @@ Sin GPU, el backend puede usar Nemotron Nano 12B VL vía API como fallback
 
 ```bash
 make health        # verifica todos los endpoints
-make smoke         # smoke E2E del slice S1 (scripts/smoke.sh)
+make smoke         # smoke E2E de los slices S1+S2 (scripts/smoke.sh)
 make test          # tests de API del backend
 make logs-backend  # logs del backend
 make shell-db      # psql dentro del contenedor

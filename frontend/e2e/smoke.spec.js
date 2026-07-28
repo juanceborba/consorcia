@@ -22,7 +22,10 @@ test('smoke S1: login → edificios → detalle → logout', async ({ page }) =>
   await test.step('la lista muestra 2 cards de edificios', async () => {
     await page.getByRole('link', { name: 'Edificios' }).click();
     await expect(page).toHaveURL(/\/edificios$/);
-    await expect(page.locator('a[href^="/edificios/"]')).toHaveCount(2);
+    // Excluye el link "Nuevo edificio" (/edificios/nuevo, agregado en S2-06)
+    await expect(
+      page.locator('a[href^="/edificios/"]:not([href="/edificios/nuevo"])'),
+    ).toHaveCount(2);
   });
 
   await test.step('el detalle muestra la tabla de unidades', async () => {

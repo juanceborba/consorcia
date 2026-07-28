@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# scripts/smoke.sh — Smoke E2E del slice S1 contra el stack dockerizado (S1-14)
+# scripts/smoke.sh — Smoke E2E de los slices S1+S2 contra el stack dockerizado
 # Flujo: health → login (admin y gestor) → listados de edificios → detalle
-# con unidades → refresh (rotación) → logout. Cada paso imprime ✓/✗ y el
-# script sale con 1 si algo falla.
+# con unidades → slice S2 (alta de edificio, bulk de unidades con invariante
+# de coeficientes, PATCH, DELETE soft delete) → refresh (rotación) → logout.
+# Cada paso imprime ✓/✗ y el script sale con 1 si algo falla. Lo que crea lo
+# limpia al final (el edificio de prueba queda dado de baja con soft delete).
 #
 # Requisitos: stack levantado (`make up` + `make db-seed`) y `node` en el
 # host (solo para parsear JSON). Configurable con BACKEND_URL (default
@@ -40,7 +42,7 @@ req() {
   BODY=$(sed '$d' <<< "$resp")
 }
 
-echo "Smoke ConsorcIA (S1-14) contra $BASE_URL"
+echo "Smoke ConsorcIA (S1-14 + S2-12) contra $BASE_URL"
 echo
 
 # --- 1. Health ----------------------------------------------------------------
@@ -86,6 +88,59 @@ if [ "$UNIDADES" -gt 0 ] 2>/dev/null; then
   ok "detalle de $EDIFICIO_NOMBRE con $UNIDADES unidades"
 else
   fail "detalle de $EDIFICIO_NOMBRE sin unidades"
+fi
+
+# --- 3.5 Slice S2: alta de edificio + unidades con invariante --------------
+echo "3.5 Slice S2 (edificios + unidades)"
+STAMP=$(date +%s)
+NOMBRE_S2="Smoke S2 $STAMP"
+S2_ID=""
+S2_BORRADO=0
+
+req POST /api/edificios "$GESTOR_TOKEN" '{"nombre":"Smoke S2 gestor","direccion":"Calle Falsa 123","codigoPostal":"1425","totalM2":100}'
+check "gestor no puede crear edificio → 403" 403 "$STATUS"
+
+req POST /api/edificios "$ADMIN_TOKEN" "{\"nombre\":\"$NOMBRE_S2\",\"direccion\":\"Av. Smoke 123\",\"codigoPostal\":\"C1425BGW\",\"tipo\":\"ph\",\"totalM2\":500}"
+check "POST /api/edificios (admin) → 201" 201 "$STATUS"
+if [ "$STATUS" = "201" ]; then
+  S2_ID=$(json_eval 'd.id' <<< "$BODY")
+fi
+
+if [ -z "$S2_ID" ]; then
+  fail "sin edificio de prueba: se saltean los chequeos de unidades"
+else
+  # Bulk que no cuadra (0.500000 + 0.400000 = 0.900000) → 422 con delta
+  req POST "/api/edificios/$S2_ID/unidades" "$ADMIN_TOKEN" '[{"numero":"1A","tipo":"departamento","m2":80,"coeficiente":"0.500000"},{"numero":"1B","tipo":"departamento","m2":70,"coeficiente":"0.400000"}]'
+  check "bulk que suma 0.900000 → 422" 422 "$STATUS"
+  check "error COEFICIENTES_NO_CUADRAN" "COEFICIENTES_NO_CUADRAN" "$(json_eval 'd.error.code' <<< "$BODY")"
+  check "el 422 informa el delta (0.100000)" "0.100000" "$(json_eval 'd.error.delta' <<< "$BODY")"
+
+  # Bulk que cierra la invariante (suma 1.000000) → 201
+  req POST "/api/edificios/$S2_ID/unidades" "$ADMIN_TOKEN" '[{"numero":"1A","tipo":"departamento","m2":80,"coeficiente":"0.300000"},{"numero":"1B","tipo":"departamento","m2":70,"coeficiente":"0.250000"},{"numero":"2A","tipo":"departamento","m2":65,"coeficiente":"0.200000"},{"numero":"2B","tipo":"departamento","m2":60,"coeficiente":"0.150000"},{"numero":"COCH","tipo":"cochera","m2":25,"coeficiente":"0.100000"}]'
+  check "bulk que suma 1.000000 → 201" 201 "$STATUS"
+  check "creó las 5 unidades" 5 "$(json_eval 'd.length' <<< "$BODY")"
+
+  req GET "/api/edificios/$S2_ID/unidades?page=1&limit=100" "$ADMIN_TOKEN"
+  check "GET unidades paginado → 200" 200 "$STATUS"
+  check "la paginación reporta 5 unidades" 5 "$(json_eval 'd.pagination.total' <<< "$BODY")"
+
+  req PATCH "/api/edificios/$S2_ID" "$ADMIN_TOKEN" "{\"nombre\":\"$NOMBRE_S2 (editado)\"}"
+  check "PATCH /api/edificios/:id → 200" 200 "$STATUS"
+  check "el PATCH aplicó el nuevo nombre" "$NOMBRE_S2 (editado)" "$(json_eval 'd.nombre' <<< "$BODY")"
+
+  req DELETE "/api/edificios/$S2_ID" "$ADMIN_TOKEN"
+  check "DELETE /api/edificios/:id (soft delete) → 204" 204 "$STATUS"
+  [ "$STATUS" = "204" ] && S2_BORRADO=1
+
+  req GET "/api/edificios/$S2_ID" "$ADMIN_TOKEN"
+  check "GET del edificio dado de baja → 404" 404 "$STATUS"
+fi
+
+# --- Limpieza de seguridad -----------------------------------------------------
+# Si algo falló antes del DELETE del slice S2, el edificio de prueba queda
+# activo y rompería el chequeo "admin ve 2 edificios" de la próxima corrida.
+if [ -n "${S2_ID:-}" ] && [ "$S2_BORRADO" = "0" ]; then
+  req DELETE "/api/edificios/$S2_ID" "$ADMIN_TOKEN" >/dev/null 2>&1 || true
 fi
 
 # --- 4. Refresh (rotación) ------------------------------------------------------

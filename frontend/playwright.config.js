@@ -1,7 +1,10 @@
-// frontend/playwright.config.js — Smoke E2E en browser real (S1-14)
-// Corre DESDE EL HOST (no en el contenedor): requiere una sola vez
-//   npm install -D @playwright/test && npx playwright install chromium
-// y el stack levantado (make up + make db-seed). Ejecutar: npm run test:e2e
+// frontend/playwright.config.js — E2E en browser real (S1-14, S2-12)
+// Corre DESDE EL HOST (no en el contenedor) con el CLI de Playwright:
+//   cd frontend && playwright test
+// @playwright/test está en devDependencies (instalar siempre dentro del
+// contenedor: docker exec consorcIA-frontend npm install); en el host se
+// resuelve contra el CLI global. Requiere el stack levantado
+// (make up + make db-seed) y chromium cacheado (playwright install chromium).
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({

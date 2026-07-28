@@ -74,7 +74,6 @@ export default function EdificioNuevoPage() {
       toast.success('Edificio creado', {
         description: `${edificio.nombre} ya está disponible.`,
       });
-      navigate(`/edificios/${edificio.id}/unidades`);
     },
     onError: (err) => {
       toast.error('No se pudo crear el edificio', {
@@ -88,6 +87,16 @@ export default function EdificioNuevoPage() {
   // del navegador (beforeunload). Se libera cuando la creación fue exitosa.
   const hayCambiosSinGuardar = isDirty && !mutation.isSuccess;
   const blocker = useBlocker(hayCambiosSinGuardar);
+
+  // Redirige al detalle del edificio creado. Va en un effect (no en
+  // onSuccess): navigate() sincrónico vería el blocker todavía activo
+  // (isSuccess recién cambia en el re-render) y pediría confirmación de
+  // salida pese a que el guardado fue exitoso.
+  useEffect(() => {
+    if (mutation.isSuccess) {
+      navigate(`/edificios/${mutation.data.id}/unidades`);
+    }
+  }, [mutation.isSuccess, mutation.data, navigate]);
 
   useEffect(() => {
     if (blocker.state !== 'blocked') return;
