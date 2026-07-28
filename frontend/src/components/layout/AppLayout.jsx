@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useEdificioStore } from '@/stores/edificio.store';
 import { useEdificios } from '@/hooks/useEdificios';
 import { useOrganizacion } from '@/hooks/useOrganizacion';
+import Breadcrumbs from '@/components/layout/Breadcrumbs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -180,6 +181,8 @@ export default function AppLayout() {
         </header>
 
         <main className="flex-1 p-6">
+          {/* Breadcrumbs dinámicos (S2-11, PRD-07-03 §5) */}
+          <Breadcrumbs />
           <Outlet />
         </main>
       </div>
