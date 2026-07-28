@@ -349,6 +349,8 @@ interface DataTableProps<T> {
 ```
 
 > **Nota de implementación (S2-08, tabla de unidades):** la fila TOTAL necesita el set completo de unidades para verificar la invariante de coeficientes, así que el tab pide `GET /api/edificios/:id/unidades?limit=100` (el máximo del contrato) en una sola página y ordena client-side con TanStack Table — no implementa controles de paginación. Si un edificio supera las 100 unidades, el pie aclara que los totales son parciales. El coeficiente se muestra siempre con 6 decimales (`0.027742`), no como porcentaje.
+>
+> **Nota de implementación (S2-09):** el botón `[+ Agregar]` del header (slot `CardAction`) abre el modal de alta de unidades (§3.6): modo individual (número, tipo, m², coeficiente, categorías A/B/C) y modo bulk "carga rápida" (grilla de N filas editables). Ambos envían array al endpoint bulk; el feedback inline muestra la suma resultante del edificio ("Suma actual: X — falta/sobra Y") y deshabilita Guardar hasta que cierre en 1.000000, replicando en cliente con decimal.js la invariante del backend.
 
 ### 3.6 Modal `<Modal />`
 
@@ -366,6 +368,16 @@ interface ModalProps {
   preventClose?: boolean;    // Para operaciones críticas
 }
 ```
+
+> **Nota de implementación (S2-09):** el Modal se implementó como `<Dialog />`
+> en `frontend/src/components/ui/dialog.jsx` sobre el Dialog de Base UI
+> (`Root/Portal/Backdrop/Popup/Title/Description/Close`, mismo estilo que el
+> ConfirmDialog de §4.8). Contenido scrolleable (`max-h` con `overflow-y`)
+> para formularios largos; cierra con Escape y con la X — el cierre con
+> cambios sin guardar lo confirma el formulario consumidor (§6.1.8), no el
+> componente. Primer uso: modal de alta de unidades del tab Unidades
+> (`UnidadAltaDialog`, form individual + bulk con feedback de la invariante
+> de coeficientes calculado con decimal.js en cliente).
 
 ### 3.7 Badge `<Badge />`
 
