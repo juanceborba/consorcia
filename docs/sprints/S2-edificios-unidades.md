@@ -6,11 +6,11 @@
 
 ## Backend
 
-- [ ] **S2-01 CRUD edificios.** `POST /api/edificios` (org_admin), `PATCH /api/edificios/:id`, `DELETE /api/edificios/:id` (soft delete, `activo=false`). Validación Zod del schema de PRD-04-01 §2 (nombre, direccion, ciudad, provincia, tipo, fechaInicioAdmin). Autorización vía Cerbos (`rbac.middleware`). Errores del contrato `{ error: { code, message } }`.
+- [x] **S2-01 CRUD edificios.** `POST /api/edificios` (org_admin), `PATCH /api/edificios/:id`, `DELETE /api/edificios/:id` (soft delete, `activo=false`). Validación Zod del schema de PRD-04-01 §2 (nombre, direccion, ciudad, provincia, tipo, fechaInicioAdmin). Autorización vía Cerbos (`rbac.middleware`). Errores del contrato `{ error: { code, message } }`.
   - _Depende de: nada (S1 cerrado)._
-- [ ] **S2-02 CRUD unidades + invariante de coeficientes.** `POST /api/edificios/:id/unidades` (bulk: array de unidades), `PATCH /api/unidades/:id`, `DELETE /api/unidades/:id`. Invariante con **decimal.js**: la suma de `coeficiente` por edificio debe ser 1.000000 — validar en cada operación (rechazar con 422 `COEFICIENTES_NO_CUADRAN` informando suma actual y delta). `GET /api/edificios/:id/unidades` con paginación (`?page=&limit=`).
+- [x] **S2-02 CRUD unidades + invariante de coeficientes.** `POST /api/edificios/:id/unidades` (bulk: array de unidades), `PATCH /api/unidades/:id`, `DELETE /api/unidades/:id`. Invariante con **decimal.js**: la suma de `coeficiente` por edificio debe ser 1.000000 — validar en cada operación (rechazar con 422 `COEFICIENTES_NO_CUADRAN` informando suma actual y delta). `GET /api/edificios/:id/unidades` con paginación (`?page=&limit=`).
   - _Depende de: S2-01._
-- [ ] **S2-03 Tests de API del slice.** Bulk create feliz + rechazo por coeficientes ≠ 1; PATCH que descuadra coeficientes → 422; gestor crea unidad en edificio no asignado → 403; org B no toca edificio de org A. Limpiar datos creados.
+- [x] **S2-03 Tests de API del slice.** Bulk create feliz + rechazo por coeficientes ≠ 1; PATCH que descuadra coeficientes → 422; gestor crea unidad en edificio no asignado → 403; org B no toca edificio de org A. Limpiar datos creados.
   - _Depende de: S2-02._
 
 ## Frontend — fundación
