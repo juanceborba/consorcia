@@ -207,6 +207,12 @@ model Edificio {
   provincia       String
   codigoPostal    String   @map("codigo_postal")
 
+  // Tipología del consorcio: "ph", "barrio_privado", "centro_comercial", "otro" (S2-01)
+  tipo            String   @default("ph")
+
+  // Soft delete (S2-01): false = dado de baja; se conserva por Ley 941
+  activo          Boolean  @default(true)
+
   // Propiedad Horizontal
   reglamentoPH    String?  @map("reglamento_ph") // URL al documento
   fechaInicioAdmin DateTime? @map("fecha_inicio_admin")
@@ -232,6 +238,7 @@ model Edificio {
 
   @@index([organizacionId])
   @@index([organizacionId, ciudad])
+  @@index([organizacionId, activo])
   @@map("edificios")
 }
 
