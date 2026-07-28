@@ -15,6 +15,7 @@ Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas 
 1. **NUNCA `npm install` en el host (macOS).** `node_modules` es un volumen Docker anónimo. Instalaciones SIEMPRE dentro del contenedor: `docker exec consorcIA-backend npm install <pkg>` (o `consorcIA-frontend`).
 2. **NUNCA resetear la DB** (`prisma migrate reset`, `down-volumes`) sin confirmación explícita del usuario. El seed es re-ejecutable: `make db-seed`.
 3. **Stack dockerizado primero:** `make up` levanta todo; `make health` verifica; `make smoke` corre 18 chequeos end-to-end. Antes de commitear backend: `docker exec consorcIA-backend npm test` en verde.
+   - **Gate automático:** el workflow `.github/workflows/ci.yml` corre los tests del backend + build del frontend en cada push a main y cada PR. Si el CI falla, el trabajo no está terminado — arreglarlo es prioridad sobre cualquier tarea nueva.
 4. **Sin git push sin permiso del usuario.** Commits locales con mensajes en español estilo conventional commits (`feat(s2): ...`).
 
 ## Modelo de dominio canónico (no negociable)
