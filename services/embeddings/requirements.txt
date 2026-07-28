@@ -1,0 +1,8 @@
+# ConsorcIA Embeddings Service (PRD-05-06 Embeddings y RAG)
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.8.0
+
+# Modelo nvidia/Nemotron-3-Embed-1B — se integra en PRD-05-06:
+# torch
+# transformers

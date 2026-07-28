@@ -1,0 +1,27 @@
+# backend/Dockerfile.dev — ConsorcIA (PRD-02-03 §5.1)
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Instalar dependencias del sistema
+RUN apk add --no-cache curl
+
+# Copiar package files
+COPY package*.json ./
+RUN npm install
+
+# Copiar prisma schema y generar client (schema placeholder por ahora)
+COPY prisma ./prisma/
+
+# Copiar código fuente
+COPY . .
+
+# Puerto
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
+
+# Comando de desarrollo
+CMD ["npm", "run", "dev"]

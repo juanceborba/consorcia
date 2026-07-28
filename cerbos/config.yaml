@@ -1,0 +1,18 @@
+# cerbos/config.yaml — ConsorcIA (PRD-02-03 §7)
+server:
+  httpListenAddr: ":3592"
+  grpcListenAddr: ":3593"
+  adminAPI:
+    enabled: true
+    adminCredentials:
+      username: cerbos
+      passwordHash: JDJ5JDEwJEdEOVFzZDE4QW5LWi4wVnN1aS8zZHVQdE1xMWdUTUlPajZ5M2xTay5GVDdGbHBNd3E5RXku
+
+storage:
+  driver: "disk"
+  disk:
+    directory: /policies
+    watchForChanges: true
+
+schema:
+  enforcement: reject

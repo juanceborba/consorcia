@@ -1,0 +1,12 @@
+// prisma/schema.prisma — ConsorcIA
+// Placeholder: el modelo de datos completo se define según
+// vault/02_Arquitectura y Stack/PRD-02-04 Base de Datos.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

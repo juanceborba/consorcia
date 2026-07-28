@@ -1,0 +1,23 @@
+{
+  "name": "consorcia-frontend",
+  "version": "0.1.0",
+  "description": "ConsorcIA Frontend — React 19 + Vite 6 (PRD-02-02)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "echo \"tests: pendiente de configurar (Vitest)\" && exit 0",
+    "lint": "echo \"lint: pendiente de configurar\" && exit 0",
+    "format": "echo \"format: pendiente de configurar\" && exit 0"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.0",
+    "vite": "^6.0.0"
+  }
+}

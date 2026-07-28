@@ -1,0 +1,338 @@
+# docker-compose.yml — ConsorcIA Platform (dev local)
+# Spec: vault/02_Arquitectura y Stack/PRD-02-03 Infraestructura Docker.md
+# Nota: sin clave `version:` (deprecada en Compose v2).
+# Nota: ocr-service requiere GPU NVIDIA → profile "gpu" (activar con: docker compose --profile gpu up -d)
+
+services:
+  # ==========================================
+  # CAPA DE DATOS
+  # ==========================================
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: consorcIA-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-consorcia}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-consorcia_dev_2026}
+      POSTGRES_DB: ${DB_NAME:-consorcia}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-consorcia} -d ${DB_NAME:-consorcia}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - consorcIA-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: consorcIA-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - consorcIA-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: consorcIA-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minioadmin123}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - consorcIA-network
+
+  # ==========================================
+  # SEGURIDAD
+  # ==========================================
+
+  cerbos:
+    image: ghcr.io/cerbos/cerbos:latest
+    container_name: consorcIA-cerbos
+    restart: unless-stopped
+    ports:
+      - "${CERBOS_PORT:-3592}:3592"
+      - "${CERBOS_ADMIN_PORT:-3593}:3593"
+    volumes:
+      - ./cerbos/policies:/policies
+      - ./cerbos/config.yaml:/config.yaml
+    command: ["server", "--config=/config.yaml"]
+    # Sin healthcheck interno: la imagen Cerbos es distroless (no trae wget/curl).
+    # Se verifica desde el host con `make health`.
+    networks:
+      - consorcIA-network
+
+  # ==========================================
+  # MICROSERVICIOS PYTHON
+  # ==========================================
+
+  ocr-service:
+    profiles: ["gpu"]
+    build:
+      context: ./services/ocr
+      dockerfile: Dockerfile
+    container_name: consorcIA-ocr
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CUDA_VISIBLE_DEVICES=${CUDA_DEVICES:-0}
+      - MODEL_PATH=/models/unlimited-ocr
+      - PORT=8000
+    ports:
+      - "${OCR_PORT:-8000}:8000"
+    volumes:
+      - ocr_models:/models
+      - ./tmp/ocr-uploads:/tmp/uploads
+    # Requiere GPU NVIDIA (no disponible en macOS). Descomentar en host con GPU:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - consorcIA-network
+    depends_on:
+      - postgres
+
+  embeddings-service:
+    build:
+      context: ./services/embeddings
+      dockerfile: Dockerfile
+    container_name: consorcIA-embeddings
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - MODEL_NAME=nvidia/Nemotron-3-Embed-1B
+      - PORT=8001
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=consorcia
+      - DB_USER=consorcia
+      - DB_PASSWORD=consorcia_dev_2026
+    ports:
+      - "${EMBEDDINGS_PORT:-8001}:8001"
+    volumes:
+      - embedding_models:/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - consorcIA-network
+    depends_on:
+      - postgres
+      - redis
+
+  # ==========================================
+  # BACKEND NODEJS
+  # ==========================================
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: consorcIA-backend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=consorcia
+      - DB_USER=consorcia
+      - DB_PASSWORD=consorcia_dev_2026
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - CERBOS_HOST=cerbos
+      - CERBOS_PORT=3592
+      - OCR_SERVICE_URL=http://ocr-service:8000
+      - EMBEDDINGS_SERVICE_URL=http://embeddings-service:8001
+      - JWT_SECRET=${JWT_SECRET:-consorcia_jwt_secret_dev_2026}
+      - AGENTMAIL_API_KEY=${AGENTMAIL_API_KEY:-}
+      - CHEAPERINFERENCE_API_KEY=${CHEAPERINFERENCE_API_KEY:-}
+      - NEMOTRON_API_KEY=${NEMOTRON_API_KEY:-}
+      - MERCADOPAGO_ACCESS_TOKEN=${MERCADOPAGO_ACCESS_TOKEN:-}
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - backend_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - consorcIA-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      cerbos:
+        condition: service_started
+      minio:
+        condition: service_healthy
+
+  # ==========================================
+  # FRONTEND REACT
+  # ==========================================
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: consorcIA-frontend
+    restart: unless-stopped
+    environment:
+      - VITE_API_URL=http://localhost:3000
+      - VITE_WS_URL=ws://localhost:3000
+      - CHOKIDAR_USEPOLLING=true
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - consorcIA-network
+    depends_on:
+      - backend
+
+  # ==========================================
+  # REVERSE PROXY
+  # ==========================================
+
+  nginx:
+    image: nginx:alpine
+    container_name: consorcIA-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - backend
+      - frontend
+      - grafana
+    networks:
+      - consorcIA-network
+
+  # ==========================================
+  # OBSERVABILIDAD
+  # ==========================================
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: consorcIA-prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - consorcIA-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: consorcIA-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - consorcIA-network
+    depends_on:
+      - prometheus
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: consorcIA-jaeger
+    restart: unless-stopped
+    ports:
+      - "${JAEGER_UI_PORT:-16686}:16686"
+      - "${JAEGER_COLLECTOR_PORT:-14268}:14268"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - consorcIA-network
+
+# ==========================================
+# VOLÚMENES
+# ==========================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+  ocr_models:
+    driver: local
+  embedding_models:
+    driver: local
+  backend_uploads:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+# ==========================================
+# REDES
+# ==========================================
+networks:
+  consorcIA-network:
+    driver: bridge
+    ipam:
+      config:
+        # 172.20.0.0/16 (PRD-02-03) colisiona con otra red local; ver PRD §11
+        - subnet: 172.24.0.0/16

@@ -1,0 +1,25 @@
+# Entorno local (nunca commitear)
+.env
+
+# Dependencias
+node_modules/
+
+# Builds
+dist/
+build/
+
+# Datos temporales
+tmp/
+
+# Logs
+*.log
+
+# SO
+.DS_Store
+
+# Prisma
+backend/prisma/migrations/dev*
+
+# Editor
+.vscode/
+.idea/
