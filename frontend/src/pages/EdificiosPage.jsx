@@ -2,8 +2,9 @@
 // Listado de edificios (S1-13): grid de cards desde GET /api/edificios,
 // con skeleton de carga y estado vacío. Cada card navega al detalle.
 import { Link } from 'react-router';
-import { Building2, MapPin } from 'lucide-react';
+import { Building2, MapPin, Plus } from 'lucide-react';
 import { useEdificios } from '@/hooks/useEdificios';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -36,11 +37,18 @@ export default function EdificiosPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Edificios</h1>
-        <p className="text-sm text-muted-foreground">
-          Edificios administrados por tu organización
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Edificios</h1>
+          <p className="text-sm text-muted-foreground">
+            Edificios administrados por tu organización
+          </p>
+        </div>
+        {/* Alta de edificio (S2-06) */}
+        <Button render={<Link to="/edificios/nuevo" />}>
+          <Plus className="size-4" />
+          Nuevo edificio
+        </Button>
       </div>
 
       {cargando && <EdificiosSkeleton />}
