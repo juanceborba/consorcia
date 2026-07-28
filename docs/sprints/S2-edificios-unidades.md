@@ -15,7 +15,7 @@
 
 ## Frontend — fundación
 
-- [ ] **S2-04 Adoptar TanStack Query.** Instalar `@tanstack/react-query` (+ devtools en dev). Config según PRD-07-04 §2.1 (staleTime 5min, retry 3). `src/lib/query-keys.js` según §2.2 (edificios, gastos placeholder). Refactor: `useEdificios` y `organizaciones/me` a `useQuery`; `auth.store` limpia el cache en logout (`queryClient.clear()`).
+- [x] **S2-04 Adoptar TanStack Query.** Instalar `@tanstack/react-query` (+ devtools en dev). Config según PRD-07-04 §2.1 (staleTime 5min, retry 3). `src/lib/query-keys.js` según §2.2 (edificios, gastos placeholder). Refactor: `useEdificios` y `organizaciones/me` a `useQuery`; `auth.store` limpia el cache en logout (`queryClient.clear()`).
   - _Depende de: nada._
 - [ ] **S2-05 Tokens de dominio.** Agregar a `src/index.css` las variables de PRD-07-02 §2.1 para categorías A/B/C y estados (success/warning/danger/info) y mapearlas a las variantes de `Badge`. Sin migración completa del tema.
   - _Depende de: nada._
