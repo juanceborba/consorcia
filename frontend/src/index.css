@@ -48,6 +48,21 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Tokens de dominio — PRD-07-02 §2.1 (categorías A/B/C y estados) */
+@theme {
+    --color-success: #10B981;        /* Emerald 500 - éxito, pagado, aprobado */
+    --color-success-hover: #059669;  /* Emerald 600 */
+    --color-warning: #F59E0B;        /* Amber 500 - advertencias, pendiente */
+    --color-warning-hover: #D97706;  /* Amber 600 */
+    --color-danger: #EF4444;         /* Red 500 - errores, rechazado, moroso */
+    --color-danger-hover: #DC2626;   /* Red 600 */
+    --color-info: #6366F1;           /* Indigo 500 - información, borrador */
+    --color-info-hover: #4F46E5;     /* Indigo 600 */
+    --color-cat-a: #3B82F6;          /* Categoría A - gastos generales */
+    --color-cat-b: #8B5CF6;          /* Categoría B - servicios específicos */
+    --color-cat-c: #F97316;          /* Categoría C - sectores específicos */
+}
+
 :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);

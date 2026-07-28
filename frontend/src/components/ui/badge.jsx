@@ -19,6 +19,20 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
+        success:
+          "bg-success/10 text-success focus-visible:ring-success/20 dark:bg-success/20 dark:focus-visible:ring-success/40 [a]:hover:bg-success/20",
+        warning:
+          "bg-warning/10 text-warning-hover focus-visible:ring-warning/20 dark:bg-warning/20 dark:text-warning dark:focus-visible:ring-warning/40 [a]:hover:bg-warning/20",
+        danger:
+          "bg-danger/10 text-danger focus-visible:ring-danger/20 dark:bg-danger/20 dark:focus-visible:ring-danger/40 [a]:hover:bg-danger/20",
+        info:
+          "bg-info/10 text-info focus-visible:ring-info/20 dark:bg-info/20 dark:focus-visible:ring-info/40 [a]:hover:bg-info/20",
+        categoriaA:
+          "bg-cat-a/10 text-cat-a focus-visible:ring-cat-a/20 dark:bg-cat-a/20 dark:focus-visible:ring-cat-a/40 [a]:hover:bg-cat-a/20",
+        categoriaB:
+          "bg-cat-b/10 text-cat-b focus-visible:ring-cat-b/20 dark:bg-cat-b/20 dark:focus-visible:ring-cat-b/40 [a]:hover:bg-cat-b/20",
+        categoriaC:
+          "bg-cat-c/10 text-cat-c focus-visible:ring-cat-c/20 dark:bg-cat-c/20 dark:focus-visible:ring-cat-c/40 [a]:hover:bg-cat-c/20",
       },
     },
     defaultVariants: {
