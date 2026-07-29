@@ -15,6 +15,8 @@ import RequireAuth from '@/components/auth/RequireAuth';
 import RequireRole from '@/components/auth/RequireRole';
 import AppLayout from '@/components/layout/AppLayout';
 import LoginPage from '@/pages/LoginPage';
+import RegisterPage from '@/pages/RegisterPage';
+import InvitacionPage from '@/pages/InvitacionPage';
 import DashboardPage from '@/pages/DashboardPage';
 import EdificiosPage from '@/pages/EdificiosPage';
 import EdificioNuevoPage from '@/pages/EdificioNuevoPage';
@@ -27,6 +29,11 @@ import './index.css';
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
+  // Alta de una administración nueva (S4-08): único auto-registro del MVP.
+  { path: '/register', element: <RegisterPage /> },
+  // Activación por invitación (S4-08): PÚBLICA — el token del link es la única
+  // credencial que tiene el invitado (PRD-04-11 §4.5).
+  { path: '/invitacion/:token', element: <InvitacionPage /> },
   {
     // Rutas privadas: guard de auth + layout con sidebar/header
     element: <RequireAuth />,

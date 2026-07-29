@@ -32,8 +32,11 @@ test('smoke S1: login → edificios → detalle → logout', async ({ page }) =>
     await page.getByRole('link', { name: /Torre Palermo/ }).click();
     await expect(page).toHaveURL(/\/edificios\/[0-9a-f-]{36}$/);
     await expect(page.getByRole('table')).toBeVisible();
-    // Torre Palermo tiene 13 unidades en el seed; la fila "PB" siempre existe
-    await expect(page.getByRole('cell', { name: 'PB' })).toBeVisible();
+    // Torre Palermo tiene 13 unidades en el seed; la fila "PB" siempre existe.
+    // exact: desde S4-08 la fila tiene un botón "Residentes de la unidad PB".
+    await expect(
+      page.getByRole('cell', { name: 'PB', exact: true }),
+    ).toBeVisible();
   });
 
   await test.step('logout vuelve a /login', async () => {
