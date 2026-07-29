@@ -60,6 +60,12 @@ Ejemplo:
 Validación: Σ coeficientes = 1.000000 (tolerancia: 0.000001)
 ```
 
+> **Invariante informativa en la carga, dura en la liquidación** (issue #57):
+> la fórmula es la **sugerencia** que el form de alta autocompleta al cargar los
+> m² de la UF (editable), y la Σ es una **verificación informativa** mientras se
+> cargan unidades — nunca bloquea el guardado. El gate duro está en la
+> liquidación: ver §2.2.
+
 ### 1.4 Categorías A/B/C
 
 | Categoría | Descripción | Quién paga | Ejemplos |
@@ -116,9 +122,9 @@ const crearEdificioSchema = z.object({
 | Método y ruta | Rol | Descripción |
 |---|---|---|
 | `GET /api/edificios/:id/unidades` | org_admin, gestor asignado | Lista paginada `?page=&limit=` (default 1/50, máx 100) → `{ data, pagination: { page, limit, total, totalPages } }` |
-| `POST /api/edificios/:id/unidades` | org_admin, gestor asignado | Alta **bulk** (body: array de UFs, transacción) → 201 |
-| `PATCH /api/unidades/:id` | org_admin, gestor asignado | Edición parcial de la UF |
-| `DELETE /api/unidades/:id` | org_admin, gestor asignado | Baja física de la UF → 204 |
+| `POST /api/edificios/:id/unidades` | org_admin, gestor asignado | Alta **bulk** (body: array de UFs, transacción) → `201 { unidades, coeficientes }` |
+| `PATCH /api/unidades/:id` | org_admin, gestor asignado | Edición parcial de la UF → `200 { ...unidad, coeficientes }` |
+| `DELETE /api/unidades/:id` | org_admin, gestor asignado | Baja física de la UF → `200 { eliminada: true, coeficientes }` |
 
 ```javascript
 // Schema Zod (backend/src/schemas/unidad.schema.js)
@@ -135,21 +141,42 @@ const unidadSchema = z.object({
 });
 ```
 
-**Invariante de coeficientes (§1.3) — validada en CADA operación de escritura
-con decimal.js** (`backend/src/services/coeficientes.js`): la suma RESULTANTE
-de coeficientes del edificio debe cerrar en 1.000000 (tolerancia 0.000001).
-Si no cuadra → `422 COEFICIENTES_NO_CUADRAN` con `sumaActual` y `delta`
-dentro de `error`. Consecuencias deliberadas:
+**Invariante de coeficientes (§1.3) — INFORMATIVA en la escritura de unidades
+desde el issue #57** (`backend/src/services/coeficientes.js`, decimal.js): el
+bulk, el `PATCH` y el `DELETE` **guardan aunque la suma resultante no cierre en
+1.000000**, y devuelven el estado de la suma para que la UI lo muestre:
 
-- El **bulk inicial** de un edificio nuevo debe ser el set completo de UFs
-  (existentes + lote = 1); no hay carga incremental parcial.
-- En un edificio ya cuadrado, un **PATCH de coeficiente** o un **DELETE** de
-  UF siempre descuadran → 422. La redistribución atómica de coeficientes es
-  una operación futura; mientras tanto los coeficientes quedan cerrados tras
-  el alta (coherente con "no modificar con liquidaciones", §4).
+```json
+"coeficientes": { "suma": "0.880000", "delta": "0.120000", "cuadra": false }
+```
+
+`delta` es lo que falta para 1.000000 (negativo = sobra); ambos con 6 decimales.
+Ese mismo objeto viaja en `GET /api/edificios/:id/unidades` (calculado sobre el
+set COMPLETO del edificio, no sobre la página) y en el detalle del edificio.
+Consecuencias:
+
+- La carga es **incremental**: se pueden dar de alta UFs de a una (antes la
+  primera UF nunca podía cerrar en 1 y el 422 frenaba el alta).
+- Un **PATCH de coeficiente** o un **DELETE** de UF en un edificio cuadrado lo
+  descuadran y eso es esperado: la UI lo muestra como alerta warning, no como
+  error. La redistribución atómica de coeficientes sigue siendo una operación
+  futura.
+- **El gate duro se movió a la liquidación (S3):** un edificio con Σ≠1 **no
+  liquida**. El módulo de liquidación llama a
+  `validarParaLiquidacion(coeficientes)` (exportada del servicio; devuelve
+  `{ ok, suma, delta, cuadra }`) y rechaza con `422 COEFICIENTES_NO_CUADRAN`
+  (`errorCoeficientes`) si `ok === false`. Tests:
+  `backend/tests/coeficientes.test.js`.
+- **Concurrencia:** el `SELECT … FOR UPDATE` sobre el edificio se eliminó junto
+  con la validación bloqueante (su única razón era serializarla). La unicidad
+  del número de UF bajo concurrencia la garantiza el índice único
+  `(organizacion_id, edificio_id, numero)` → `409 UNIDAD_DUPLICADA`; el alta
+  bulk sigue siendo atómica (transacción). La `suma` que devuelve una escritura
+  se lee post-commit: es informativa, no un invariante serializado.
 
 **Códigos de error del slice:** `VALIDACION_FALLIDA` (422, Zod),
-`COEFICIENTES_NO_CUADRAN` (422), `UNIDAD_DUPLICADA` (409, unique
+`COEFICIENTES_NO_CUADRAN` (422, **solo en la liquidación de S3** — las
+escrituras de unidades ya no lo emiten), `UNIDAD_DUPLICADA` (409, unique
 org+edificio+numero), `UNIDAD_EN_USO` (409, FK: UnidadUsuario/cobros/
 liquidaciones), `EDIFICIO_NO_ENCONTRADO` (404), `UNIDAD_NO_ENCONTRADA` (404),
 `FUERA_DE_ORGANIZACION` (403), `EDIFICIO_NO_ASIGNADO` (403, gestor),

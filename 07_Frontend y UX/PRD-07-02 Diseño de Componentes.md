@@ -348,9 +348,25 @@ interface DataTableProps<T> {
 └─────────────────────────────────────────────────────────────┘
 ```
 
-> **Nota de implementación (S2-08, tabla de unidades):** la fila TOTAL necesita el set completo de unidades para verificar la invariante de coeficientes, así que el tab pide `GET /api/edificios/:id/unidades?limit=100` (el máximo del contrato) en una sola página y ordena client-side con TanStack Table — no implementa controles de paginación. Si un edificio supera las 100 unidades, el pie aclara que los totales son parciales. El coeficiente se muestra siempre con 6 decimales (`0.027742`), no como porcentaje.
+> **Nota de implementación (S2-08, tabla de unidades):** el tab pide `GET /api/edificios/:id/unidades?limit=100` (el máximo del contrato) en una sola página y ordena client-side con TanStack Table — no implementa controles de paginación. Si un edificio supera las 100 unidades, el pie aclara que el Σm² es parcial. El coeficiente se muestra siempre con 6 decimales (`0.027742`), no como porcentaje.
 >
-> **Nota de implementación (S2-09):** el botón `[+ Agregar]` del header (slot `CardAction`) abre el modal de alta de unidades (§3.6): modo individual (número, tipo, m², coeficiente, categorías A/B/C) y modo bulk "carga rápida" (grilla de N filas editables). Ambos envían array al endpoint bulk; el feedback inline muestra la suma resultante del edificio ("Suma actual: X — falta/sobra Y") y deshabilita Guardar hasta que cierre en 1.000000, replicando en cliente con decimal.js la invariante del backend.
+> **Nota de implementación (#57, invariante informativa):** el Σcoeficiente de la fila TOTAL y su veredicto **los calcula el backend** (`coeficientes: { suma, delta, cuadra }` de la respuesta, decimal.js sobre todas las unidades del edificio) — el cliente no los recalcula. La fila TOTAL va `text-success` si cuadra y `text-warning` si no (**nunca danger**: descuadrar no es un error), y cuando `cuadra === false` se muestra un `<Alert variant="warning">` arriba de la tabla: *"Faltan 0.120000. Revisá los coeficientes de tus unidades y/o verificá si te falta cargar alguna unidad al sistema. La sumatoria total debe ser 1."* (variante *"Sobran X…"* si `delta` es negativo).
+>
+> **Nota de implementación (S2-09 + #57):** el botón `[+ Agregar]` del header (slot `CardAction`) abre el modal de alta de unidades (§3.6): modo individual (número, tipo, m², coeficiente, categorías A/B/C) y modo bulk "carga rápida" (grilla de N filas editables). Ambos envían array al endpoint bulk. Al cargar los m² de una UF se **autocompleta el coeficiente sugerido** (`m² / totalM2` del edificio, 6 decimales, editable; cada cambio de m² vuelve a sugerir, así una edición manual se respeta hasta que se toquen los m² de esa fila). El feedback inline muestra la suma resultante del edificio ("Suma actual: X — falta/sobra Y") en los dos modos, en `text-warning` cuando no cierra, y **Guardar nunca se deshabilita por la suma** — solo por la validación de campos o el submit en vuelo.
+
+### 3.5.1 Alert `<Alert />`
+
+```typescript
+interface AlertProps {
+  variant: 'info' | 'success' | 'warning' | 'danger';
+  title?: string;
+  children?: React.ReactNode;   // Detalle del aviso
+}
+```
+
+Banda de aviso **inline** (dentro del contenido, no toast) para condiciones persistentes que el usuario resuelve cuando puede — a diferencia del toast, que es efímero, y del ConfirmDialog (§4.8), que es bloqueante. `role="alert"`, ícono por variante (`Info` / `CheckCircle2` / `AlertTriangle` / `XCircle` de lucide) y los tokens de estado de §2.
+
+> **Implementación:** `frontend/src/components/ui/alert.jsx`. Primer uso (#57): la suma de coeficientes de un edificio que no cierra en 1.000000, arriba de la DataTable de unidades.
 
 ### 3.6 Modal `<Modal />`
 
