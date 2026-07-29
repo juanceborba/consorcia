@@ -348,7 +348,8 @@ req GET /api/organizaciones/me/usuarios "$ORGB_TOKEN"
 check "GET staff de Org B → 200" 200 "$STATUS"
 check "el staff de Org A no aparece en Org B" 0 \
   "$(json_eval "d.filter(m => ['admin@demo.com','gestor@demo.com','gestor2@demo.com'].includes(m.email)).length" <<< "$BODY")"
-check "el staff de Org B es solo su org_admin" 1 "$(json_eval 'd.length' <<< "$BODY")"
+# Su org_admin + el staff multi-organización del caso 8 (S4-11)
+check "el staff de Org B son sus 2 miembros" 2 "$(json_eval 'd.length' <<< "$BODY")"
 
 req GET "/api/edificios/$EDIFICIO_ID" "$ORGB_TOKEN"
 check "el admin B no accede a un edificio de Org A → 403" 403 "$STATUS"
@@ -441,13 +442,34 @@ check "apunta a la organización demo" "Administración Demo S.A." \
 req POST /api/auth/login '' '{"email":"invitado@demo.com","password":"demo1234"}'
 check "el invitado sin activar no puede loguear → 401" 401 "$STATUS"
 
+# Caso 8 (S4-11 / QA-02): staff con membresía activa en las DOS organizaciones,
+# que es la precondición del selector de organización del header.
+req POST /api/auth/login '' '{"email":"multiorg@demo.com","password":"demo1234"}'
+check "login del staff multi-organización → 200" 200 "$STATUS"
+check "tiene 2 membresías para el selector" 2 "$(json_eval 'd.user.organizaciones.length' <<< "$BODY")"
+check "arranca en la primera alfabética (Org A) como gestor" "gestor" \
+  "$(json_eval 'd.user.roles[0]' <<< "$BODY")"
+MULTIORG_TOKEN=$(json_eval 'd.accessToken' <<< "$BODY")
+MULTIORG_REFRESH=$(json_eval 'd.refreshToken' <<< "$BODY")
+MULTIORG_ORGB=$(json_eval "(d.user.organizaciones.find(o => o.rol === 'org_admin') || {}).id || ''" <<< "$BODY")
+
+req POST /api/auth/cambiar-organizacion "$MULTIORG_TOKEN" \
+  "{\"organizacionId\":\"$MULTIORG_ORGB\",\"refreshToken\":\"$MULTIORG_REFRESH\"}"
+check "cambia a su otra organización → 200" 200 "$STATUS"
+check "en la otra org es org_admin" "org_admin" "$(json_eval 'd.user.roles[0]' <<< "$BODY")"
+MULTIORG_REFRESH=$(json_eval 'd.refreshToken' <<< "$BODY")
+MULTIORG_TOKEN=$(json_eval 'd.accessToken' <<< "$BODY")
+
+req GET /api/organizaciones/me "$MULTIORG_TOKEN"
+check "y ve la organización elegida" "Administración Sur S.R.L." "$(json_eval 'd.nombre' <<< "$BODY")"
+
 # Residentes: sin membresía staff no entran a la nómina de la organización
 req GET /api/organizaciones/me/usuarios "$ADMIN_TOKEN"
 check "ningún residente del seed aparece como staff de Org A" 0 \
   "$(json_eval "d.filter(m => ['propietario1@demo.com','propietario2@demo.com','propietario3@demo.com','inquilino@demo.com','multiconsorcio@demo.com','encargado@demo.com'].includes(m.email)).length" <<< "$BODY")"
 
 # Limpieza: se cierran las sesiones abiertas en esta sección
-for r in "$GESTOR2_REFRESH" "$ORGB_REFRESH" "$MULTI_REFRESH"; do
+for r in "$GESTOR2_REFRESH" "$ORGB_REFRESH" "$MULTI_REFRESH" "${MULTIORG_REFRESH:-}"; do
   [ -n "$r" ] && req POST /api/auth/logout '' "{\"refreshToken\":\"$r\"}"
 done
 

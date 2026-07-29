@@ -345,7 +345,9 @@ describe('staff de la organización (S4-03)', () => {
       assert.equal(data.error.code, 'ULTIMO_ORG_ADMIN');
     }
 
-    // Con un segundo org_admin activo, degradarse a sí mismo ya es válido
+    // Un segundo org_admin invitado pero SIN activar no habilita nada: su
+    // membresía está activa pero no puede loguear, así que degradarse dejaría
+    // la organización sin nadie que la administre (S4-11 / review S1).
     const segundo = nuevoEmail('segundo-admin');
     const { status: statusAlta, data: alta } = await apiFetch(baseUrl, RUTA, {
       method: 'POST',
@@ -354,6 +356,24 @@ describe('staff de la organización (S4-03)', () => {
     });
     assert.equal(statusAlta, 201);
     assert.ok(alta.membresia.activo);
+    assert.equal(alta.usuario.cuentaActivada, false);
+
+    const conAdminSinActivar = await apiFetch(baseUrl, ruta, {
+      method: 'PATCH',
+      token: solo.accessToken,
+      body: { rol: 'GESTOR' },
+    });
+    assert.equal(conAdminSinActivar.status, 422);
+    assert.equal(conAdminSinActivar.data.error.code, 'ULTIMO_ORG_ADMIN');
+
+    // Recién cuando el segundo activa su cuenta (puede loguear) el guard cede.
+    const token = alta.invitacionUrl.split('/').pop();
+    const activacion = await apiFetch(baseUrl, `/api/invitaciones/${token}/aceptar`, {
+      method: 'POST',
+      body: { password: 'segundo1234' },
+    });
+    assert.equal(activacion.status, 200);
+    assert.ok(activacion.data.accessToken);
 
     const degradado = await apiFetch(baseUrl, ruta, {
       method: 'PATCH',

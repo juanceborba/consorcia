@@ -286,6 +286,9 @@ router.post(
           tipo: 'STAFF',
           payload: { rol, nombre, apellido, edificioIds: rol === 'GESTOR' ? validos : [] },
           invitadoPorId: req.user.id,
+          // S4-11 (SEC-02): solo la invitación que creó la identidad puede
+          // definir su password. `existente` se leyó antes del create.
+          creaUsuario: !existente,
           pendiente,
         });
 
@@ -386,12 +389,19 @@ router.patch(
           membresia.activo &&
           (rolFinal !== 'ORG_ADMIN' || !activoFinal);
         if (pierdeAdmin) {
+          // S4-11 (review S1): solo cuentan los org_admin OPERABLES. Una
+          // membresía activa de alguien que todavía no activó su cuenta
+          // (`passwordHash NULL`) o que está dado de baja no puede loguear, así
+          // que dejarla "cubrir" el guard deja la organización sin nadie que la
+          // administre — y sin envío de email la recuperación depende de que
+          // alguien haya guardado el link de la invitación.
           const otros = await tx.organizacionUsuario.count({
             where: {
               organizacionId: req.organizacionId,
               rol: 'ORG_ADMIN',
               activo: true,
               usuarioId: { not: usuarioId },
+              usuario: { passwordHash: { not: null }, activo: true, deletedAt: null },
             },
           });
           if (otros === 0) return { ultimoAdmin: true };

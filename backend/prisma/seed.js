@@ -2,7 +2,7 @@
 // Spec: vault/04_Módulos Core/PRD-04-11 §10 (los 7 casos de seed),
 //       vault/02_Arquitectura y Stack/PRD-02-04 Base de Datos.md
 //
-// Cubre los 7 casos de PRD-04-11 §10:
+// Cubre los 8 casos de PRD-04-11 §10:
 //   1. Org A con 2 edificios: org_admin + gestor limitado a Torre Palermo.
 //   2. Staff adicional: un segundo gestor de Org A con AMBOS edificios.
 //   3. Org B (segunda administración) con 1 edificio, sus UFs y su org_admin.
@@ -12,6 +12,8 @@
 //   6. Propietario con 2 UFs en el mismo edificio.
 //   7. Invitación STAFF PENDIENTE (sin aceptar) con token fijo, para probar el
 //      flujo de activación sin tener que ir a la DB a buscarlo.
+//   8. Staff MULTI-ORGANIZACIÓN: un Usuario con membresía activa en Org A y en
+//      Org B, que es la precondición del selector de organización del header.
 //
 // Identidad global (S4-01, PRD-04-11 §2): el Usuario NO cuelga de la
 // organización. Los permisos son vínculos, y el seed los mantiene separados:
@@ -383,8 +385,23 @@ async function main() {
       token: TOKEN_INVITACION_PENDIENTE,
       expiraAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       invitadoPorId: admin.id,
+      // Esta invitación es la que aprovisionó la identidad: sin la marca, el
+      // accept responde 409 ACTIVACION_NO_DISPONIBLE (S4-11 / SEC-02).
+      creaUsuario: true,
     },
   });
+
+  // Caso 8 — staff con membresía ACTIVA en las dos organizaciones (S4-11 /
+  // QA-02): es lo único que hace aparecer el selector de organización del
+  // header, y sin él la DoD del selector había que probarla fabricando la
+  // membresía a mano (que además el reseed desactivaba).
+  const multiOrg = await crearUsuario({
+    email: 'multiorg@demo.com', nombre: 'Pablo', apellido: 'Iriarte',
+    telefono: '+54 11 5555-0110',
+  });
+  await staff(orgA.id, multiOrg.id, 'GESTOR');
+  await asignarEdificios(multiOrg.id, [torrePalermo]);
+  await staff(orgB.id, multiOrg.id, 'ORG_ADMIN');
 
   // Residentes: NUNCA membresía de organización (no son staff), solo
   // `UnidadUsuario` scopeado a la org de la unidad.
@@ -464,12 +481,14 @@ async function main() {
 
   await desactivarMembresiasAjenas([
     admin.email, gestor.email, gestor2.email, adminSur.email, invitado.email,
+    multiOrg.email,
   ]);
 
   // --- Resumen --------------------------------------------------------------
   console.log('\nStaff: admin@demo.com (org_admin A) · gestor@demo.com (gestor A, Torre Palermo)');
   console.log('       gestor2@demo.com (gestor A, ambos edificios) · admin.sur@demo.com (org_admin B)');
   console.log('       invitado@demo.com (gestor A, PENDIENTE de activar)');
+  console.log('       multiorg@demo.com (gestor A + org_admin B → selector de organización)');
   console.log('Residentes (sin membresía staff): propietario1/2/3@demo.com, inquilino@demo.com,');
   console.log('       multiconsorcio@demo.com (Org A + Org B), propietario.sur@demo.com, encargado@demo.com');
   console.log(`Password de todos los usuarios demo activados: "${PASSWORD_DEMO}"`);

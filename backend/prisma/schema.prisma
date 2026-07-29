@@ -230,6 +230,13 @@ model Invitacion {
   usadaAt         DateTime? @map("usada_at")
   invitadoPorId   String   @map("invitado_por_id") // auditoría: quién invitó
 
+  // S4-11 (SEC-02): true si el alta que generó esta invitación fue la que CREÓ
+  // la identidad global. Solo esa invitación puede definir la password de un
+  // `Usuario` que todavía no está activado — si no, un org_admin de otra
+  // organización podría fijarle la credencial a una persona que un tenant
+  // ajeno aprovisionó. En el reenvío se conserva (el link rota, el origen no).
+  creaUsuario     Boolean  @default(false) @map("crea_usuario")
+
   // Relaciones
   organizacion    Organizacion @relation(fields: [organizacionId], references: [id])
   invitadoPor     Usuario      @relation("InvitacionAutor", fields: [invitadoPorId], references: [id])

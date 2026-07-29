@@ -67,36 +67,51 @@ export function membresiaActiva(usuarioId) {
   });
 }
 
-// Contexto de acceso derivado de los vínculos del usuario global:
-//   { organizacionId, roles, edificiosAsignados }
-//
-// Staff (con membresía activa): org activa + su rol de organización.
-// Residente puro (sin membresía): NO tiene organización activa (PRD-04-11 §5.5,
-// el portal agrega por `usuarioId`); sus roles salen de los vínculos a unidades
-// vigentes. Sin vínculos ni membresía: roles [] → Cerbos fail-closed.
-export async function resolverContextoAcceso(usuario) {
-  const membresia = await membresiaActiva(usuario.id);
-  if (membresia) return contextoParaMembresia(usuario, membresia);
-
+// Roles derivados de los vínculos a unidades VIGENTES (`fechaFin: null`).
+// Sin scope de organización a propósito: con identidad global la misma persona
+// es propietaria en varios consorcios y el portal del residente (S5) agrega por
+// `usuarioId`, no por organización.
+async function rolesDeResidente(usuarioId) {
   const vinculos = await prisma.unidadUsuario.findMany({
-    where: { usuarioId: usuario.id, fechaFin: null },
+    where: { usuarioId, fechaFin: null },
     select: { esPropietario: true, esInquilino: true },
   });
   const roles = [];
   if (vinculos.some((v) => v.esPropietario)) roles.push('propietario');
   if (vinculos.some((v) => v.esInquilino)) roles.push('inquilino');
+  return roles;
+}
 
-  return { organizacionId: null, roles, edificiosAsignados: [] };
+// Contexto de acceso derivado de los vínculos del usuario global:
+//   { organizacionId, roles, edificiosAsignados }
+//
+// Staff (con membresía activa): org activa + su rol de organización.
+// Residente puro (sin membresía): NO tiene organización activa (PRD-04-11 §5.5,
+// el portal agrega por `usuarioId`). Sin vínculos ni membresía: roles [] →
+// Cerbos fail-closed.
+//
+// S4-11 (SEC-03): los roles son la UNIÓN de la membresía y de los vínculos de
+// unidad, no una alternativa excluyente. Antes, una membresía staff tapaba los
+// roles de residente, así que a un propietario le alcanzaba con que CUALQUIER
+// organización lo invitara como staff para que perdiera `propietario` de su
+// sesión — sin consentimiento y sin enterarse.
+export async function resolverContextoAcceso(usuario) {
+  const membresia = await membresiaActiva(usuario.id);
+  if (membresia) return contextoParaMembresia(usuario, membresia);
+
+  return { organizacionId: null, roles: await rolesDeResidente(usuario.id), edificiosAsignados: [] };
 }
 
 // Contexto de acceso de UNA membresía concreta. Es lo que usa S4-05 para
 // re-emitir la sesión en la organización elegida: los claims salen de esa
-// membresía y no de la que el usuario tenía activa.
+// membresía y no de la que el usuario tenía activa. Los roles de residente
+// viajan también acá, así que el switch de organización y el refresh conservan
+// la unión (SEC-03).
 export async function contextoParaMembresia(usuario, membresia) {
   const esGestor = membresia.rol === 'GESTOR';
   return {
     organizacionId: membresia.organizacionId,
-    roles: [rolCanonico(membresia.rol)],
+    roles: [rolCanonico(membresia.rol), ...(await rolesDeResidente(usuario.id))],
     edificiosAsignados: esGestor
       ? await obtenerEdificiosAsignados(usuario.id, membresia.organizacionId)
       : [],

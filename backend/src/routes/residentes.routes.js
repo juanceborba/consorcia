@@ -231,6 +231,9 @@ router.post(
             fechaInicio,
           },
           invitadoPorId: req.user.id,
+          // S4-11 (SEC-02): solo la invitación que creó la identidad puede
+          // definir su password. `existente` se leyó antes del create.
+          creaUsuario: !existente,
           pendiente,
         });
 

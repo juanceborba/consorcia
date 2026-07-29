@@ -1,0 +1,12 @@
+-- S4-11 · SEC-02: origen de la identidad en la invitación
+--
+-- `crea_usuario` marca las invitaciones cuyo alta CREÓ el `Usuario` global.
+-- Solo esas pueden definir la password de una cuenta sin activar: con identidad
+-- global el email es una credencial de aprovisionamiento, y sin esta marca un
+-- org_admin de cualquier organización podía invitar un email aprovisionado por
+-- otro tenant y fijarle la password (S4-security.md · SEC-02).
+--
+-- DEFAULT false es el valor seguro para las filas ya existentes: una invitación
+-- vieja sobre una cuenta sin activar deja de poder activarla y la organización
+-- que la aprovisionó tiene que reenviar la suya.
+ALTER TABLE "invitaciones" ADD COLUMN "crea_usuario" BOOLEAN NOT NULL DEFAULT false;

@@ -8,7 +8,7 @@ Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas 
 
 - **S1 cerrado** (2026-07-28): stack + auth JWT + Cerbos + edificios read + portal shell. Ver `docs/sprints/S1-fundacion.md`.
 - **S2 cerrado** (2026-07-28): edificios y unidades (CRUD + invariante de coeficientes, alta bulk con feedback inline, E2E + smoke). Ver `docs/sprints/S2-edificios-unidades.md`.
-- **S4 cerrado** (2026-07-29): usuarios e identidad global (alta de staff por backoffice, residentes por invitación, switch de organización, seed multi-caso). Ver `docs/sprints/S4-usuarios-identidad.md`.
+- **S4 cerrado** (2026-07-29): usuarios e identidad global (alta de staff por backoffice, residentes por invitación, switch de organización, seed multi-caso) + hardening S4-11 de la aceptación de invitaciones y del contexto de acceso. Ver `docs/sprints/S4-usuarios-identidad.md` y los reportes `S4-review.md` / `S4-qa.md` / `S4-security.md`.
 - **S3 listo para arrancar**: gastos + motor contable (liquidación, recibos PDF/QR Ley 941). Backlog: `docs/sprints/S3-gastos-liquidacion.md`. Issues en GitHub con milestone "S3".
 - Roadmap completo (S1→S6, slices verticales): `docs/ROADMAP.md`.
 
@@ -16,7 +16,7 @@ Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas 
 
 1. **NUNCA `npm install` en el host (macOS).** `node_modules` es un volumen Docker anónimo. Instalaciones SIEMPRE dentro del contenedor: `docker exec consorcIA-backend npm install <pkg>` (o `consorcIA-frontend`).
 2. **NUNCA resetear la DB** (`prisma migrate reset`, `down-volumes`) sin confirmación explícita del usuario. El seed es re-ejecutable: `make db-seed`.
-3. **Stack dockerizado primero:** `make up` levanta todo; `make health` verifica; `make smoke` corre 86 chequeos end-to-end. Antes de commitear backend: `docker exec consorcIA-backend npm test` en verde.
+3. **Stack dockerizado primero:** `make up` levanta todo; `make health` verifica; `make smoke` corre 92 chequeos end-to-end. Antes de commitear backend: `docker exec consorcIA-backend npm test` en verde.
    - **Gate automático:** el workflow `.github/workflows/ci.yml` corre los tests del backend + build del frontend en cada push a main y cada PR. Si el CI falla, el trabajo no está terminado — arreglarlo es prioridad sobre cualquier tarea nueva.
 4. **Sin git push sin permiso del usuario.** Commits locales con mensajes en español estilo conventional commits (`feat(s2): ...`).
 
@@ -43,7 +43,7 @@ Si el código diverge de un PRD (puertos, endpoints, schema, roles), **actualiz�
 
 Password de **todos** los usuarios activados: `demo1234`. Reseed idempotente: `make db-seed` (o `docker exec consorcIA-backend node prisma/seed.js`). El seed borra y recrea las dos organizaciones demo por CUIT, limpia el residuo de los specs E2E (`e2e-staff-*`, `e2e-residente-*`) y desactiva las membresías de los usuarios demo en organizaciones ajenas al seed. **Nunca** hace `prisma migrate reset`.
 
-Cubre los 7 casos de PRD-04-11 §10:
+Cubre los 8 casos de PRD-04-11 §10:
 
 | # | Caso | Email | Vínculos |
 |---|------|-------|----------|
@@ -55,11 +55,13 @@ Cubre los 7 casos de PRD-04-11 §10:
 | 5 | inquilino simple | `inquilino@demo.com` | inquilino de Torre Palermo 1A |
 | 6 | propietario multi-UF | `propietario2@demo.com` | propietario de Torre Palermo 3B **y** 4B |
 | 7 | invitación pendiente | `invitado@demo.com` | staff GESTOR (San Martín) **sin activar**: no tiene password, no puede loguear |
+| 8 | staff multi-organización | `multiorg@demo.com` | **un solo Usuario**: GESTOR de Org A (Torre Palermo) **y** ORG_ADMIN de Org B → es el único login que muestra el **selector de organización** del header |
 
 Resto de residentes (solo `UnidadUsuario`, sin membresía staff): `propietario1@demo.com` (Torre Palermo PB), `propietario3@demo.com` (San Martín PB), `propietario.sur@demo.com` (Lomas PB). `encargado@demo.com` existe como identidad **sin vínculos** (el rol ENCARGADO es de scope edificio y todavía no tiene modelo; loguea pero Cerbos le niega todo).
 
 - **Organizaciones:** Org A "Administración Demo S.A." (CUIT `30-71234567-8`, 2 edificios / 20 UFs) · Org B "Administración Sur S.R.L." (CUIT `30-71234569-4`, 1 edificio / 5 UFs).
 - **Invitación pendiente (caso 7):** token fijo → `http://localhost:5173/invitacion/seed-invitacion-pendiente`. Aceptarla define la password de `invitado@demo.com` y la consume; el reseed la vuelve a dejar pendiente.
+- **Aceptación de invitaciones (S4-11, PRD-04-11 §6.3):** la aceptación **nunca** emite sesión ni fija password sobre un `Usuario` preexistente. Solo la invitación que creó la identidad (`Invitacion.creaUsuario`) puede activarla; una invitación a una cuenta ya activada responde `200 { yaActivada: true }` **sin tokens**, y una sobre una identidad que aprovisionó otra organización responde `409 ACTIVACION_NO_DISPONIBLE`. Si escribís un test que inserta invitaciones con Prisma para un email **que ya existe sin password**, seteale `creaUsuario: true` o el accept te va a devolver 409.
 
 ## Estructura
 

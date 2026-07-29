@@ -48,9 +48,16 @@ export const errorInvitacionPendiente = () => ({
 //
 // El `token` se genera acá y no con el default del schema para que el reenvío
 // también rote (un update no dispara `@default`).
+//
+// `creaUsuario` (S4-11 / SEC-02) marca que este alta creó la identidad global:
+// es lo que habilita a la invitación a definir la password de una cuenta que
+// todavía no fue activada. En el REENVÍO se conserva el valor original con un
+// OR: la persona ya existe (porque la creó la invitación anterior de esta misma
+// organización), así que recalcularlo lo pondría en false y el link nuevo
+// dejaría de poder activar la cuenta que su propio origen aprovisionó.
 export async function crearOReenviarInvitacion(
   client,
-  { email, organizacionId, tipo, payload, invitadoPorId, pendiente = null }
+  { email, organizacionId, tipo, payload, invitadoPorId, creaUsuario = false, pendiente = null }
 ) {
   const datos = {
     token: randomUUID(),
@@ -60,9 +67,12 @@ export async function crearOReenviarInvitacion(
   };
 
   if (pendiente) {
-    return client.invitacion.update({ where: { id: pendiente.id }, data: datos });
+    return client.invitacion.update({
+      where: { id: pendiente.id },
+      data: { ...datos, creaUsuario: pendiente.creaUsuario || creaUsuario },
+    });
   }
   return client.invitacion.create({
-    data: { email, organizacionId, tipo, ...datos },
+    data: { email, organizacionId, tipo, creaUsuario, ...datos },
   });
 }
