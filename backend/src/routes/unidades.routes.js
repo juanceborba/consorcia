@@ -3,6 +3,10 @@
 //   PATCH  /api/unidades/:id → actualiza campos de la UF (incl. coeficiente)
 //   DELETE /api/unidades/:id → baja física de la UF
 //
+// Los residentes de la UF (`/:id/residentes`, S4-04) viven en
+// residentes.routes.js; la resolución de la UF con su aislamiento
+// (`validarUnidad`) es compartida y vive en middleware/unidad.middleware.js.
+//
 // Invariante (PRD-04-01 §1.3): ambas operaciones validan con decimal.js que
 // la suma de coeficientes del edificio siga siendo 1.000000 tras el cambio;
 // si descuadra → 422 COEFICIENTES_NO_CUADRAN (suma actual + delta).
@@ -20,52 +24,16 @@ import { requireAuth } from '../middleware/auth.middleware.js';
 import { tenant } from '../middleware/tenant.middleware.js';
 import { autorizar } from '../middleware/rbac.middleware.js';
 import { validarBody } from '../middleware/validation.middleware.js';
+import { validarUnidad } from '../middleware/unidad.middleware.js';
 import { editarUnidadSchema } from '../schemas/unidad.schema.js';
 import { sumarCoeficientes, cuadra, errorCoeficientes } from '../services/coeficientes.js';
+import residentesRoutes from './residentes.routes.js';
 
 const router = Router();
 
-// Resuelve la UF de req.params.id y su edificio, validando el tenant:
-//   404 si la UF no existe (o su edificio está dado de baja)
-//   403 si pertenece a otra organización
-//   403 si el usuario es gestor y el edificio no está asignado
-// Deja req.unidad y req.edificio para el check de Cerbos y el handler.
-async function validarUnidad(req, res, next) {
-  try {
-    const unidad = await prisma.unidad.findUnique({ where: { id: req.params.id } });
-    if (!unidad) {
-      return res.status(404).json({
-        error: { code: 'UNIDAD_NO_ENCONTRADA', message: 'La unidad no existe' },
-      });
-    }
-
-    if (unidad.organizacionId !== req.organizacionId) {
-      return res.status(403).json({
-        error: { code: 'FUERA_DE_ORGANIZACION', message: 'La unidad no pertenece a tu organización' },
-      });
-    }
-
-    const edificio = await prisma.edificio.findUnique({ where: { id: unidad.edificioId } });
-    if (!edificio || edificio.activo === false) {
-      return res.status(404).json({
-        error: { code: 'UNIDAD_NO_ENCONTRADA', message: 'La unidad no existe' },
-      });
-    }
-
-    const esGestor = req.user.roles.includes('gestor');
-    if (esGestor && !req.user.edificiosAsignados.includes(edificio.id)) {
-      return res.status(403).json({
-        error: { code: 'EDIFICIO_NO_ASIGNADO', message: 'El edificio no está asignado a este gestor' },
-      });
-    }
-
-    req.unidad = unidad;
-    req.edificio = edificio;
-    return next();
-  } catch (err) {
-    return next(err);
-  }
-}
+// Residentes de la UF (S4-04). Va antes de las rutas `/:id` para que el
+// prefijo más específico gane.
+router.use('/:id/residentes', residentesRoutes);
 
 // Attrs del recurso para Cerbos (scope doble: org + edificio)
 const recursoUnidad = (req) => ({

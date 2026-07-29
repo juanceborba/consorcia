@@ -13,7 +13,7 @@
   - _Depende de: S4-01._
 - [x] **S4-03 Endpoints staff (Workflow A).** `GET/POST /api/organizaciones/me/usuarios`, `PATCH /api/organizaciones/me/usuarios/:id` (rol, edificios de gestor, activar/desactivar). Alta por email: usuario nuevo → crea Usuario + membresía + invitación; existente → solo membresía + invitación. Respuesta incluye `invitacionUrl` (MVP sin envío de email — link para copiar; el envío queda encapsulado para AgentMail post-beta). Guard: no desactivar al último org_admin (422 `ULTIMO_ORG_ADMIN`).
   - _Depende de: S4-02._
-- [ ] **S4-04 Endpoints residentes (Workflow B).** `GET/POST /api/unidades/:id/residentes`, `DELETE /api/unidades/:id/residentes/:vinculoId` (fechaFin, no borrado físico). Mismo patrón email-nuevo/existente; 409 `VINCULO_DUPLICADO`. Cerbos: org_admin y gestor asignado.
+- [x] **S4-04 Endpoints residentes (Workflow B).** `GET/POST /api/unidades/:id/residentes`, `DELETE /api/unidades/:id/residentes/:vinculoId` (fechaFin, no borrado físico). Mismo patrón email-nuevo/existente; 409 `VINCULO_DUPLICADO`. Cerbos: org_admin y gestor asignado.
   - _Depende de: S4-02._
 - [ ] **S4-05 Cambio de organización activa.** `POST /api/auth/cambiar-organizacion` — valida membresía activa (403 `SIN_MEMBRESIA`) y re-emite JWT + refresh con la org elegida.
   - _Depende de: S4-01._
