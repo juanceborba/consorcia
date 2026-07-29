@@ -35,6 +35,7 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import Decimal from 'decimal.js';
+import { sembrarRubrosMaestro, RUBROS_MAESTRO } from './rubros-maestro.js';
 
 const prisma = new PrismaClient();
 
@@ -140,6 +141,25 @@ async function limpiarOrganizacionDemo(cuit) {
 
   const orgId = existente.id;
   // Orden inverso de dependencias; solo tablas que el seed escribe.
+  //
+  // Los insumos de gastos de la org (S3) van PRIMERO y son obligatorios en la
+  // limpieza aunque el seed no cargue gastos: las FKs de `proveedores.
+  // organizacion_id` y `rubros.organizacion_id` son ON DELETE SET NULL, así que
+  // borrar la organización sin borrarlos convertiría sus proveedores y rubros
+  // propios en ítems GLOBALES/MAESTROS de plataforma visibles para todo el
+  // mundo. Los gastos y liquidaciones se borran antes porque referencian
+  // proveedor y rubro con FK RESTRICT.
+  await prisma.liquidacionDetalle.deleteMany({
+    where: { liquidacion: { organizacionId: orgId } },
+  });
+  await prisma.liquidacion.deleteMany({ where: { organizacionId: orgId } });
+  await prisma.gasto.deleteMany({ where: { organizacionId: orgId } });
+  await prisma.rubroVisibilidad.deleteMany({ where: { organizacionId: orgId } });
+  await prisma.proveedor.deleteMany({ where: { organizacionId: orgId } });
+  // Subrubros antes que sus padres (FK parent_id).
+  await prisma.rubro.deleteMany({ where: { organizacionId: orgId, parentId: { not: null } } });
+  await prisma.rubro.deleteMany({ where: { organizacionId: orgId } });
+
   await prisma.invitacion.deleteMany({ where: { organizacionId: orgId } });
   await prisma.unidadUsuario.deleteMany({ where: { organizacionId: orgId } });
   await prisma.gestorEdificio.deleteMany({ where: { edificio: { organizacionId: orgId } } });
@@ -205,6 +225,17 @@ async function desactivarMembresiasAjenas(emails) {
 async function main() {
   for (const cuit of CUITS_DEMO) await limpiarOrganizacionDemo(cuit);
   await limpiarResiduoE2E();
+
+  // --- Maestro de rubros de plataforma (S3-13) ------------------------------
+  // No es dato demo: es el catálogo compartido por todas las organizaciones
+  // (`organizacionId = null`). Idempotente y NO se borra en la limpieza — un
+  // ítem del maestro puede tener gastos de cualquier org apuntándolo.
+  const maestro = await sembrarRubrosMaestro(prisma);
+  const hojas = RUBROS_MAESTRO.reduce((n, r) => n + r.subrubros.length, 0);
+  console.log(
+    `Maestro de rubros: ${RUBROS_MAESTRO.length} rubros + ${hojas} subrubros ` +
+      `(${maestro.creados} creados, ${maestro.existentes} ya existían)`
+  );
 
   // --- Organizaciones (tenant raíz) ----------------------------------------
   const orgA = await prisma.organizacion.create({

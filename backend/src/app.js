@@ -15,6 +15,7 @@ import organizacionesRoutes from './routes/organizaciones.routes.js';
 import edificiosRoutes from './routes/edificios.routes.js';
 import unidadesRoutes from './routes/unidades.routes.js';
 import proveedoresRoutes from './routes/proveedores.routes.js';
+import rubrosRoutes from './routes/rubros.routes.js';
 import meRoutes from './routes/me.routes.js';
 import invitacionesRoutes from './routes/invitaciones.routes.js';
 import { errorHandler, rutaNoEncontrada } from './middleware/error.middleware.js';
@@ -74,6 +75,7 @@ app.use('/api/unidades', unidadesRoutes);
 // directorios de ORGANIZACIÓN (no cuelgan de un edificio) e híbridos: suman al
 // dato propio de la org el catálogo global de plataforma.
 app.use('/api/proveedores', proveedoresRoutes);
+app.use('/api/rubros', rubrosRoutes);
 
 // Contexto propio del usuario (S4-12, #58): scopeado por `usuarioId`, no por
 // organización — es el único camino de lectura del residente puro, que por
