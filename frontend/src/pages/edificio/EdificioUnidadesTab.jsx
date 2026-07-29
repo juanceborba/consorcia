@@ -2,16 +2,22 @@
 // Tab "Unidades" del detalle de edificio (S2-08): DataTable con TanStack
 // Table según PRD-07-02 §3.5 — sort por número/tipo/m²/coeficiente, fila
 // TOTAL al pie (Σm² y Σcoeficiente en 6 decimales, success si cierra en
-// 1.000000 / danger si no), badges de categorías A/B/C (tokens S2-05),
+// 1.000000 / warning si no), badges de categorías A/B/C (tokens S2-05),
 // empty state (§6.2) y skeleton de carga. El botón "+ Agregar" del header
 // (wireframe §3.5) abre el modal de alta de S2-09 (UnidadAltaDialog).
 //
+// Invariante de coeficientes (#57): es INFORMATIVA. Si Σ≠1 no se bloquea nada;
+// se muestra un Alert warning arriba de la tabla ("Faltan/Sobran X…") y la fila
+// TOTAL pasa a warning. La suma la calcula el backend con decimal.js y viene en
+// `coeficientes: { suma, delta, cuadra }` de la respuesta del listado — no se
+// recalcula en cliente (evita divergencias de float y de paginación).
+//
 // Datos: GET /api/edificios/:id/unidades con TanStack Query
 // (queryKeys.edificios.unidades). El contrato pagina (?page=&limit=, máx
-// 100); se pide el límite máximo en una sola página porque la fila TOTAL
-// necesita el set completo de unidades para verificar la invariante. Si un
-// edificio supera las 100 unidades (fuera de escala del MVP), el pie aclara
-// que los totales son parciales.
+// 100); se pide el límite máximo en una sola página para poder mostrar todas
+// las filas. El Σm² del pie sí es del set traído (si el edificio supera las
+// 100 unidades el pie aclara que es parcial); el Σcoeficiente nunca lo es,
+// porque el backend lo calcula sobre todas las unidades del edificio.
 import { useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -34,6 +40,7 @@ import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import ResidentesDrawer from '@/pages/edificio/ResidentesDrawer';
 import UnidadAltaDialog from '@/pages/edificio/UnidadAltaDialog';
+import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -214,6 +221,25 @@ function EmptyState() {
   );
 }
 
+// Alerta de la invariante (#57): informativa, arriba de la tabla. `delta` es
+// lo que falta para 1.000000 (negativo = sobra), calculado por el backend.
+function AlertaCoeficientes({ delta }) {
+  const sobra = Number(delta) < 0;
+  const magnitud = Math.abs(Number(delta)).toFixed(6);
+  return (
+    <Alert
+      variant="warning"
+      title={`${sobra ? 'Sobran' : 'Faltan'} ${magnitud}.`}
+    >
+      Revisá los coeficientes de tus unidades y/o verificá si{' '}
+      {sobra
+        ? 'cargaste alguna unidad de más al sistema'
+        : 'te falta cargar alguna unidad al sistema'}
+      . La sumatoria total debe ser 1.
+    </Alert>
+  );
+}
+
 export default function EdificioUnidadesTab() {
   const { edificio } = useOutletContext();
   const [sorting, setSorting] = useState([{ id: 'numero', desc: false }]);
@@ -254,16 +280,10 @@ export default function EdificioUnidadesTab() {
     );
   }
 
-  // Totales del set completo de unidades (filas de datos, no del orden visual).
+  // Σm²: del set traído (client-side). Σcoeficiente y su veredicto: del
+  // backend (decimal.js sobre TODAS las unidades del edificio, #57).
   const totalM2 = unidades.reduce((acc, u) => acc + Number(u.m2), 0);
-  const totalCoeficiente = unidades.reduce(
-    (acc, u) => acc + Number(u.coeficiente),
-    0,
-  );
-  // Invariante: la suma de coeficientes debe cerrar en 1.000000. Se compara
-  // el valor formateado (no el float crudo) para evitar errores de redondeo.
-  const cuadraCoeficientes =
-    formatearCoeficiente(totalCoeficiente) === '1.000000';
+  const coeficientes = data?.coeficientes ?? { suma: '0.000000', delta: '1.000000', cuadra: false };
   const totalesParciales = total > unidades.length;
 
   return (
@@ -285,6 +305,9 @@ export default function EdificioUnidadesTab() {
           <EmptyState />
         ) : (
           <>
+            {!coeficientes.cuadra && (
+              <AlertaCoeficientes delta={coeficientes.delta} />
+            )}
             <Table>
               <TableHeader>
                 {table.getHeaderGroups().map((headerGroup) => (
@@ -326,10 +349,10 @@ export default function EdificioUnidadesTab() {
                   <TableCell>
                     <span
                       className={`flex justify-end font-semibold tabular-nums ${
-                        cuadraCoeficientes ? 'text-success' : 'text-danger'
+                        coeficientes.cuadra ? 'text-success' : 'text-warning'
                       }`}
                     >
-                      {formatearCoeficiente(totalCoeficiente)}
+                      {coeficientes.suma}
                     </span>
                   </TableCell>
                   {/* Categorías y acciones no suman nada en el pie */}
@@ -351,6 +374,7 @@ export default function EdificioUnidadesTab() {
       {/* Alta de unidades (S2-09): modal con form individual + bulk */}
       <UnidadAltaDialog
         edificioId={edificio.id}
+        edificioTotalM2={edificio.totalM2}
         unidadesExistentes={unidades}
         isOpen={altaOpen}
         onClose={() => setAltaOpen(false)}

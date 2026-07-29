@@ -4,18 +4,25 @@
 // PRD-04-01) y bulk "carga rápida" (grilla de N filas editables). Ambos
 // envían un array al endpoint bulk POST /api/edificios/:id/unidades.
 //
-// Invariante de coeficientes (PRD-04-01 §1.3): el backend exige que la suma
-// RESULTANTE del edificio (existentes + lote) cierre en 1.000000 (tolerancia
-// 0.000001) — no hay carga parcial. El feedback inline replica esa cuenta en
-// cliente con decimal.js (misma semántica que services/coeficientes.js): los
-// coeficientes del form solo entran en la suma cuando ya matchean el regex
-// del contrato, así el texto no oscila mientras se tipea. Guardar queda
-// deshabilitado hasta que la suma cuadre; si el backend igual rechaza (422
-// COEFICIENTES_NO_CUADRAN), el toast muestra el mensaje con suma y delta.
+// Invariante de coeficientes (PRD-04-01 §1.3) — INFORMATIVA desde #57: el
+// backend guarda aunque la suma resultante del edificio no cierre en 1.000000,
+// así la carga puede ser incremental. El feedback inline replica la cuenta en
+// cliente con decimal.js (misma semántica que services/coeficientes.js) en los
+// dos modos: los coeficientes del form solo entran en la suma cuando ya
+// matchean el regex del contrato, así el texto no oscila mientras se tipea.
+// **Guardar NUNCA se deshabilita por la suma** — solo por la validación de
+// campos o mientras el submit está en vuelo.
+//
+// Coeficiente sugerido (#57): al tipear los m² de una fila se autocompleta
+// `coeficiente = m² / totalM2 del edificio` (6 decimales, PRD-04-01 §1.3).
+// Heurística deliberadamente simple: cada cambio de m² sobrescribe el
+// coeficiente. O sea, una edición manual del coeficiente se respeta hasta que
+// el usuario vuelva a tocar los m² de esa misma fila — no hace falta rastrear
+// "campo tocado", el gesto de cambiar la superficie ES el pedido de resugerir.
 //
 // Patrones de formularios según PRD-07-02 §6.1: validación onBlur, errores
-// inline, submit deshabilitado hasta válido + invariante cuadrada, loading
-// en el botón, toast de éxito/error, confirmación al cerrar con cambios.
+// inline, submit deshabilitado solo si el form es inválido, loading en el
+// botón, toast de éxito/error, confirmación al cerrar con cambios.
 import { useMemo, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -60,8 +67,9 @@ function calcularInvariante(sumaExistente, coeficientesForm) {
   return { resultante, delta, cuadra: delta.abs().lte(TOLERANCIA) };
 }
 
-// Texto de la invariante (la pieza clave del issue): se actualiza al editar
-// cualquier coeficiente del form. Verde cuando cierra en 1.000000.
+// Texto de la invariante: se actualiza al editar cualquier coeficiente del
+// form. Verde cuando cierra en 1.000000, warning cuando no (no es un error —
+// guardar sigue habilitado, #57).
 function FeedbackInvariante({ invariante }) {
   const { resultante, delta, cuadra } = invariante;
   if (cuadra) {
@@ -72,11 +80,25 @@ function FeedbackInvariante({ invariante }) {
     );
   }
   return (
-    <p className="text-sm font-medium text-danger tabular-nums">
+    <p className="text-sm font-medium text-warning tabular-nums">
       Suma actual: {resultante.toFixed(6)} — {delta.gte(0) ? 'falta' : 'sobra'}{' '}
       {delta.abs().toFixed(6)}
     </p>
   );
+}
+
+// Coeficiente sugerido a partir de los m² de la UF (PRD-04-01 §1.3):
+// coeficiente = m² / m² totales del edificio, con 6 decimales. Devuelve null
+// si no se puede calcular (m² vacío o no numérico, totalM2 ausente) o si el
+// resultado no matchea el regex del contrato (m² > totalM2 → > 1, o un m²
+// tan chico que redondea a 0.000000): en esos casos no se toca el campo y la
+// validación inline del coeficiente hace su trabajo.
+function coeficienteSugerido(m2, totalM2) {
+  const superficie = new Decimal(Number(m2) || 0);
+  const total = new Decimal(Number(totalM2) || 0);
+  if (superficie.lte(0) || total.lte(0)) return null;
+  const sugerido = superficie.div(total).toFixed(6);
+  return COEFICIENTE_REGEX.test(sugerido) ? sugerido : null;
 }
 
 // Campo con label + error inline (patrón §6.1, igual que EdificioNuevoPage).
@@ -97,6 +119,7 @@ const FILA_VACIA = { numero: '', tipo: 'departamento', m2: '', coeficiente: '' }
 
 export default function UnidadAltaDialog({
   edificioId,
+  edificioTotalM2,
   unidadesExistentes,
   isOpen,
   onClose,
@@ -114,6 +137,25 @@ export default function UnidadAltaDialog({
     () => sumarDecimales(unidadesExistentes.map((u) => u.coeficiente)),
     [unidadesExistentes],
   );
+
+  // Registro del campo m² que además sugiere el coeficiente de la fila. Cada
+  // cambio de m² sobrescribe el coeficiente (heurística del header).
+  const registrarM2 = (form, campoM2, campoCoeficiente) => {
+    const { onChange, ...resto } = form.register(campoM2);
+    return {
+      ...resto,
+      onChange: (event) => {
+        onChange(event);
+        const sugerido = coeficienteSugerido(event.target.value, edificioTotalM2);
+        if (sugerido !== null) {
+          form.setValue(campoCoeficiente, sugerido, {
+            shouldValidate: true,
+            shouldDirty: true,
+          });
+        }
+      },
+    };
+  };
 
   // ── Modo individual ────────────────────────────────────────────────────
   const formIndividual = useForm({
@@ -160,19 +202,26 @@ export default function UnidadAltaDialog({
   const mutation = useMutation({
     mutationFn: (unidades) =>
       api.post(`/api/edificios/${edificioId}/unidades`, unidades),
-    onSuccess: (creadas) => {
+    onSuccess: ({ unidades: creadas, coeficientes }) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.edificios.unidades(edificioId),
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.edificios.detail(edificioId),
       });
+      // La suma la reporta el backend (#57): si no cierra en 1 no es un error,
+      // pero el toast lo dice y el listado deja la alerta a la vista.
+      const delta = new Decimal(coeficientes.delta);
       toast.success(
         creadas.length === 1
           ? 'Unidad creada'
           : `${creadas.length} unidades creadas`,
         {
-          description: 'La suma de coeficientes del edificio quedó en 1.000000.',
+          description: coeficientes.cuadra
+            ? 'La suma de coeficientes del edificio quedó en 1.000000.'
+            : `La suma de coeficientes quedó en ${coeficientes.suma}: ${
+                delta.gte(0) ? 'faltan' : 'sobran'
+              } ${delta.abs().toFixed(6)}.`,
         },
       );
       formIndividual.reset();
@@ -180,7 +229,7 @@ export default function UnidadAltaDialog({
       onClose();
     },
     onError: (err) => {
-      // 422 COEFICIENTES_NO_CUADRAN: err.message ya incluye suma y delta.
+      // Duplicados / validación de campos (la suma nunca rechaza, #57).
       toast.error('No se pudieron guardar las unidades', {
         description: err.message ?? 'Error inesperado',
       });
@@ -224,8 +273,10 @@ export default function UnidadAltaDialog({
     onClose();
   };
 
+  // La suma de coeficientes NO condiciona el guardado (#57): solo la validación
+  // de campos y el submit en vuelo.
   const guardarDeshabilitado =
-    !formActivo.formState.isValid || !invariante.cuadra || mutation.isPending;
+    !formActivo.formState.isValid || mutation.isPending;
 
   return (
     <Dialog
@@ -234,8 +285,8 @@ export default function UnidadAltaDialog({
       title="Agregar unidades"
       description={
         sumaExistente.gt(0)
-          ? `El edificio ya tiene ${sumaExistente.toFixed(6)} de coeficiente asignado. La suma resultante debe cerrar en 1.000000.`
-          : 'Cargá las unidades funcionales del edificio. La suma de coeficientes debe cerrar en 1.000000.'
+          ? `El edificio ya tiene ${sumaExistente.toFixed(6)} de coeficiente asignado. Podés cargar de a poco: la suma total tiene que llegar a 1.000000.`
+          : 'Cargá las unidades funcionales del edificio. Podés cargarlas de a poco: la suma total tiene que llegar a 1.000000.'
       }
       size="xl"
     >
@@ -294,7 +345,7 @@ export default function UnidadAltaDialog({
               step="any"
               placeholder="85"
               aria-invalid={!!formIndividual.formState.errors.m2}
-              {...formIndividual.register('m2')}
+              {...registrarM2(formIndividual, 'm2', 'coeficiente')}
             />
           </Campo>
 
@@ -310,6 +361,10 @@ export default function UnidadAltaDialog({
               aria-invalid={!!formIndividual.formState.errors.coeficiente}
               {...formIndividual.register('coeficiente')}
             />
+            <p className="text-xs text-muted-foreground">
+              Se sugiere al cargar los m² (m² / {Number(edificioTotalM2)} m²
+              totales del edificio). Podés editarlo.
+            </p>
           </Campo>
 
           {/* Categorías A/B/C (Ley 941, PRD-04-01 §1.4) */}
@@ -419,7 +474,11 @@ export default function UnidadAltaDialog({
                     placeholder="85"
                     aria-label={`m² de la fila ${index + 1}`}
                     aria-invalid={!!errorsFila.m2}
-                    {...formBulk.register(`unidades.${index}.m2`)}
+                    {...registrarM2(
+                      formBulk,
+                      `unidades.${index}.m2`,
+                      `unidades.${index}.coeficiente`,
+                    )}
                   />
                   {errorsFila.m2 && (
                     <p className="text-xs text-destructive">

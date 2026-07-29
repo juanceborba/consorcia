@@ -5,8 +5,8 @@
 //   POST   /api/edificios             → crea edificio (org_admin) — S2-01
 //   PATCH  /api/edificios/:id         → actualiza datos (org_admin / gestor asignado) — S2-01
 //   DELETE /api/edificios/:id         → soft delete (activo=false, org_admin) — S2-01
-//   GET    /api/edificios/:id/unidades → unidades paginadas (?page=&limit=) — S2-02
-//   POST   /api/edificios/:id/unidades → alta bulk con invariante de coeficientes — S2-02
+//   GET    /api/edificios/:id/unidades → unidades paginadas (?page=&limit=) + estado de coeficientes — S2-02
+//   POST   /api/edificios/:id/unidades → alta bulk (la invariante es informativa, #57) — S2-02
 //
 // Aislamiento (PRD-02-01 §6.2): TODAS las queries scopean por
 // `organizacionId` (del JWT) + `edificioId`. El gestor además queda
@@ -21,9 +21,20 @@ import { tenant, validarEdificio } from '../middleware/tenant.middleware.js';
 import { autorizar } from '../middleware/rbac.middleware.js';
 import { validarBody } from '../middleware/validation.middleware.js';
 import { bulkUnidadesSchema } from '../schemas/unidad.schema.js';
-import { sumarCoeficientes, cuadra, errorCoeficientes } from '../services/coeficientes.js';
+import { sumarCoeficientes, estadoCoeficientes } from '../services/coeficientes.js';
 
 const router = Router();
+
+// Estado informativo de la suma de coeficientes del edificio (#57): siempre
+// sobre el set COMPLETO de unidades, nunca sobre la página pedida — la UI usa
+// este dato para la fila TOTAL y la alerta "faltan/sobran X".
+async function estadoCoeficientesEdificio(client, organizacionId, edificioId) {
+  const unidades = await client.unidad.findMany({
+    where: { organizacionId, edificioId },
+    select: { coeficiente: true },
+  });
+  return estadoCoeficientes(sumarCoeficientes(unidades.map((u) => u.coeficiente)));
+}
 
 // ─── Schemas Zod (S2-01, PRD-04-01 §2) ───────────────────────────────────
 // codigoPostal acepta CP numérico ("1425") o CPA argentino ("C1425BGW"):
@@ -128,7 +139,10 @@ router.get(
         },
         orderBy: { numero: 'asc' },
       });
-      return res.json({ ...req.edificio, unidades });
+      const coeficientes = estadoCoeficientes(
+        sumarCoeficientes(unidades.map((u) => u.coeficiente))
+      );
+      return res.json({ ...req.edificio, unidades, coeficientes });
     } catch (err) {
       return next(err);
     }
@@ -156,7 +170,7 @@ router.get(
       const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
       const where = { organizacionId: req.organizacionId, edificioId: req.edificio.id };
 
-      const [total, data] = await Promise.all([
+      const [total, data, coeficientes] = await Promise.all([
         prisma.unidad.count({ where }),
         prisma.unidad.findMany({
           where,
@@ -164,11 +178,13 @@ router.get(
           skip: (page - 1) * limit,
           take: limit,
         }),
+        estadoCoeficientesEdificio(prisma, req.organizacionId, req.edificio.id),
       ]);
 
       return res.json({
         data,
         pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+        coeficientes,
       });
     } catch (err) {
       return next(err);
@@ -177,10 +193,11 @@ router.get(
 );
 
 // POST /:id/unidades — alta bulk de unidades (S2-02). Body: array de UFs.
-// Invariante (PRD-04-01 §1.3): la suma de coeficientes del edificio
-// (existentes + lote) debe cerrar en 1.000000 — si no, 422
-// COEFICIENTES_NO_CUADRAN con suma y delta. En la práctica el lote inicial
-// de un edificio nuevo debe ser el set completo de UFs.
+// Invariante de coeficientes (PRD-04-01 §1.3) — INFORMATIVA desde #57: el lote
+// se guarda aunque la suma resultante del edificio no cierre en 1.000000, así
+// la carga puede ser incremental (la primera UF nunca podría cerrar en 1). La
+// respuesta informa el estado de la suma; el gate duro es la liquidación (S3).
+// Respuesta 201: `{ unidades: [...], coeficientes: { suma, delta, cuadra } }`.
 router.post(
   '/:id/unidades',
   requireAuth,
@@ -205,39 +222,29 @@ router.post(
         });
       }
 
-      // Validación + escritura en transacción interactiva con lock de la fila
-      // del edificio (SELECT ... FOR UPDATE): serializa las operaciones
-      // concurrentes sobre las unidades del mismo edificio y cierra la
-      // carrera TOCTOU de la invariante (review S2 #2 / SEC-01).
-      const resultado = await prisma.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT id FROM edificios WHERE id = ${req.edificio.id} FOR UPDATE`;
-
-        const existentes = await tx.unidad.findMany({
-          where: { organizacionId: req.organizacionId, edificioId: req.edificio.id },
-          select: { coeficiente: true },
-        });
-        const suma = sumarCoeficientes([
-          ...existentes.map((u) => u.coeficiente),
-          ...req.body.map((u) => u.coeficiente),
-        ]);
-        if (!cuadra(suma)) {
-          return { suma };
-        }
-
-        const creadas = await Promise.all(
+      // Escritura en transacción: el lote entra completo o no entra (atomicidad
+      // del alta bulk). Ya NO se toma el `SELECT ... FOR UPDATE` del edificio:
+      // su única razón era serializar la validación de la invariante (review S2
+      // #2 / SEC-01) que desde #57 no rechaza nada. La unicidad del número de
+      // UF bajo concurrencia la sigue garantizando el índice único
+      // (organizacion_id, edificio_id, numero) → P2002 → 409.
+      const creadas = await prisma.$transaction(async (tx) =>
+        Promise.all(
           req.body.map((u) =>
             tx.unidad.create({
               data: { ...u, organizacionId: req.organizacionId, edificioId: req.edificio.id },
             })
           )
-        );
-        return { creadas };
-      });
+        )
+      );
 
-      if (!('creadas' in resultado)) {
-        return res.status(422).json(errorCoeficientes(resultado.suma));
-      }
-      return res.status(201).json(resultado.creadas);
+      // Estado de la suma leído después del commit: informativo para la UI.
+      const coeficientes = await estadoCoeficientesEdificio(
+        prisma,
+        req.organizacionId,
+        req.edificio.id
+      );
+      return res.status(201).json({ unidades: creadas, coeficientes });
     } catch (err) {
       if (err.code === 'P2002') {
         return res.status(409).json({

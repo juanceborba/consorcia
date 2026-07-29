@@ -1,12 +1,14 @@
 // frontend/e2e/edificio-unidades.spec.js — E2E del slice S2 en browser real (S2-12)
-// Flujo del DoD del sprint: login admin → "Nuevo edificio" → alta → redirect
-// al detalle → breadcrumbs (Inicio / Edificios / {nombre} / Unidades) → tab
-// unidades → "+ Agregar" → modo bulk: primero con coeficientes que suman 0.9
-// (feedback "falta 0.100000" y Guardar deshabilitado) y después cuadrados en
-// 1.000000 → guardar → la tabla muestra las unidades y la fila TOTAL con
-// Σcoeficiente = 1.000000 en verde (text-success). Cleanup: baja del edificio
-// desde el tab Configuración (ConfirmDialog con requireText) + barrido por
-// API en afterEach por si el test falla a mitad de camino.
+// Flujo del DoD del sprint, con la UX de #57 (invariante informativa): login
+// admin → "Nuevo edificio" → alta → redirect al detalle → breadcrumbs (Inicio /
+// Edificios / {nombre} / Unidades) → tab unidades → "+ Agregar" → modo bulk con
+// coeficientes que suman 0.9: el feedback dice "falta 0.100000" pero Guardar
+// sigue HABILITADO → se guarda igual → la tabla muestra las unidades, la fila
+// TOTAL en warning y el Alert "Faltan 0.100000…" → se completa la unidad que
+// falta desde el modo individual, con el coeficiente SUGERIDO a partir de los m²
+// (m²/totalM2) → la fila TOTAL cierra en 1.000000 verde y el Alert desaparece.
+// Cleanup: baja del edificio desde el tab Configuración (ConfirmDialog con
+// requireText) + barrido por API en afterEach por si el test falla a mitad.
 // Requiere el stack levantado con el seed (make up && make db-seed).
 
 import { expect, test } from '@playwright/test';
@@ -67,7 +69,7 @@ test('crear edificio y agregar unidades (bulk con invariante)', async ({ page })
     await expect(nav.locator('[aria-current="page"]')).toHaveText('Unidades');
   });
 
-  await test.step('bulk que suma 0.9: feedback de delta y Guardar deshabilitado', async () => {
+  await test.step('bulk que suma 0.9: feedback de delta sin bloquear Guardar', async () => {
     await page.getByRole('button', { name: 'Agregar', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
@@ -100,36 +102,57 @@ test('crear edificio y agregar unidades (bulk con invariante)', async ({ page })
     // Blur del último coeficiente para revalidar el form
     await dialog.getByLabel('Coeficiente de la fila 5').press('Tab');
 
-    // Suma 0.900000 → invariante descuadrada (DoD: botón deshabilitado en UI)
+    // Suma 0.900000 → descuadra, pero desde #57 NO bloquea el guardado
     await expect(dialog).toContainText('Suma actual: 0.900000 — falta 0.100000');
     await expect(
       dialog.getByRole('button', { name: 'Guardar 5 unidades' }),
-    ).toBeDisabled();
+    ).toBeEnabled();
   });
 
-  await test.step('bulk corregido a 1.000000: Guardar habilitado y alta exitosa', async () => {
+  await test.step('#57: guarda con la suma en 0.9 y el listado muestra la alerta', async () => {
     const dialog = page.getByRole('dialog');
-    // 0.900000 + 0.100000: la fila 5 pasa de 0.050000 a 0.150000
-    await dialog.getByLabel('Coeficiente de la fila 5').fill('0.150000');
-    await dialog.getByLabel('Coeficiente de la fila 5').press('Tab');
-
-    await expect(dialog).toContainText('Suma actual: 1.000000 ✓');
-    const guardar = dialog.getByRole('button', { name: 'Guardar 5 unidades' });
-    await expect(guardar).toBeEnabled();
-    await guardar.click();
+    await dialog.getByRole('button', { name: 'Guardar 5 unidades' }).click();
     await expect(dialog).not.toBeVisible();
-  });
 
-  await test.step('la tabla muestra las unidades y TOTAL en 1.000000 verde', async () => {
     // exact: desde S4-08 cada fila tiene un botón "Residentes de la unidad 1A"
     await expect(
       page.getByRole('cell', { name: '1A', exact: true }),
     ).toBeVisible();
     await expect(page.getByRole('cell', { name: 'COCH', exact: true })).toBeVisible();
+
+    // Alert warning arriba de la tabla + fila TOTAL en warning (no danger)
+    const alerta = page.locator('[data-slot="alert"]');
+    await expect(alerta).toContainText('Faltan 0.100000.');
+    await expect(alerta).toContainText('La sumatoria total debe ser 1.');
+    const parcial = page.getByRole('cell', { name: '0.900000' });
+    await expect(parcial.locator('span')).toHaveClass(/text-warning/);
+  });
+
+  await test.step('#57: alta individual con coeficiente sugerido por m² cierra en 1.000000', async () => {
+    await page.getByRole('button', { name: 'Agregar', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    // El modal recuerda el modo del uso anterior (bulk): volver a "Una unidad"
+    await dialog.getByRole('tab', { name: 'Una unidad' }).click();
+
+    await dialog.locator('#unidad-numero').fill('3C');
+    // El edificio tiene 300 m² totales: 30 m² → 30/300 = 0.100000 sugerido
+    await dialog.locator('#unidad-m2').fill('30');
+    await expect(dialog.locator('#unidad-coeficiente')).toHaveValue('0.100000');
+    await expect(dialog).toContainText('Suma actual: 1.000000 ✓');
+
+    const guardar = dialog.getByRole('button', { name: 'Guardar unidad' });
+    await expect(guardar).toBeEnabled();
+    await guardar.click();
+    await expect(dialog).not.toBeVisible();
+  });
+
+  await test.step('la fila TOTAL cierra en 1.000000 verde y la alerta desaparece', async () => {
     await expect(page.getByRole('cell', { name: 'TOTAL' })).toBeVisible();
     const suma = page.getByRole('cell', { name: '1.000000' });
     await expect(suma).toBeVisible();
     await expect(suma.locator('span')).toHaveClass(/text-success/);
+    await expect(page.locator('[data-slot="alert"]')).toHaveCount(0);
   });
 
   await test.step('cleanup: baja del edificio con ConfirmDialog (requireText)', async () => {

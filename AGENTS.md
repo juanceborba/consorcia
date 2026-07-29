@@ -7,7 +7,7 @@ Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas 
 ## Estado del proyecto
 
 - **S1 cerrado** (2026-07-28): stack + auth JWT + Cerbos + edificios read + portal shell. Ver `docs/sprints/S1-fundacion.md`.
-- **S2 cerrado** (2026-07-28): edificios y unidades (CRUD + invariante de coeficientes, alta bulk con feedback inline, E2E + smoke). Ver `docs/sprints/S2-edificios-unidades.md`.
+- **S2 cerrado** (2026-07-28): edificios y unidades (CRUD + invariante de coeficientes, alta bulk con feedback inline, E2E + smoke). Ver `docs/sprints/S2-edificios-unidades.md`. Refinado en #57 (2026-07-29): **la invariante de coeficientes es informativa**, no bloquea la escritura de unidades (ver "Invariante de coeficientes" abajo).
 - **S4 cerrado** (2026-07-29): usuarios e identidad global (alta de staff por backoffice, residentes por invitación, switch de organización, seed multi-caso) + hardening S4-11 de la aceptación de invitaciones y del contexto de acceso. Ver `docs/sprints/S4-usuarios-identidad.md` y los reportes `S4-review.md` / `S4-qa.md` / `S4-security.md`.
 - **S3 listo para arrancar**: gastos + motor contable (liquidación, recibos PDF/QR Ley 941). Backlog: `docs/sprints/S3-gastos-liquidacion.md`. Issues en GitHub con milestone "S3".
 - Roadmap completo (S1→S6, slices verticales): `docs/ROADMAP.md`.
@@ -16,7 +16,7 @@ Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas 
 
 1. **NUNCA `npm install` en el host (macOS).** `node_modules` es un volumen Docker anónimo. Instalaciones SIEMPRE dentro del contenedor: `docker exec consorcIA-backend npm install <pkg>` (o `consorcIA-frontend`).
 2. **NUNCA resetear la DB** (`prisma migrate reset`, `down-volumes`) sin confirmación explícita del usuario. El seed es re-ejecutable: `make db-seed`.
-3. **Stack dockerizado primero:** `make up` levanta todo; `make health` verifica; `make smoke` corre 92 chequeos end-to-end. Antes de commitear backend: `docker exec consorcIA-backend npm test` en verde.
+3. **Stack dockerizado primero:** `make up` levanta todo; `make health` verifica; `make smoke` corre 101 chequeos end-to-end. Antes de commitear backend: `docker exec consorcIA-backend npm test` en verde.
    - **Gate automático:** el workflow `.github/workflows/ci.yml` corre los tests del backend + build del frontend en cada push a main y cada PR. Si el CI falla, el trabajo no está terminado — arreglarlo es prioridad sobre cualquier tarea nueva.
 4. **Sin git push sin permiso del usuario.** Commits locales con mensajes en español estilo conventional commits (`feat(s2): ...`).
 
@@ -26,6 +26,7 @@ Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas 
 - **EXCEPCIÓN documentada — la identidad es global** (S4-01, PRD-04-11 §2): el `Usuario` **no cuelga de la organización**. Su email es único en todo el sistema (lowercase) y no tiene `organizacionId` ni `rol`; una persona = un login = N unidades en N consorcios de N administraciones. Lo que sí está scopeado son los **vínculos**: `OrganizacionUsuario` (staff, con `activo` para la baja lógica), `GestorEdificio` (edificios de un gestor, filtrados por org al leerlos) e `UnidadUsuario` (residente). Consecuencias que hay que respetar al escribir código: nunca buscar un usuario "dentro de" una organización, la org activa de la sesión sale de la membresía (no del usuario), un residente puro **no tiene org activa** (`organizacionId: null`) y borrar una organización no borra a sus personas.
 - **Roles (set único):** `superadmin`, `org_admin`, `gestor` (nivel organización) / `consejo`, `propietario`, `inquilino`, `encargado`, `proveedor` (nivel edificio). Los roles de organización viven en `OrganizacionUsuario.rol` (solo `ORG_ADMIN`/`GESTOR` son staff); los de residente se derivan de `UnidadUsuario` — un residente **nunca** lleva membresía de organización.
 - **Motor contable determinístico:** montos SIEMPRE con decimal.js en el backend. Los LLMs interpretan/explican, jamás calculan.
+- **Invariante de coeficientes (PRD-04-01 §1.3, revisada en #57):** Σcoeficientes de un edificio = 1.000000 (tolerancia 0.000001). **No bloquea la carga de unidades**: el bulk, el PATCH y el DELETE guardan igual y devuelven `coeficientes: { suma, delta, cuadra }` (informativo, 6 decimales) — la UI lo muestra como alerta warning, nunca como error. El **gate duro es la liquidación (S3)**: antes de emitir expensas hay que llamar a `validarParaLiquidacion` (`backend/src/services/coeficientes.js`) y rechazar con `422 COEFICIENTES_NO_CUADRAN` si `ok === false`.
 - **Auth:** JWT access 15 min (claims `sub, email, org_id, roles, edificios_asignados`) + refresh opaco en Redis 7 días con rotación. Autorización: Cerbos PDP (`cerbos/policies/`), fail-closed.
 
 ## Flujo de trabajo con tareas
