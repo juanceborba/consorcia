@@ -1,0 +1,161 @@
+# GENERADO por app/state/engine.py — no editar a mano
+sprint: S1
+titulo: "Fundación visible"
+generado: 2026-07-29T17:55:15Z
+total: 14
+done: 14
+tareas:
+  - id: S1-01
+    titulo: "Schema Prisma completo"
+    seccion: "Backend — datos"
+    status: done
+    depende_de: []
+    desbloquea: [S1-02]
+    issue: 2
+    lote: A
+    fuente: [PRD-02-04]
+    claimed_by: null
+    score: 6.1
+  - id: S1-02
+    titulo: "Migración inicial + flujo db-migrate"
+    seccion: "Backend — datos"
+    status: done
+    depende_de: [S1-01]
+    desbloquea: [S1-03, S1-04]
+    issue: 3
+    lote: A
+    fuente: [PRD-02-04, PRD-08-05, PRD-05-04, PRD-02-02, PRD-04-01]
+    claimed_by: null
+    score: 9.2
+  - id: S1-03
+    titulo: "Seed data rico"
+    seccion: "Backend — datos"
+    status: done
+    depende_de: [S1-02]
+    desbloquea: []
+    issue: 4
+    lote: A
+    fuente: [PRD-02-04, PRD-08-05, PRD-05-04, PRD-02-02, PRD-04-01]
+    claimed_by: null
+    score: 3.3
+  - id: S1-04
+    titulo: "Auth JWT"
+    seccion: "Backend — auth y autorización"
+    status: done
+    depende_de: [S1-02]
+    desbloquea: [S1-05, S1-11]
+    issue: 5
+    lote: B
+    fuente: [PRD-08-05]
+    claimed_by: null
+    score: 9.4
+  - id: S1-05
+    titulo: "Middleware de organización"
+    seccion: "Backend — auth y autorización"
+    status: done
+    depende_de: [S1-04]
+    desbloquea: [S1-06, S1-07]
+    issue: 6
+    lote: B
+    fuente: [PRD-02-01]
+    claimed_by: null
+    score: 9.5
+  - id: S1-06
+    titulo: "Políticas Cerbos base"
+    seccion: "Backend — auth y autorización"
+    status: done
+    depende_de: [S1-05]
+    desbloquea: [S1-08]
+    issue: 7
+    lote: B
+    fuente: [PRD-05-04]
+    claimed_by: null
+    score: 6.6
+  - id: S1-07
+    titulo: "Endpoint organizaciones"
+    seccion: "Backend — API mínima del slice"
+    status: done
+    depende_de: [S1-05]
+    desbloquea: [S1-09]
+    issue: 8
+    lote: D
+    fuente: [PRD-02-04, PRD-08-05, PRD-05-04, PRD-02-02, PRD-04-01]
+    claimed_by: null
+    score: 6.7
+  - id: S1-08
+    titulo: "Endpoint edificios (read)"
+    seccion: "Backend — API mínima del slice"
+    status: done
+    depende_de: [S1-06]
+    desbloquea: [S1-09, S1-13]
+    issue: 9
+    lote: D
+    fuente: [PRD-04-01]
+    claimed_by: null
+    score: 9.8
+  - id: S1-09
+    titulo: "Tests de API del slice"
+    seccion: "Backend — API mínima del slice"
+    status: done
+    depende_de: [S1-07, S1-08]
+    desbloquea: [S1-14]
+    issue: 10
+    lote: F
+    fuente: [PRD-02-04, PRD-08-05, PRD-05-04, PRD-02-02, PRD-04-01]
+    claimed_by: null
+    score: 6.9
+  - id: S1-10
+    titulo: "Setup Tailwind + shadcn/ui + router"
+    seccion: "Frontend — shell"
+    status: done
+    depende_de: []
+    desbloquea: [S1-11]
+    issue: 11
+    lote: C
+    fuente: [PRD-02-02]
+    claimed_by: null
+    score: 7.0
+  - id: S1-11
+    titulo: "Auth store + pantalla login"
+    seccion: "Frontend — shell"
+    status: done
+    depende_de: [S1-10, S1-04]
+    desbloquea: [S1-12]
+    issue: 12
+    lote: E
+    fuente: [PRD-02-04, PRD-08-05, PRD-05-04, PRD-02-02, PRD-04-01]
+    claimed_by: null
+    score: 7.1
+  - id: S1-12
+    titulo: "Layout app"
+    seccion: "Frontend — shell"
+    status: done
+    depende_de: [S1-11]
+    desbloquea: [S1-13]
+    issue: 13
+    lote: E
+    fuente: [PRD-02-04, PRD-08-05, PRD-05-04, PRD-02-02, PRD-04-01]
+    claimed_by: null
+    score: 7.2
+  - id: S1-13
+    titulo: "Lista de edificios"
+    seccion: "Frontend — shell"
+    status: done
+    depende_de: [S1-12, S1-08]
+    desbloquea: [S1-14]
+    issue: 14
+    lote: E
+    fuente: [PRD-04-01]
+    claimed_by: null
+    score: 7.3
+  - id: S1-14
+    titulo: "Smoke E2E + docs"
+    seccion: Cierre
+    status: done
+    depende_de: [S1-09, S1-13]
+    desbloquea: []
+    issue: 15
+    lote: F
+    fuente: [PRD-02-04, PRD-08-05, PRD-05-04, PRD-02-02, PRD-04-01]
+    claimed_by: null
+    score: 4.4

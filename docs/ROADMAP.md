@@ -25,7 +25,7 @@
 3. **Seed data rico desde S1.** Toda feature se desarrolla y demuestra contra datos realistas.
 4. **Tests matemáticos del motor contable son innegociables** (100% liquidaciones sin errores).
 5. **Stack local:** `make up` + `make db-migrate` + `make db-seed` como ritual diario.
-6. **Cada tarea = 1 issue** en GitHub. Los agentes claman issues, trabajan en ramas `task/<n>-<slug>` y referencian el issue en el PR/commit.
+6. **Cada tarea = 1 issue** en GitHub. La verdad del estado vive en `app/state/events/` (event-sourced, ver `app/state/README.md`); los issues son la **vista operativa** (labels `status:*` sincronizados por `/state sync`). Los agentes claman tareas con `/state claim <id>`, trabajan en ramas `task/<n>-<slug>` y referencian el issue en el PR/commit. Trabajo nuevo sin cobertura va a la **bandeja de propuestas** (`docs/proposals/`) y solo se convierte en issue con aprobación humana (`/state activar <id>`). Dashboard del progreso: `../../vault/00_MOC/Estado de Implementación.md` (generado, no editar a mano).
 7. **Sprints coordinados con conductor** (`.nanostack/conductor/`): fases think → plan → build → review/qa/security → ship.
 
 ## Cuentas externas a gestionar (no bloquean S1)

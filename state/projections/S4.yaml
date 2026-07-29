@@ -1,0 +1,128 @@
+# GENERADO por app/state/engine.py — no editar a mano
+sprint: S4
+titulo: "Usuarios e identidad"
+generado: 2026-07-29T17:55:15Z
+total: 11
+done: 11
+tareas:
+  - id: S4-01
+    titulo: "Migración a identidad global"
+    seccion: Backend
+    status: done
+    depende_de: []
+    desbloquea: [S4-02, S4-05]
+    issue: 42
+    lote: A
+    fuente: [PRD-02-04]
+    claimed_by: null
+    score: 9.1
+  - id: S4-02
+    titulo: "Modelo Invitación + endpoints"
+    seccion: Backend
+    status: done
+    depende_de: [S4-01]
+    desbloquea: [S4-03, S4-04, S4-08]
+    issue: 43
+    lote: A
+    fuente: [PRD-04-11]
+    claimed_by: null
+    score: 12.2
+  - id: S4-03
+    titulo: "Endpoints staff (Workflow A)"
+    seccion: Backend
+    status: done
+    depende_de: [S4-02]
+    desbloquea: [S4-06, S4-07]
+    issue: 44
+    lote: B
+    fuente: [PRD-04-11, PRD-02-04, PRD-07-03, PRD-04-05]
+    claimed_by: null
+    score: 9.3
+  - id: S4-04
+    titulo: "Endpoints residentes (Workflow B)"
+    seccion: Backend
+    status: done
+    depende_de: [S4-02]
+    desbloquea: [S4-06, S4-08]
+    issue: 45
+    lote: B
+    fuente: [PRD-04-11, PRD-02-04, PRD-07-03, PRD-04-05]
+    claimed_by: null
+    score: 9.4
+  - id: S4-05
+    titulo: "Cambio de organización activa"
+    seccion: Backend
+    status: done
+    depende_de: [S4-01]
+    desbloquea: [S4-06, S4-09]
+    issue: 46
+    lote: B
+    fuente: [PRD-04-11, PRD-02-04, PRD-07-03, PRD-04-05]
+    claimed_by: null
+    score: 9.5
+  - id: S4-06
+    titulo: "Tests de API del slice"
+    seccion: Backend
+    status: done
+    depende_de: [S4-03, S4-04, S4-05]
+    desbloquea: [S4-10]
+    issue: 47
+    lote: C
+    fuente: [PRD-04-11, PRD-02-04, PRD-07-03, PRD-04-05]
+    claimed_by: null
+    score: 6.6
+  - id: S4-07
+    titulo: "Backoffice de staff"
+    seccion: Frontend
+    status: done
+    depende_de: [S4-03]
+    desbloquea: [S4-09]
+    issue: 48
+    lote: D
+    fuente: [PRD-04-11, PRD-02-04, PRD-07-03, PRD-04-05]
+    claimed_by: null
+    score: 6.7
+  - id: S4-08
+    titulo: "Residentes + activación + register"
+    seccion: Frontend
+    status: done
+    depende_de: [S4-02, S4-04]
+    desbloquea: [S4-10]
+    issue: 49
+    lote: D
+    fuente: [PRD-04-11, PRD-02-04, PRD-07-03, PRD-04-05]
+    claimed_by: null
+    score: 6.8
+  - id: S4-09
+    titulo: "Selector de organización en header"
+    seccion: Frontend
+    status: done
+    depende_de: [S4-05, S4-07]
+    desbloquea: [S4-10]
+    issue: 50
+    lote: D
+    fuente: [PRD-04-11, PRD-02-04, PRD-07-03, PRD-04-05]
+    claimed_by: null
+    score: 6.9
+  - id: S4-10
+    titulo: "Seed multi-caso + smoke + docs"
+    seccion: Cierre
+    status: done
+    depende_de: [S4-06, S4-08, S4-09]
+    desbloquea: []
+    issue: 51
+    lote: E
+    fuente: [PRD-04-11, PRD-07-03]
+    claimed_by: null
+    score: 4.0
+  - id: S4-11
+    titulo: "Hardening de invitaciones y contexto de acceso"
+    seccion: Cierre
+    status: done
+    depende_de: []
+    desbloquea: []
+    issue: 53
+    lote: null
+    fuente: [PRD-04-11]
+    claimed_by: null
+    score: 4.1

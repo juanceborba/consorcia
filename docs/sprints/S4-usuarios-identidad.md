@@ -1,5 +1,6 @@
 # S4 — Usuarios e identidad (backlog)
 
+> GENERADO desde app/state/ — editar el estado con engine.py, no este archivo
 > **Objetivo:** alta de staff por backoffice y de residentes por invitación, con identidad global por email (una persona = un login = N unidades en N consorcios).
 > **Spec canónica:** `PRD-04-11 Gestión de Usuarios e Identidad` (vault). También toca `PRD-02-04` (schema), `PRD-07-03` (rutas) y `PRD-04-05` (portal, solo sync de la suposición de org activa).
 > **Por qué antes del portal:** el portal residente (S5) necesita residentes reales logueados; este slice los crea.
@@ -34,15 +35,27 @@
 - [x] **S4-10 Seed multi-caso + smoke + docs.** Seed con los 7 casos de PRD-04-11 §10 (2 gestores, Org B con edificio+UFs, residente multi-consorcio, inquilino simple, propietario multi-UF, invitación pendiente) — credenciales documentadas en AGENTS.md. Extender `scripts/smoke.sh` (invitar staff + aceptar invitación + switch org). Actualizar AGENTS.md (identidad global como excepción al "todo cuelga de la organización"), PRD-07-03 (rutas nuevas) y checkboxes. `npm test` en verde (S1–S4).
   - _Hecho: seed con 2 organizaciones (Org B "Administración Sur S.R.L." + Edificio Lomas), residentes SIN membresía staff, invitación pendiente con token fijo `seed-invitacion-pendiente`, limpieza del residuo E2E y desactivación de membresías ajenas → idempotente. Smoke §3.8 con 26 pasos nuevos (86 en total). AGENTS.md con la identidad global como excepción documentada + tabla de credenciales; README sincronizado._
   - _Depende de: S4-06, S4-08, S4-09._
+- [x] **S4-11 Hardening de invitaciones y contexto de acceso.** Fixes SEC-01/02/03, review S1, QA-01/02/03 del sprint S4: aceptación de invitación sobre cuenta activada no emite sesión (200 yaActivada + redirect a login), no fijación de password sobre identidad provisionada. Detalle en issue #53 y reportes docs/sprints/S4-review/qa/security.md.
+  - _Depende de: nada._
 
 ## Dependencias entre tareas
 
 ```
-S4-01 ──► S4-02 ──► S4-03 ──┬─► S4-06 ─────────────┐
-       │           └─► S4-07 │                     │
-       ├──► S4-04 ───────────┤                     │
-       ├──► S4-05 ──► S4-09 ─┴─────────────────────► S4-10
-       └────────────────────► S4-08 ───────────────┘
+S4-01 ──► S4-02
+S4-02 ──► S4-03
+S4-02 ──► S4-04
+S4-01 ──► S4-05
+S4-03 ──► S4-06
+S4-04 ──► S4-06
+S4-05 ──► S4-06
+S4-03 ──► S4-07
+S4-02 ──► S4-08
+S4-04 ──► S4-08
+S4-05 ──► S4-09
+S4-07 ──► S4-09
+S4-06 ──► S4-10
+S4-08 ──► S4-10
+S4-09 ──► S4-10
 ```
 
 **Lotes paralelos sugeridos:** Lote A (S4-01→02), Lote B (S4-03/04/05), Lote C (S4-06), Lote D (S4-07/08/09), Lote E (S4-10).
