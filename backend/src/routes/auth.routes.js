@@ -131,8 +131,10 @@ router.post('/login', validarBody(loginSchema), async (req, res, next) => {
       where: { email, activo: true, deletedAt: null },
     });
 
-    // Mismo 401 para usuario inexistente y password incorrecta (no oráculo)
-    const passwordOk = usuario && (await bcrypt.compare(password, usuario.passwordHash));
+    // Mismo 401 para usuario inexistente, cuenta sin activar (passwordHash
+    // null, S4-02) y password incorrecta: no se filtra qué falló.
+    const passwordOk =
+      usuario?.passwordHash && (await bcrypt.compare(password, usuario.passwordHash));
     if (!passwordOk) {
       return res.status(401).json({
         error: { code: 'CREDENCIALES_INVALIDAS', message: 'Email o password incorrectos' },
