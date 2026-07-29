@@ -397,6 +397,21 @@ describe('gastos (S3-02)', () => {
     assert.equal(detalle.data.editable, false);
     assert.equal(detalle.data.liquidaciones.length, 1);
     assert.equal(detalle.data.liquidaciones[0].estado, 'APROBADA');
+
+    // Decisión 7 (S3-08): la LISTA trae el mismo flag por fila, para que la UI
+    // apague las acciones de la fila sin pedir el detalle de cada gasto.
+    const noCongelado = await crear(
+      admin.accessToken,
+      torre.id,
+      gastoBase({ concepto: `Suelto ${SUFIJO}`, periodo: PERIODO_LIQUIDADO })
+    );
+    assert.equal(noCongelado.status, 201);
+
+    const lista = await listar(admin.accessToken, torre.id, { periodo: PERIODO_LIQUIDADO });
+    assert.equal(lista.status, 200);
+    const porId = new Map(lista.data.data.map((g) => [g.id, g.editable]));
+    assert.equal(porId.get(alta.data.id), false, 'el gasto liquidado no es editable');
+    assert.equal(porId.get(noCongelado.data.id), true, 'el gasto suelto sí lo es');
   });
 
   it('una liquidación en BORRADOR no congela el gasto', async () => {

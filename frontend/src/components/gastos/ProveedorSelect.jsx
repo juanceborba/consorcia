@@ -54,12 +54,29 @@ export default function ProveedorSelect({
   permitirAlta = true,
 }) {
   const [query, setQuery] = useState('');
+  const [busqueda, setBusqueda] = useState('');
   const [abierto, setAbierto] = useState(false);
   const [altaOpen, setAltaOpen] = useState(false);
 
+  // Debounce de 300 ms, igual que el buscador de ProveedoresPage: sin esto cada
+  // tecla del combobox dispara una query al backend (el hook no lo trae — su
+  // header lo delega explícitamente en el consumidor).
+  useEffect(() => {
+    const timer = setTimeout(() => setBusqueda(query), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
   // El listado solo trae ACTIVOS (default del endpoint): un proveedor dado de
   // baja no se ofrece para gastos nuevos, aunque siga visible en los viejos.
-  const { proveedores, cargando } = useProveedores({ q: query, limit: 50 });
+  const { proveedores, cargando, refrescando } = useProveedores({
+    q: busqueda,
+    limit: 50,
+  });
+
+  // "Buscando…" cubre también la ventana del debounce: mientras el término
+  // tipeado no llegó al backend, los resultados en pantalla son del anterior y
+  // decir "ningún proveedor coincide" sería mentira.
+  const buscando = cargando || refrescando || query !== busqueda;
 
   const opciones = useMemo(() => proveedores.map(aOpcion), [proveedores]);
 
@@ -116,7 +133,7 @@ export default function ProveedorSelect({
 
         <ComboboxContent>
           <ComboboxEmpty>
-            {cargando
+            {buscando
               ? 'Buscando…'
               : query.trim()
                 ? `Ningún proveedor coincide con "${query.trim()}".`
@@ -170,6 +187,9 @@ export default function ProveedorSelect({
       {permitirAlta && (
         <ProveedorFormDialog
           isOpen={altaOpen}
+          // El diálogo abre con lo que el usuario ya venía tipeando, que es lo
+          // que promete el botón `Crear "…"`.
+          razonSocialInicial={query.trim()}
           onClose={() => setAltaOpen(false)}
           onGuardado={(proveedor) => elegir(aOpcion(proveedor))}
         />

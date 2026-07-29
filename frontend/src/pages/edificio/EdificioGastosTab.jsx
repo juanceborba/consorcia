@@ -42,10 +42,34 @@
 //    trae algún gasto en otra moneda, se muestra una nota advirtiendo que el
 //    total mezcla monedas. Es lo honesto que se puede hacer sin tocar el
 //    endpoint; el fix de fondo (agregado por moneda) es del dashboard, S3-15.
-import { useMemo } from 'react';
+//
+// 6. AGREGADO EN S3-08: la escritura. El botón "Nuevo gasto" y las acciones de
+//    fila (editar / eliminar) solo aparecen para el org_admin: la policy
+//    `gasto.yaml` le da al gestor únicamente `read` (decisión 1 de S3-02), así
+//    que mostrarle los botones sería ofrecerle un 403. Las acciones de un gasto
+//    ya liquidado van DESHABILITADAS con el motivo en el `title`, usando el
+//    `editable` que trae cada fila (decisión 7 de S3-02): el DoD del sprint pide
+//    que la UI lo impida, no que el usuario descubra el 409 recién después de
+//    completar el formulario.
+import { useMemo, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router';
-import { ChevronLeft, ChevronRight, Receipt } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { ChevronLeft, ChevronRight, MoreHorizontal, Plus, Receipt } from 'lucide-react';
+import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query-keys';
 import { useGastos } from '@/hooks/useGastos';
+import { SIN_ROLES, useAuthStore } from '@/stores/auth.store';
+import AyudaLink from '@/components/ayuda/AyudaLink';
+import GastoFormDialog from '@/components/gastos/GastoFormDialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   formatearMonto,
   formatearPeriodo,
@@ -56,6 +80,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -130,7 +155,7 @@ function GastosSkeleton() {
 
 // Empty state (§6.2): nunca tabla vacía sin mensaje. El copy distingue "no hay
 // gastos todavía" de "los filtros no matchean", que son dos problemas distintos.
-function EmptyState({ hayFiltros, onLimpiar }) {
+function EmptyState({ hayFiltros, onLimpiar, puedeEscribir, onNuevo }) {
   return (
     <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed p-12 text-center">
       <Receipt className="size-8 text-muted-foreground" />
@@ -144,11 +169,67 @@ function EmptyState({ hayFiltros, onLimpiar }) {
           ? 'Probá con otro período o quitá los filtros de categoría y tipo.'
           : 'Cargá los gastos del período para poder liquidar las expensas.'}
       </p>
-      {hayFiltros && (
+      {hayFiltros ? (
         <Button variant="outline" size="sm" onClick={onLimpiar}>
           Limpiar filtros
         </Button>
+      ) : (
+        puedeEscribir && (
+          // El copy es distinto del botón del header a propósito: los dos están
+          // en pantalla cuando el edificio no tiene gastos, y dos controles con
+          // la misma etiqueta son ambiguos para un lector de pantalla (y para un
+          // spec de Playwright).
+          <Button className="mt-2" onClick={onNuevo}>
+            <Plus className="size-4" />
+            Cargar el primer gasto
+          </Button>
+        )
       )}
+    </div>
+  );
+}
+
+// Acciones de fila (decisión 6). Un gasto ya liquidado (`editable === false`)
+// las tiene deshabilitadas con el motivo en el `title`: el backend responde 409
+// y no hay forma de editarlo sin anular la liquidación primero.
+function AccionesGasto({ gasto, onEditar, onEliminar }) {
+  const congelado = gasto.editable === false;
+  const motivo = congelado
+    ? 'El gasto forma parte de una liquidación aprobada: para modificarlo hay que anularla'
+    : undefined;
+  return (
+    <div className="flex justify-end">
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Acciones de ${gasto.concepto}`}
+            />
+          }
+        >
+          <MoreHorizontal className="size-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto min-w-44">
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              disabled={congelado}
+              title={motivo}
+              onClick={onEditar}
+            >
+              Editar
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={congelado}
+              title={motivo}
+              onClick={onEliminar}
+            >
+              Eliminar
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -166,6 +247,33 @@ function EstadoError() {
 export default function EdificioGastosTab() {
   const { edificio } = useOutletContext();
   const [searchParams, setSearchParams] = useSearchParams();
+  const queryClient = useQueryClient();
+
+  // Decisión 6: el gestor solo lee (policy `gasto.yaml`).
+  const roles = useAuthStore((s) => s.user?.roles ?? SIN_ROLES);
+  const puedeEscribir = roles.some((r) => ['org_admin', 'superadmin'].includes(r));
+
+  const [altaOpen, setAltaOpen] = useState(false);
+  const [editando, setEditando] = useState(null);
+  const [borrando, setBorrando] = useState(null);
+
+  // El DELETE es un soft delete (`deletedAt`, Ley 941): el gasto desaparece de
+  // la lista y de las liquidaciones futuras, pero sigue en la DB. El copy del
+  // ConfirmDialog lo dice para no prometer un borrado que no ocurre.
+  const bajaMutation = useMutation({
+    mutationFn: (gasto) => api.del(`/api/gastos/${gasto.id}`),
+    onSuccess: (_respuesta, gasto) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.gastos.all });
+      setBorrando(null);
+      toast.success('Gasto eliminado', { description: gasto.concepto });
+    },
+    onError: (err) => {
+      // El 409 llega si el gasto se liquidó mientras el diálogo estaba abierto.
+      toast.error('No se pudo eliminar el gasto', {
+        description: err.message ?? 'Error inesperado',
+      });
+    },
+  });
 
   // El default del período es el mes corriente; los períodos ofrecidos son los
   // últimos 12 (PRD-04-02 §3.2). Se memoiza para que un re-render no genere una
@@ -230,7 +338,10 @@ export default function EdificioGastosTab() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Gastos ({total})</CardTitle>
+        <CardTitle className="flex items-center gap-1">
+          Gastos ({total})
+          <AyudaLink variant="icon" topic="gastos/carga" />
+        </CardTitle>
         <CardDescription>
           {periodo === TODOS_LOS_PERIODOS
             ? 'Todos los períodos'
@@ -238,6 +349,14 @@ export default function EdificioGastosTab() {
           {' · '}
           {total === 1 ? '1 gasto' : `${total} gastos`}
         </CardDescription>
+        {puedeEscribir && (
+          <CardAction>
+            <Button onClick={() => setAltaOpen(true)}>
+              <Plus className="size-4" />
+              Nuevo gasto
+            </Button>
+          </CardAction>
+        )}
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4">
@@ -300,7 +419,12 @@ export default function EdificioGastosTab() {
         </div>
 
         {gastos.length === 0 ? (
-          <EmptyState hayFiltros={hayFiltros} onLimpiar={limpiarFiltros} />
+          <EmptyState
+            hayFiltros={hayFiltros}
+            onLimpiar={limpiarFiltros}
+            puedeEscribir={puedeEscribir}
+            onNuevo={() => setAltaOpen(true)}
+          />
         ) : (
           <>
             {/* `refrescando` = está trayendo otra página con la anterior en
@@ -314,6 +438,11 @@ export default function EdificioGastosTab() {
                     <TableHead>Categoría</TableHead>
                     <TableHead>Tipo</TableHead>
                     <TableHead>Período</TableHead>
+                    {puedeEscribir && (
+                      <TableHead>
+                        <span className="sr-only">Acciones</span>
+                      </TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -334,6 +463,15 @@ export default function EdificioGastosTab() {
                       <TableCell className="tabular-nums">
                         {gasto.periodo}
                       </TableCell>
+                      {puedeEscribir && (
+                        <TableCell>
+                          <AccionesGasto
+                            gasto={gasto}
+                            onEditar={() => setEditando(gasto)}
+                            onEliminar={() => setBorrando(gasto)}
+                          />
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -347,6 +485,7 @@ export default function EdificioGastosTab() {
                     <TableCell />
                     <TableCell />
                     <TableCell />
+                    {puedeEscribir && <TableCell />}
                   </TableRow>
                 </TableFooter>
               </Table>
@@ -390,6 +529,40 @@ export default function EdificioGastosTab() {
           </>
         )}
       </CardContent>
+
+      {/* Alta y edición comparten el diálogo; se montan por separado para que
+          `gasto` no cambie de null a un objeto sobre el mismo form abierto. */}
+      {puedeEscribir && (
+        <>
+          <GastoFormDialog
+            edificio={edificio}
+            isOpen={altaOpen}
+            onClose={() => setAltaOpen(false)}
+          />
+
+          <GastoFormDialog
+            edificio={edificio}
+            gasto={editando}
+            isOpen={editando !== null}
+            onClose={() => setEditando(null)}
+          />
+
+          <ConfirmDialog
+            isOpen={borrando !== null}
+            onClose={() => setBorrando(null)}
+            onConfirm={() => bajaMutation.mutate(borrando)}
+            loading={bajaMutation.isPending}
+            title="Eliminar el gasto"
+            variant="danger"
+            confirmText="Eliminar"
+            description={
+              borrando
+                ? `"${borrando.concepto}" (${formatearMonto(borrando.monto, borrando.moneda)}) deja de contarse en la liquidación del período. El registro se conserva en el sistema porque los gastos son documentación del consorcio (Ley 941).`
+                : ''
+            }
+          />
+        </>
+      )}
     </Card>
   );
 }

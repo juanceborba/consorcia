@@ -53,6 +53,7 @@ function Campo({ id, label, error, hint, children }) {
 
 export default function ProveedorFormDialog({
   proveedor = null,
+  razonSocialInicial = '',
   isOpen,
   onClose,
   onGuardado,
@@ -81,9 +82,18 @@ export default function ProveedorFormDialog({
   // Cada apertura reinicia el form: alta → vacío, edición → los datos de la
   // fila. Sin esto, cerrar y abrir sobre otro proveedor arrastra los valores del
   // anterior.
+  // `razonSocialInicial` es lo que el alta inline del selector de proveedor ya
+  // tenía tipeado (S3-08): su botón promete `Crear "Plomería del Sur"`, así que
+  // el diálogo tiene que abrir con ese nombre puesto en vez de en blanco.
   useEffect(() => {
-    if (isOpen) reset(esEdicion ? aFormulario(proveedor) : PROVEEDOR_VACIO);
-  }, [isOpen, esEdicion, proveedor, reset]);
+    if (isOpen) {
+      reset(
+        esEdicion
+          ? aFormulario(proveedor)
+          : { ...PROVEEDOR_VACIO, razonSocial: razonSocialInicial },
+      );
+    }
+  }, [isOpen, esEdicion, proveedor, razonSocialInicial, reset]);
 
   const mutation = useMutation({
     mutationFn: (valores) =>

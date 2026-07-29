@@ -56,6 +56,14 @@
 // 6. `monto` viaja como STRING en las respuestas (`"12345.67"`). Prisma
 //    devuelve un `Decimal` que `JSON.stringify` serializaría como número,
 //    reintroduciendo el float justo en el borde de salida.
+//
+// 7. AGREGADO EN S3-08: cada fila de la lista trae `editable`, el mismo flag que
+//    el `GET /:id` (decisión 2). El DoD del sprint pide que la acción de editar
+//    un gasto liquidado esté DESHABILITADA en la UI, no que falle con 409 al
+//    intentarlo — y la lista es donde vive esa acción. Sin el flag por fila, el
+//    frontend tendría que pedir el detalle de cada gasto de la página (N+1) para
+//    saber qué botones apagar. Se resuelve con UNA query por página
+//    (`gastosCongelados`), no una por gasto.
 
 import { Router } from 'express';
 import Decimal from 'decimal.js';
@@ -182,6 +190,18 @@ async function liquidacionesCongelantes(gastoId) {
   return [...porId.values()];
 }
 
+// Decisión 7: ids congelados de un lote de gastos, en una sola query. El GET
+// /:id resuelve esto por gasto; la lista lo necesita para toda la página.
+async function gastosCongelados(ids) {
+  if (ids.length === 0) return new Set();
+  const detalles = await prisma.liquidacionDetalle.findMany({
+    where: { gastoId: { in: ids }, liquidacion: { estado: { in: ESTADOS_CONGELANTES } } },
+    select: { gastoId: true },
+    distinct: ['gastoId'],
+  });
+  return new Set(detalles.map((d) => d.gastoId));
+}
+
 // Recurso Cerbos: scope doble org + edificio (contrato en cerbos/policies/gasto.yaml).
 const recursoDeEdificio = (req) => ({
   id: req.edificio.id,
@@ -267,8 +287,10 @@ gastosDeEdificioRouter.get(
       ]);
 
       const total = agregado._count._all;
+      // Decisión 7: `editable` por fila, en UNA query para toda la página.
+      const congelados = await gastosCongelados(gastos.map((g) => g.id));
       return res.json({
-        data: gastos.map(serializar),
+        data: gastos.map((g) => ({ ...serializar(g), editable: !congelados.has(g.id) })),
         pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
         totales: {
           cantidad: total,

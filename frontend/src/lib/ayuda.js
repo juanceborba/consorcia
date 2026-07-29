@@ -267,6 +267,63 @@ export const AYUDA_TOPICS = {
     ],
   },
 
+  // Carga de gastos (S3-08, PRD-04-02 §1.1/§4.2). Es el topic del tab `gastos`
+  // del edificio: explica los cuatro datos que el formulario pide y que no son
+  // obvios (proveedor, rubro, categoría, período vs fecha) y por qué un gasto
+  // liquidado no se toca.
+  'gastos/carga': {
+    ruta: ['Gastos', 'Cargar un gasto'],
+    titulo: 'Cargar un gasto',
+    relacionados: [
+      'edificios/unidades/categorias-gastos',
+      'gastos/proveedores',
+      'gastos/rubros',
+    ],
+    pantallas: ['src/pages/edificio/EdificioGastosTab.jsx'],
+    secciones: [
+      {
+        titulo: '¿Qué es un gasto?',
+        cuerpo:
+          'Cada erogación del consorcio se carga como un gasto del edificio: el sueldo del encargado, el seguro, una reparación. Al liquidar el período, el sistema toma todos los gastos cargados y los reparte entre las unidades. Lo que no está cargado no se cobra.',
+      },
+      {
+        titulo: 'Período y fecha no son lo mismo',
+        cuerpo:
+          'La fecha del gasto es cuándo se hizo (la de la factura). El período es en qué liquidación entra. Suelen coincidir, pero no siempre: una factura del 28 de junio que llegó tarde se puede cargar con fecha de junio y período de julio, y así se cobra en las expensas de julio.',
+      },
+      {
+        titulo: 'Rubro y categoría son dos cosas distintas',
+        cuerpo:
+          'El rubro (Mantenimiento › Plomería) sirve para analizar en qué gasta el consorcio. La categoría A/B/C decide QUIÉNES lo pagan. Un mismo rubro puede tener gastos de categorías distintas: la reparación de un ascensor es "Mantenimiento" y categoría B; la del portón, "Mantenimiento" y categoría A.',
+        items: [
+          'A — lo pagan todas las unidades, según su coeficiente.',
+          'B — solo las unidades que tienen ese servicio tildado.',
+          'C — solo las unidades del sector.',
+        ],
+      },
+      {
+        titulo: 'Por qué el servicio y el sector son un desplegable',
+        cuerpo:
+          'Las opciones de las categorías B y C salen de lo que declaran las unidades del edificio. Si el gasto apuntara a un servicio que ninguna unidad tiene, no habría entre quiénes repartirlo y fallaría la liquidación de todo el mes. Si te falta una opción, agregala primero en la unidad que corresponda: aparece acá enseguida.',
+      },
+      {
+        titulo: 'El proveedor es obligatorio',
+        cuerpo:
+          'Ningún gasto se carga sin proveedor: es lo que permite seguir a quién se le paga y ver el ranking de gastos por proveedor. Si el proveedor no está en el directorio, se crea desde el mismo formulario con "Crear proveedor" y queda elegido, sin perder lo que ya cargaste.',
+      },
+      {
+        titulo: 'Un gasto liquidado ya no se edita',
+        cuerpo:
+          'Cuando la liquidación del período está aprobada, sus gastos quedan congelados: editar o eliminar uno cambiaría un recibo ya emitido. Las acciones de esas filas aparecen deshabilitadas. Para corregir un gasto así hay que anular la liquidación, corregirlo y volver a generarla.',
+      },
+      {
+        titulo: 'Eliminar no borra del sistema',
+        cuerpo:
+          'Al eliminar un gasto deja de contarse en las liquidaciones, pero el registro se conserva: la Ley 941 exige guardar la documentación del consorcio.',
+      },
+    ],
+  },
+
   // Primer topic: categorías A/B/C del alta de unidad (Ley 941,
   // PRD-04-01 §1.4). El reparto que describe es el del motor de liquidación
   // de S3 (S3-03: A → todas las UF, B → UF con ese servicio, C → UF del sector).
