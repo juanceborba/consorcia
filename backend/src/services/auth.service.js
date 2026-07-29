@@ -23,14 +23,33 @@ export const rolCanonico = (rol) => rol.toLowerCase();
 // Email como identificador global: siempre lowercase (PRD-04-11 §7).
 export const normalizarEmail = (email) => email.trim().toLowerCase();
 
-// Edificios asignados a un gestor (tabla gestor_edificios). Solo aplica al
-// rol GESTOR; para el resto devuelve siempre [].
-async function obtenerEdificiosAsignados(usuarioId) {
+// Edificios asignados a un gestor (tabla gestor_edificios) DENTRO de una
+// organización. El scope importa: con identidad global la misma persona puede
+// gestionar edificios en varias organizaciones, y el claim
+// `edificios_asignados` describe solo la org activa de la sesión (S4-05).
+// Solo aplica al rol GESTOR; para el resto devuelve siempre [].
+async function obtenerEdificiosAsignados(usuarioId, organizacionId) {
   const asignaciones = await prisma.gestorEdificio.findMany({
-    where: { usuarioId },
+    where: { usuarioId, edificio: { organizacionId } },
     select: { edificioId: true },
   });
   return asignaciones.map((a) => a.edificioId);
+}
+
+// Membresías activas del usuario, para el selector de organización del header
+// (PRD-04-11 §4.6). Van en el DTO de usuario de todas las respuestas de auth
+// así el front sabe si hay algo entre lo que elegir sin un endpoint extra.
+export async function membresiasActivas(usuarioId) {
+  const membresias = await prisma.organizacionUsuario.findMany({
+    where: { usuarioId, activo: true },
+    select: { rol: true, organizacion: { select: { id: true, nombre: true } } },
+    orderBy: [{ organizacion: { nombre: 'asc' } }, { organizacionId: 'asc' }],
+  });
+  return membresias.map((m) => ({
+    id: m.organizacion.id,
+    nombre: m.organizacion.nombre,
+    rol: rolCanonico(m.rol),
+  }));
 }
 
 // Membresía activa del usuario = organización activa de la sesión.
@@ -57,15 +76,7 @@ export function membresiaActiva(usuarioId) {
 // vigentes. Sin vínculos ni membresía: roles [] → Cerbos fail-closed.
 export async function resolverContextoAcceso(usuario) {
   const membresia = await membresiaActiva(usuario.id);
-
-  if (membresia) {
-    const esGestor = membresia.rol === 'GESTOR';
-    return {
-      organizacionId: membresia.organizacionId,
-      roles: [rolCanonico(membresia.rol)],
-      edificiosAsignados: esGestor ? await obtenerEdificiosAsignados(usuario.id) : [],
-    };
-  }
+  if (membresia) return contextoParaMembresia(usuario, membresia);
 
   const vinculos = await prisma.unidadUsuario.findMany({
     where: { usuarioId: usuario.id, fechaFin: null },
@@ -78,8 +89,23 @@ export async function resolverContextoAcceso(usuario) {
   return { organizacionId: null, roles, edificiosAsignados: [] };
 }
 
+// Contexto de acceso de UNA membresía concreta. Es lo que usa S4-05 para
+// re-emitir la sesión en la organización elegida: los claims salen de esa
+// membresía y no de la que el usuario tenía activa.
+export async function contextoParaMembresia(usuario, membresia) {
+  const esGestor = membresia.rol === 'GESTOR';
+  return {
+    organizacionId: membresia.organizacionId,
+    roles: [rolCanonico(membresia.rol)],
+    edificiosAsignados: esGestor
+      ? await obtenerEdificiosAsignados(usuario.id, membresia.organizacionId)
+      : [],
+  };
+}
+
 // Shape público del usuario para las respuestas de auth (contrato S1).
-// `edificiosAsignados` solo se expone a gestores.
+// `edificiosAsignados` solo se expone a gestores; `organizaciones` son las
+// membresías activas entre las que puede cambiar (S4-05).
 export function serializarUsuario(usuario, contexto) {
   const dto = {
     id: usuario.id,
@@ -90,6 +116,9 @@ export function serializarUsuario(usuario, contexto) {
   };
   if (contexto.roles.includes('gestor')) {
     dto.edificiosAsignados = contexto.edificiosAsignados;
+  }
+  if (contexto.organizaciones) {
+    dto.organizaciones = contexto.organizaciones;
   }
   return dto;
 }
@@ -108,22 +137,40 @@ export async function generarTokens(usuario, contexto) {
     { expiresIn: config.jwt.accessTokenTtl }
   );
 
+  // El refresh guarda la organización activa además del usuario: sin eso, el
+  // primer `POST /refresh` después de un cambio de organización (S4-05)
+  // devolvería al usuario a su org por defecto (la primera alfabética), y el
+  // cambio de contexto no sobreviviría a los 15 min del access token.
   const refreshToken = randomUUID();
   await redis.setex(
     `refresh:${refreshToken}`,
     config.jwt.refreshTokenTtlSeconds,
-    usuario.id
+    JSON.stringify({ usuarioId: usuario.id, organizacionId: contexto.organizacionId })
   );
 
   return { accessToken, refreshToken };
+}
+
+// Sesión guardada en Redis. Tolera el formato viejo (solo el userId como texto
+// plano) para no invalidar los refresh emitidos antes de S4-05.
+function parsearSesionGuardada(valor) {
+  try {
+    const datos = JSON.parse(valor);
+    if (datos && typeof datos === 'object' && datos.usuarioId) return datos;
+  } catch {
+    // formato viejo
+  }
+  return { usuarioId: valor, organizacionId: null };
 }
 
 // Rota el refresh token: invalida el anterior y emite un par nuevo.
 // Devuelve null si el refresh token no existe o ya fue rotado (→ 401).
 export async function renovarTokens(refreshToken) {
   const clave = `refresh:${refreshToken}`;
-  const usuarioId = await redis.getdel(clave);
-  if (!usuarioId) return null;
+  const guardado = await redis.getdel(clave);
+  if (!guardado) return null;
+
+  const { usuarioId, organizacionId } = parsearSesionGuardada(guardado);
 
   // Se recargan usuario y contexto desde DB para que el nuevo access token
   // refleje cambios de membresía/rol/edificios desde el último login.
@@ -132,7 +179,20 @@ export async function renovarTokens(refreshToken) {
   });
   if (!usuario) return null;
 
-  const contexto = await resolverContextoAcceso(usuario);
+  // Se conserva la organización activa de la sesión, revalidando la membresía:
+  // si fue desactivada o borrada, se cae al contexto por defecto (el resto del
+  // acceso lo corta tenant.middleware con 403 SIN_MEMBRESIA).
+  const membresia = organizacionId
+    ? await prisma.organizacionUsuario.findUnique({
+        where: { organizacionId_usuarioId: { organizacionId, usuarioId } },
+      })
+    : null;
+
+  const contexto =
+    membresia && membresia.activo
+      ? await contextoParaMembresia(usuario, membresia)
+      : await resolverContextoAcceso(usuario);
+
   const tokens = await generarTokens(usuario, contexto);
   return { ...tokens, usuario, contexto };
 }
@@ -145,9 +205,17 @@ export async function revocarRefreshToken(refreshToken) {
 // Helper de login: resuelve el contexto de acceso y emite tokens.
 export async function emitirSesion(usuario) {
   const contexto = await resolverContextoAcceso(usuario);
+  return emitirSesionConContexto(usuario, contexto);
+}
+
+// Emite la sesión para un contexto ya resuelto (S4-05: la org elegida). Suma al
+// DTO las membresías activas para el selector del header; el JWT no las lleva
+// (los claims no cambian de forma: sub, email, org_id, roles, edificios_asignados).
+export async function emitirSesionConContexto(usuario, contexto) {
   const tokens = await generarTokens(usuario, contexto);
+  const organizaciones = await membresiasActivas(usuario.id);
   return {
     ...tokens,
-    user: serializarUsuario(usuario, contexto),
+    user: serializarUsuario(usuario, { ...contexto, organizaciones }),
   };
 }

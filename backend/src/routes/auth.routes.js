@@ -4,14 +4,18 @@
 //   POST /api/auth/login     → 200 { accessToken, refreshToken, user }
 //   POST /api/auth/refresh   → 200 { accessToken, refreshToken } (rota el refresh)
 //   POST /api/auth/logout    → 204
+//   POST /api/auth/cambiar-organizacion → 200 { accessToken, refreshToken, user } (S4-05)
 
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import prisma from '../db/prisma.js';
 import { validarBody } from '../middleware/validation.middleware.js';
+import { requireAuth } from '../middleware/auth.middleware.js';
 import {
+  contextoParaMembresia,
   emitirSesion,
+  emitirSesionConContexto,
   normalizarEmail,
   renovarTokens,
   revocarRefreshToken,
@@ -48,6 +52,15 @@ const refreshSchema = z.object({
 
 const logoutSchema = z.object({
   refreshToken: z.string().min(1, 'refreshToken requerido'),
+});
+
+const cambiarOrganizacionSchema = z.object({
+  organizacionId: z.string().uuid('organizacionId inválido'),
+  // Opcional: si el cliente manda el refresh de la sesión que está dejando, se
+  // revoca acá y no queda vivo un refresh de la organización anterior. No es
+  // obligatorio para no romper clientes que no lo tengan a mano; si no viene,
+  // el viejo simplemente agota su TTL.
+  refreshToken: z.string().uuid('refreshToken inválido').optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -181,5 +194,65 @@ router.post('/logout', validarBody(logoutSchema), async (req, res, next) => {
     return next(err);
   }
 });
+
+// ---------------------------------------------------------------------------
+// POST /cambiar-organizacion — re-emite la sesión en otra org del usuario
+// ---------------------------------------------------------------------------
+// Spec: PRD-04-11 §4.6 / §6. El staff con membresías en N organizaciones cambia
+// de contexto SIN re-login: se validan la membresía activa y se re-emite el par
+// access/refresh con los claims de esa organización (misma forma de siempre:
+// sub, email, org_id, roles, edificios_asignados).
+//
+// Deliberadamente NO usa `tenant`: el usuario puede venir de una sesión sin org
+// activa (residente puro al que recién le dieron una membresía, o token emitido
+// antes del alta) y tiene derecho a entrar a la organización que sí es suya. La
+// membresía de destino se valida contra la DB acá mismo.
+
+router.post(
+  '/cambiar-organizacion',
+  requireAuth,
+  validarBody(cambiarOrganizacionSchema),
+  async (req, res, next) => {
+    try {
+      const { organizacionId, refreshToken } = req.body;
+
+      const membresia = await prisma.organizacionUsuario.findUnique({
+        where: { organizacionId_usuarioId: { organizacionId, usuarioId: req.user.id } },
+      });
+
+      // Mismo 403 para "no sos miembro", "la organización no existe" y
+      // "tu membresía fue desactivada": no se filtra qué organizaciones hay.
+      if (!membresia || membresia.activo === false) {
+        return res.status(403).json({
+          error: {
+            code: 'SIN_MEMBRESIA',
+            message: 'No tenés una membresía activa en esa organización',
+          },
+        });
+      }
+
+      // La cuenta pudo desactivarse o borrarse con el access token todavía vivo
+      // (15 min): se revalida contra la DB, igual que hace `renovarTokens`.
+      const usuario = await prisma.usuario.findFirst({
+        where: { id: req.user.id, activo: true, deletedAt: null },
+      });
+      if (!usuario) {
+        return res.status(401).json({
+          error: { code: 'CREDENCIALES_INVALIDAS', message: 'La cuenta no está disponible' },
+        });
+      }
+
+      // Rotación: el refresh de la organización anterior se revoca antes de
+      // emitir el nuevo par (mismo criterio que POST /refresh). Idempotente.
+      if (refreshToken) await revocarRefreshToken(refreshToken);
+
+      const contexto = await contextoParaMembresia(usuario, membresia);
+      const sesion = await emitirSesionConContexto(usuario, contexto);
+      return res.status(200).json(sesion);
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
 
 export default router;
