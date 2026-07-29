@@ -1,5 +1,5 @@
 {
-  "app_head": "7e5d45d3fa2ef1c43ae0442943b7fbe3b8f46a75",
+  "app_head": "4335998794dc25f7717e192fcea57fac5d592e45",
   "prds": {
     "00_MOC/Estado de Implementación.md": "76788d6e26cd03d097448a402a7e4557de306036",
     "00_MOC/PRD-00-00 Map of Content.md": "caa8753085d46f26cac4cd6e30d27f25fc01b8c9",
@@ -57,6 +57,6 @@
     "09_Riesgos y Decisiones/PRD-09-01 Decisiones de Arquitectura.md": "6a168e3b953a11416dc126fd467eaaefff1b9abb",
     "AGENTS.md": "3650d0649f584ba27683fc8546b2440542d9e15c"
   },
-  "ultima_corrida": "2026-07-29T17:55:15Z",
-  "vault_head": "ffc419c50f4436c12f7daf8d50e014a18b1f1e20"
+  "ultima_corrida": "2026-07-29T21:56:27Z",
+  "vault_head": "09854c45454fbf6f98537e28e689718d9d1b7973"
 }
