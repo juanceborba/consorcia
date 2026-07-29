@@ -29,7 +29,7 @@
 
 ## Frontend — features
 
-- [ ] **S3-07 Lista de gastos + filtros.** Ruta según PRD-07-03 (tab `gastos` del detalle de edificio). DataTable (patrones S2): concepto, monto (formato es-AR), categoría (badges A/B/C), tipo (ordinario/extraordinario), período; fila TOTAL del filtro activo; filtros por período (default: mes actual), categoría y tipo; paginación del backend; empty state + skeleton.
+- [x] **S3-07 Lista de gastos + filtros.** Ruta según PRD-07-03 (tab `gastos` del detalle de edificio). DataTable (patrones S2): concepto, monto (formato es-AR), categoría (badges A/B/C), tipo (ordinario/extraordinario), período; fila TOTAL del filtro activo; filtros por período (default: mes actual), categoría y tipo; paginación del backend; empty state + skeleton.
   - _Depende de: S3-02._
 - [ ] **S3-08 Form nuevo gasto.** RHF + Zod patrones §6.1: concepto, descripción, monto + moneda, categoría (select que condiciona: B → select de servicios del edificio, C → select de sectores), radio ordinario/extraordinario, fechaGasto (default hoy), período (default mes actual). Edición inline o modal para gastos no liquidados; delete con ConfirmDialog. Comprobante: campo opcional (upload a MinIO si hay endpoint disponible; si no, queda diferido — documentar en el issue).
   - _Depende de: S3-02, S3-07._
