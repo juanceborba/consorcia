@@ -10,6 +10,7 @@ import { useEdificioStore } from '@/stores/edificio.store';
 import { useEdificios } from '@/hooks/useEdificios';
 import { useOrganizacion } from '@/hooks/useOrganizacion';
 import Breadcrumbs from '@/components/layout/Breadcrumbs';
+import OrganizacionSelector from '@/components/layout/OrganizacionSelector';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -113,10 +114,16 @@ export default function AppLayout() {
       {/* Columna principal: header + contenido */}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center gap-4 border-b px-4">
-          {/* Organización (tenant raíz del SaaS) */}
-          <span className="truncate text-sm font-medium">
-            {organizacion?.nombre ?? '…'}
-          </span>
+          {/* Organización (tenant raíz del SaaS). Con más de una membresía
+              activa pasa a ser un selector de contexto (S4-09); con una sola
+              es texto, que es el caso de la enorme mayoría. */}
+          {(user?.organizaciones?.length ?? 0) > 1 ? (
+            <OrganizacionSelector />
+          ) : (
+            <span className="truncate text-sm font-medium">
+              {organizacion?.nombre ?? '…'}
+            </span>
+          )}
 
           {/* Selector de edificio de trabajo */}
           <DropdownMenu>
