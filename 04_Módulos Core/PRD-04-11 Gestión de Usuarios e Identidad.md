@@ -166,6 +166,15 @@ Errores del contrato `{ error: { code, message } }`. Códigos nuevos: `EMAIL_YA_
 - El envío está encapsulado en `src/services/notificaciones.service.js` (stub): la respuesta trae `invitacionUrl` + `emailEnviado: false` y sumar AgentMail no toca las rutas. La URL se arma con `APP_BASE_URL` (base pública de la SPA), nunca con la de la API.
 - Cerbos: recurso **`staff`** (`cerbos/policies/staff.yaml`), el recurso es la organización misma. Solo `superadmin` y `org_admin` de su propia org; el gestor no tiene ni lectura de la nómina (§3: "no crea edificios ni usuarios").
 
+**Implementado en S4-04** (`src/routes/residentes.routes.js`, montado en `/api/unidades/:id/residentes`):
+
+- La UF se resuelve con `validarUnidad` (extraído a `middleware/unidad.middleware.js`, compartido con S2-02): 404 `UNIDAD_NO_ENCONTRADA` si no existe o su edificio está de baja, 403 `FUERA_DE_ORGANIZACION`, 403 `EDIFICIO_NO_ASIGNADO` para el gestor sin ese edificio.
+- El vínculo nace **vigente** y `vigente` ⇔ `fechaFin === null` (misma definición que usa `auth.service.js` para derivar los roles del residente). `fechaInicio`/`fechaFin` se truncan a medianoche UTC: son fechas de calendario (titularidad), no instantes.
+- La unicidad del vínculo es `(organizacionId, unidadId, usuarioId)`, así que **re-vincular a alguien dado de baja REABRE su fila** (`fechaFin = null` + `fechaInicio` nueva) en vez de duplicarla — el historial de esa titularidad es uno. 409 `VINCULO_DUPLICADO` solo si el vínculo ya está vigente.
+- `DELETE` devuelve **200 con el vínculo actualizado** (no 204: la UI necesita la `fechaFin`) y es **idempotente** — si ya estaba dado de baja no reescribe la fecha original, que es dato histórico. 404 `VINCULO_NO_ENCONTRADO` si el `vinculoId` no es de esa UF.
+- **Invitación pendiente:** a diferencia del staff, acá una pendiente en la misma organización **se reusa en silencio** (regenera token, expiración y payload) en vez de responder 409. El índice único es `(email, organizacionId, tipo)` y el propietario con N UFs (§10.6) es un caso central: bloquearlo impediría vincular a la misma persona a una segunda UF. No se pierde nada — los vínculos ya se crearon en el POST y la invitación solo sirve para definir la password; el token viejo se invalida y el backoffice muestra el nuevo link.
+- Cerbos: recurso **`residente`** (`cerbos/policies/residente.yaml`), scope doble org + edificio idéntico a `unidad.yaml` (`org_admin` en su org, `gestor` en edificios asignados). Recurso propio y no reuso de `unidad`: administrar la titularidad no es editar los metros de la UF, y el portal (PRD-04-05) le dará al residente lectura de su vínculo sin darle nada sobre la unidad.
+
 ---
 
 ## 7. Decisión: identificación unívoca por email
