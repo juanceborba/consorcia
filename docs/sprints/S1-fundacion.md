@@ -1,5 +1,6 @@
 # S1 — Fundación visible (backlog)
 
+> GENERADO desde app/state/ — editar el estado con engine.py, no este archivo
 > **Objetivo:** login real → el usuario ve su organización y sus edificios.
 > **Specs:** `PRD-02-04 Base de Datos` (schema), `PRD-08-05 Seguridad` (JWT), `PRD-05-04 Cerbos RBAC` (roles/políticas), `PRD-02-02 Stack Tecnológico` §6-7 (estructura front/back), `PRD-04-01 Gestión de Edificios` (entidades).
 > **Modelo:** Organización (tenant raíz) → Edificio → Unidad → Usuario. Roles: `superadmin`, `org_admin`, `gestor` (org) / `consejo`, `propietario`, `inquilino`, `encargado`, `proveedor` (edificio).
@@ -47,13 +48,25 @@
 - [x] **S1-14 Smoke E2E + docs.** Script de smoke (login → edificios → detalle) corriendo contra el stack dockerizado. README actualizado con el flujo de desarrollo (up, migrate, seed, login demo con credenciales del seed).
   - _Depende de: S1-09, S1-13._
 
-## Dependencias entre tareas (para ejecución paralela)
+## Dependencias entre tareas
 
 ```
-S1-01 ──► S1-02 ──► S1-03
-              └──► S1-04 ──► S1-05 ──► S1-06 ──► S1-08 ─┐
-                          └────► S1-07 ────────────────► S1-09 ─┐
-S1-10 ──► S1-11 ──► S1-12 ──► S1-13 ─────────────────────────► S1-14
+S1-01 ──► S1-02
+S1-02 ──► S1-03
+S1-02 ──► S1-04
+S1-04 ──► S1-05
+S1-05 ──► S1-06
+S1-05 ──► S1-07
+S1-06 ──► S1-08
+S1-07 ──► S1-09
+S1-08 ──► S1-09
+S1-10 ──► S1-11
+S1-04 ──► S1-11
+S1-11 ──► S1-12
+S1-12 ──► S1-13
+S1-08 ──► S1-13
+S1-09 ──► S1-14
+S1-13 ──► S1-14
 ```
 
 **Lotes paralelos sugeridos:** Lote A (S1-01→03), Lote B (S1-04→06), Lote C (S1-10), Lote D (S1-07/08), Lote E (S1-11→13), Lote F (S1-09/14).

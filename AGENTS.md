@@ -35,9 +35,13 @@ El backoffice entero pasa por el middleware `tenant`, que responde `403 SIN_ORGA
 
 En el frontend, `esResidentePuro(user)` (`src/lib/acceso.js`) selecciona el shell: sidebar "Mis unidades", selector de edificio alimentado por los vínculos y `RequireStaff` redirigiendo las rutas de backoffice a `/mis-unidades`. **Si agregás una ruta de staff, colgala del guard `RequireStaff`** o el residente vuelve a caer en una pantalla vacía. Es solo lectura: el portal completo es S5 (PRD-04-05).
 
+## Estado del proyecto (app/state/)
+
+La verdad del estado vive en `state/` (event-sourced, ver `state/README.md`): los **eventos** en `state/events/` son la verdad; los backlogs `docs/sprints/S*.md`, las proyecciones `state/projections/S*.yaml` y el dashboard del vault son **vistas generadas** — **no editarlas a mano**, se regeneran con `python3 state/engine.py rebuild`. El estado se cambia emitiendo eventos con `state/engine.py emit`. Antes de tomar una tarea: `/state claim <id>` (o `emit --type claim ...`); al terminar, `emit --type status --to done`. El skill `/state` reconcilia eventos ↔ PRDs ↔ issues de GitHub.
+
 ## Flujo de trabajo con tareas
 
-1. Las tareas son **issues de GitHub** (`gh issue list`). Cada issue declara sus dependencias en el body. Tomá solo issues cuyas dependencias estén cerradas.
+1. Las tareas se reflejan como **issues de GitHub** (`gh issue list`), pero el estado canónico es `state/` (ver sección anterior). Cada issue declara sus dependencias en el body. Tomá solo tareas en `ready` (dependencias cerradas — labels `status:ready` o `state/engine.py status`).
 2. Al empezar un issue: asignarlo y comentar "En curso". Al terminar: commit con `Refs #N` o `Closes #N`.
 3. **conductor** (skill en `~/.agents/skills/conductor/bin/sprint.sh`) coordina fases del sprint (think→plan→build→review/qa/security→ship) con locks en `.nanostack/` (local, gitignored). Un sprint por vez; `sprint.sh status` para ver el actual.
 4. Verificación antes de cerrar: `npm test` (backend), `npm run build` (frontend), `make smoke`, y si tocás UI, el spec de Playwright en `frontend/e2e/` (corre desde el host, ver README).

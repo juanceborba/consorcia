@@ -1,5 +1,6 @@
 # S2 — Edificios y unidades (backlog)
 
+> GENERADO desde app/state/ — editar el estado con engine.py, no este archivo
 > **Objetivo:** alta completa de un edificio con sus unidades y coeficientes A/B/C, validando que la suma de coeficientes sea exactamente 1.
 > **Specs:** `PRD-04-01 Gestión de Edificios` (entidades, endpoints), `PRD-07-02 Diseño de Componentes` (patrones de formularios, DataTable, ConfirmDialog), `PRD-07-03 Rutas y Navegación` (rutas, tabs anidados, breadcrumbs), `PRD-07-04 Estado Global` (TanStack Query, queryKeys), `PRD-02-04 Base de Datos` (schema ya migrado en S1).
 > **Modelo:** la organización es el tenant; todo endpoint scopea `{ organizacionId, edificioId }`. org_admin: CRUD completo; gestor: solo edificios asignados (lectura + unidades).
@@ -43,11 +44,21 @@
 ## Dependencias entre tareas
 
 ```
-S2-01 ──► S2-02 ──► S2-03 ────────────────┐
-S2-04 ──┬─► S2-06                          │
-        ├─► S2-07 ──► S2-08 ──► S2-09 ──► S2-12
-S2-05 ──┘      └────► S2-10                │
-              └────► S2-11 ────────────────┘
+S2-01 ──► S2-02
+S2-02 ──► S2-03
+S2-01 ──► S2-06
+S2-04 ──► S2-06
+S2-04 ──► S2-07
+S2-05 ──► S2-08
+S2-07 ──► S2-08
+S2-02 ──► S2-09
+S2-08 ──► S2-09
+S2-01 ──► S2-10
+S2-07 ──► S2-10
+S2-07 ──► S2-11
+S2-03 ──► S2-12
+S2-09 ──► S2-12
+S2-10 ──► S2-12
 ```
 
 **Lotes paralelos sugeridos:** Lote A (S2-01→03), Lote B (S2-04+05), Lote C (S2-06/07), Lote D (S2-08/09/10), Lote E (S2-11/12).

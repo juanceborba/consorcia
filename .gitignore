@@ -30,3 +30,6 @@ backend/prisma/migrations/dev*
 # Editor
 .vscode/
 .idea/
+
+# Archivos generados por el backend (recibos PDF, S3-05) — volumen en Docker
+backend/uploads/

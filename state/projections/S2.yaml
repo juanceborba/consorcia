@@ -1,0 +1,139 @@
+# GENERADO por app/state/engine.py — no editar a mano
+sprint: S2
+titulo: "Edificios y unidades"
+generado: 2026-07-29T17:55:15Z
+total: 12
+done: 12
+tareas:
+  - id: S2-01
+    titulo: "CRUD edificios"
+    seccion: Backend
+    status: done
+    depende_de: []
+    desbloquea: [S2-02, S2-06, S2-10]
+    issue: 16
+    lote: A
+    fuente: [PRD-04-01]
+    claimed_by: null
+    score: 12.1
+  - id: S2-02
+    titulo: "CRUD unidades + invariante de coeficientes"
+    seccion: Backend
+    status: done
+    depende_de: [S2-01]
+    desbloquea: [S2-03, S2-09]
+    issue: 17
+    lote: A
+    fuente: [PRD-04-01, PRD-07-02, PRD-07-03, PRD-07-04, PRD-02-04]
+    claimed_by: null
+    score: 9.2
+  - id: S2-03
+    titulo: "Tests de API del slice"
+    seccion: Backend
+    status: done
+    depende_de: [S2-02]
+    desbloquea: [S2-12]
+    issue: 18
+    lote: A
+    fuente: [PRD-04-01, PRD-07-02, PRD-07-03, PRD-07-04, PRD-02-04]
+    claimed_by: null
+    score: 6.3
+  - id: S2-04
+    titulo: "Adoptar TanStack Query"
+    seccion: "Frontend — fundación"
+    status: done
+    depende_de: []
+    desbloquea: [S2-06, S2-07]
+    issue: 19
+    lote: B
+    fuente: [PRD-07-04]
+    claimed_by: null
+    score: 9.4
+  - id: S2-05
+    titulo: "Tokens de dominio"
+    seccion: "Frontend — fundación"
+    status: done
+    depende_de: []
+    desbloquea: [S2-08]
+    issue: 20
+    lote: B
+    fuente: [PRD-07-02]
+    claimed_by: null
+    score: 6.5
+  - id: S2-06
+    titulo: "Formulario nuevo edificio"
+    seccion: "Frontend — features"
+    status: done
+    depende_de: [S2-01, S2-04]
+    desbloquea: []
+    issue: 21
+    lote: C
+    fuente: [PRD-04-01, PRD-07-02, PRD-07-03, PRD-07-04, PRD-02-04]
+    claimed_by: null
+    score: 3.6
+  - id: S2-07
+    titulo: "Detalle con tabs anidados"
+    seccion: "Frontend — features"
+    status: done
+    depende_de: [S2-04]
+    desbloquea: [S2-08, S2-10, S2-11]
+    issue: 22
+    lote: C
+    fuente: [PRD-04-01, PRD-07-02, PRD-07-03, PRD-07-04, PRD-02-04]
+    claimed_by: null
+    score: 12.7
+  - id: S2-08
+    titulo: "DataTable de unidades"
+    seccion: "Frontend — features"
+    status: done
+    depende_de: [S2-05, S2-07]
+    desbloquea: [S2-09]
+    issue: 23
+    lote: D
+    fuente: [PRD-04-01, PRD-07-02, PRD-07-03, PRD-07-04, PRD-02-04]
+    claimed_by: null
+    score: 6.8
+  - id: S2-09
+    titulo: "Alta de unidades (form + bulk)"
+    seccion: "Frontend — features"
+    status: done
+    depende_de: [S2-02, S2-08]
+    desbloquea: [S2-12]
+    issue: 24
+    lote: D
+    fuente: [PRD-04-01, PRD-07-02, PRD-07-03, PRD-07-04, PRD-02-04]
+    claimed_by: null
+    score: 6.9
+  - id: S2-10
+    titulo: "Editar/eliminar edificio"
+    seccion: "Frontend — features"
+    status: done
+    depende_de: [S2-01, S2-07]
+    desbloquea: [S2-12]
+    issue: 25
+    lote: D
+    fuente: [PRD-04-01, PRD-07-02, PRD-07-03, PRD-07-04, PRD-02-04]
+    claimed_by: null
+    score: 7.0
+  - id: S2-11
+    titulo: Breadcrumbs
+    seccion: Cierre
+    status: done
+    depende_de: [S2-07]
+    desbloquea: []
+    issue: 26
+    lote: E
+    fuente: [PRD-04-01, PRD-07-02, PRD-07-03, PRD-07-04, PRD-02-04]
+    claimed_by: null
+    score: 4.1
+  - id: S2-12
+    titulo: "Tests E2E + smoke + docs"
+    seccion: Cierre
+    status: done
+    depende_de: [S2-03, S2-09, S2-10]
+    desbloquea: []
+    issue: 27
+    lote: E
+    fuente: [PRD-04-01, PRD-07-02, PRD-07-03, PRD-07-04, PRD-02-04]
+    claimed_by: null
+    score: 4.2

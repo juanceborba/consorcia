@@ -1,0 +1,194 @@
+# GENERADO por app/state/engine.py — no editar a mano
+sprint: S3
+titulo: "Gastos + motor contable"
+generado: 2026-07-29T17:55:15Z
+total: 17
+done: 6
+tareas:
+  - id: S3-01
+    titulo: "Ajustes de schema + policies Cerbos"
+    seccion: Backend
+    status: done
+    depende_de: []
+    desbloquea: [S3-02, S3-12, S3-13]
+    issue: 31
+    lote: A
+    fuente: [PRD-04-02, PRD-02-04]
+    claimed_by: null
+    score: 12.1
+  - id: S3-02
+    titulo: "CRUD gastos"
+    seccion: Backend
+    status: done
+    depende_de: [S3-01, S3-12, S3-13]
+    desbloquea: [S3-04, S3-07, S3-08, S3-15]
+    issue: 32
+    lote: A
+    fuente: [PRD-04-02]
+    claimed_by: null
+    score: 15.2
+  - id: S3-03
+    titulo: "Motor de distribución (core puro)"
+    seccion: Backend
+    status: done
+    depende_de: []
+    desbloquea: [S3-04]
+    issue: 52
+    lote: B
+    fuente: [PRD-02-05]
+    claimed_by: null
+    score: 6.3
+  - id: S3-04
+    titulo: "Endpoints de liquidación"
+    seccion: Backend
+    status: done
+    depende_de: [S3-02, S3-03]
+    desbloquea: [S3-05, S3-09]
+    issue: 34
+    lote: C
+    fuente: [PRD-04-03]
+    claimed_by: null
+    score: 9.4
+  - id: S3-05
+    titulo: "Recibos PDF + QR (Ley 941)"
+    seccion: Backend
+    status: ready
+    depende_de: [S3-04]
+    desbloquea: [S3-06, S3-10]
+    issue: 35
+    lote: C
+    fuente: [PRD-02-05]
+    claimed_by: null
+    score: 9.5
+  - id: S3-06
+    titulo: "Tests de API del slice"
+    seccion: Backend
+    status: stale
+    depende_de: [S3-05]
+    desbloquea: [S3-11]
+    issue: 36
+    lote: C
+    fuente: [PRD-04-02, PRD-04-03, PRD-02-05, PRD-02-04, PRD-07-02, PRD-07-03, PRD-07-04]
+    claimed_by: null
+    score: 6.6
+  - id: S3-07
+    titulo: "Lista de gastos + filtros"
+    seccion: "Frontend — features"
+    status: ready
+    depende_de: [S3-02]
+    desbloquea: [S3-08, S3-16]
+    issue: 37
+    lote: D
+    fuente: [PRD-07-03]
+    claimed_by: null
+    score: 9.7
+  - id: S3-08
+    titulo: "Form nuevo gasto"
+    seccion: "Frontend — features"
+    status: stale
+    depende_de: [S3-02, S3-07]
+    desbloquea: [S3-11]
+    issue: 38
+    lote: D
+    fuente: [PRD-04-02, PRD-04-03, PRD-02-05, PRD-02-04, PRD-07-02, PRD-07-03, PRD-07-04]
+    claimed_by: null
+    score: 6.8
+  - id: S3-09
+    titulo: "Liquidación: generar + preview"
+    seccion: "Frontend — features"
+    status: ready
+    depende_de: [S3-04]
+    desbloquea: [S3-10]
+    issue: 39
+    lote: E
+    fuente: [PRD-04-03]
+    claimed_by: null
+    score: 6.9
+  - id: S3-10
+    titulo: "Workflow aprobación + recibos"
+    seccion: "Frontend — features"
+    status: stale
+    depende_de: [S3-05, S3-09]
+    desbloquea: [S3-11]
+    issue: 40
+    lote: E
+    fuente: [PRD-04-02, PRD-04-03, PRD-02-05, PRD-02-04, PRD-07-02, PRD-07-03, PRD-07-04]
+    claimed_by: null
+    score: 7.0
+  - id: S3-11
+    titulo: "Tests E2E + smoke + docs"
+    seccion: Cierre
+    status: stale
+    depende_de: [S3-06, S3-08, S3-10]
+    desbloquea: []
+    issue: 41
+    lote: F
+    fuente: [PRD-04-02, PRD-04-03, PRD-02-05, PRD-02-04, PRD-07-02, PRD-07-03, PRD-07-04]
+    claimed_by: null
+    score: 4.1
+  - id: S3-12
+    titulo: "CRUD proveedores"
+    seccion: Backend
+    status: done
+    depende_de: [S3-01]
+    desbloquea: [S3-02, S3-14]
+    issue: 60
+    lote: B
+    fuente: [PRD-04-02]
+    claimed_by: null
+    score: 10.2
+  - id: S3-13
+    titulo: "Rubros: seed maestro + endpoints"
+    seccion: Backend
+    status: done
+    depende_de: [S3-01]
+    desbloquea: [S3-02, S3-14]
+    issue: 61
+    lote: B
+    fuente: [PRD-04-02]
+    claimed_by: null
+    score: 10.3
+  - id: S3-14
+    titulo: "UI gestión proveedores y rubros"
+    seccion: "Frontend — features"
+    status: ready
+    depende_de: [S3-12, S3-13]
+    desbloquea: []
+    issue: 62
+    lote: E
+    fuente: [PRD-04-02, PRD-04-03, PRD-02-05, PRD-02-04, PRD-07-02, PRD-07-03, PRD-07-04]
+    claimed_by: null
+    score: 4.4
+  - id: S3-15
+    titulo: "Endpoint dashboard de gastos"
+    seccion: Backend
+    status: ready
+    depende_de: [S3-02]
+    desbloquea: [S3-16]
+    issue: 63
+    lote: G
+    fuente: [PRD-04-02]
+    claimed_by: null
+    score: 7.5
+  - id: S3-16
+    titulo: "Dashboard de gastos (UI)"
+    seccion: "Frontend — features"
+    status: stale
+    depende_de: [S3-07, S3-15]
+    desbloquea: [S3-17]
+    issue: 64
+    lote: G
+    fuente: [PRD-04-02]
+    claimed_by: null
+    score: 7.6
+  - id: S3-17
+    titulo: "Tests E2E dashboard + smoke"
+    seccion: "Frontend — features"
+    status: stale
+    depende_de: [S3-16]
+    desbloquea: []
+    issue: 65
+    lote: G
+    fuente: [PRD-04-02, PRD-04-03, PRD-02-05, PRD-02-04, PRD-07-02, PRD-07-03, PRD-07-04]
+    claimed_by: null
+    score: 4.7

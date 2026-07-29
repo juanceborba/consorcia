@@ -330,6 +330,7 @@ model Unidad {
   usuarios        UnidadUsuario[]
   liquidaciones   LiquidacionDetalle[]
   cobros          Cobro[]
+  recibos         Recibo[]
 
   // Timestamps
   createdAt       DateTime @default(now()) @map("created_at")
@@ -543,6 +544,7 @@ model Liquidacion {
   edificio        Edificio @relation(fields: [edificioId], references: [id])
   detalles        LiquidacionDetalle[]
   cobros          Cobro[]
+  recibos         Recibo[]
 
   // Timestamps
   createdAt       DateTime @default(now()) @map("created_at")
@@ -584,6 +586,58 @@ model LiquidacionDetalle {
   @@index([organizacionId, liquidacionId])
   @@index([organizacionId, unidadId])
   @@map("liquidacion_detalles")
+}
+
+// ==========================================
+// RECIBOS (Ley 941)
+// ==========================================
+
+// Recibo de expensas emitido: un PDF por UF de una liquidación ENVIADA (S3-05,
+// PRD-02-05 §4, PRD-06-01 §3). La fila es el COMPROBANTE EMITIDO, no una vista
+// de la liquidación: copia los datos que la Ley 941 exige mostrar (matrícula
+// RPA, período, totales ord/ext, fecha de emisión, payload del QR) para que el
+// recibo siga siendo el que se emitió aunque la organización cambie de
+// administrador responsable después. El PDF no vive en la DB: `storageDriver` +
+// `storageKey` lo localizan (ver src/services/almacenamiento.js).
+model Recibo {
+  id              String   @id @default(uuid())
+  organizacionId  String   @map("organizacion_id")
+  liquidacionId   String   @map("liquidacion_id")
+  unidadId        String   @map("unidad_id")
+
+  // Numeración correlativa por liquidación ("2026-07-0001"), Ley 941 §3.1
+  numero          String
+
+  // Copia de los datos legales al momento de emitir
+  periodo         String
+  matriculaRPA    String   @map("matricula_rpa")
+  totalOrdinarias Decimal  @map("total_ordinarias") @db.Decimal(12, 2)
+  totalExtraordinarias Decimal @map("total_extraordinarias") @db.Decimal(12, 2)
+  totalGeneral    Decimal  @map("total_general") @db.Decimal(12, 2)
+  qrData          String   @map("qr_data") // JSON embebido en el QR del PDF
+  fechaEmision    DateTime @map("fecha_emision")
+
+  // Archivo: "filesystem" (default) o "minio" cuando exista el driver
+  storageDriver   String   @default("filesystem") @map("storage_driver")
+  storageKey      String   @map("storage_key")
+  bytes           Int
+  sha256          String
+
+  // Relaciones
+  liquidacion     Liquidacion @relation(fields: [liquidacionId], references: [id])
+  unidad          Unidad      @relation(fields: [unidadId], references: [id])
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Un recibo por UF y liquidación: hace idempotente cualquier reintento de
+  // generación y sostiene el 409 de `enviar` (la transición ya es el candado).
+  @@unique([organizacionId, liquidacionId, unidadId])
+  @@unique([organizacionId, liquidacionId, numero])
+  @@index([organizacionId, liquidacionId])
+  @@index([organizacionId, unidadId])
+  @@map("recibos")
 }
 
 // ==========================================

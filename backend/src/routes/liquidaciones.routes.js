@@ -77,6 +77,25 @@
 // 7. Los montos y los coeficientes salen como STRING (`"12345.67"`,
 //    `"0.076543"`). Prisma devuelve `Decimal` y `JSON.stringify` lo
 //    serializaría como número, reintroduciendo el float en el borde de salida.
+//
+// DECISIONES de S3-05 (recibos, #35):
+//
+// 8. **`enviar` NO es idempotente: la segunda llamada responde 409
+//    ESTADO_INVALIDO.** Es el mismo criterio que `aprobar` y sale gratis de la
+//    máquina de estados (APROBADA → ENVIADA), pero además es lo correcto: los
+//    recibos son comprobantes numerados de un acto administrativo, no un
+//    artefacto regenerable. Re-emitir el mismo período exige anular y
+//    regenerar. Los recibos ya emitidos siguen listándose y descargándose.
+//
+// 9. **La transición se reclama ANTES de generar los PDFs.** El UPDATE
+//    condicional a ENVIADA es el candado contra dos `enviar` en paralelo (el
+//    segundo matchea 0 filas y se va con 409 sin escribir un solo archivo). Si
+//    la generación falla después, el estado se revierte a APROBADA
+//    (best-effort) y la respuesta es 500: mejor volver a APROBADA que dejar una
+//    liquidación ENVIADA sin recibos.
+//
+// 10. Los PDFs se persisten en el **filesystem del contenedor**, no en MinIO.
+//     El motivo y el seam para migrar están en `src/services/almacenamiento.js`.
 
 import { Router } from 'express';
 import Decimal from 'decimal.js';
@@ -95,6 +114,7 @@ import {
   validarParaLiquidacion,
   errorCoeficientes,
 } from '../services/coeficientes.js';
+import { emitirRecibos, serializarRecibo, ReciboError } from '../services/recibos.js';
 
 // ---------------------------------------------------------------------------
 // Máquina de estados (decisión 4 y 5)
@@ -547,6 +567,100 @@ router.post(
   validarLiquidacion,
   autorizar('liquidacion', 'anular', recursoLiquidacion),
   transicion('anular')
+);
+
+// POST /:id/enviar — APROBADA → ENVIADA: emite un recibo PDF con QR por UF
+// (S3-05, PRD-02-05 §4 / PRD-06-01 §3). "Enviar" en el MVP es *emitir y dejar
+// disponible para descarga*: el envío por email es AgentMail (post-beta,
+// PRD-04-03 §2 PASO 5).
+router.post(
+  '/:id/enviar',
+  requireAuth,
+  tenant,
+  validarLiquidacion,
+  autorizar('liquidacion', 'enviar', recursoLiquidacion),
+  async (req, res, next) => {
+    const { desde, hacia } = TRANSICIONES.enviar;
+    let reclamada = false;
+
+    try {
+      // Decisión 9: reclamar el estado ANTES de generar (candado anti doble envío).
+      const { count } = await prisma.liquidacion.updateMany({
+        where: {
+          id: req.liquidacion.id,
+          organizacionId: req.organizacionId,
+          estado: { in: desde },
+        },
+        data: { estado: hacia },
+      });
+
+      if (count === 0) {
+        const actual = await prisma.liquidacion.findUnique({
+          where: { id: req.liquidacion.id },
+          select: { estado: true },
+        });
+        if (!actual) return res.status(404).json(noEncontrada());
+        return res.status(409).json(estadoInvalido('enviar', actual.estado));
+      }
+      reclamada = true;
+
+      const recibos = await emitirRecibos(req.liquidacion);
+      const actualizada = await prisma.liquidacion.findUnique({
+        where: { id: req.liquidacion.id },
+        select: CAMPOS,
+      });
+
+      return res.json({
+        ...serializar(actualizada),
+        recibos: { emitidos: recibos.length, data: recibos.map(serializarRecibo) },
+      });
+    } catch (err) {
+      // Decisión 9: volver a APROBADA antes de propagar el error.
+      if (reclamada) {
+        await prisma.liquidacion
+          .updateMany({
+            where: { id: req.liquidacion.id, organizacionId: req.organizacionId, estado: hacia },
+            data: { estado: 'APROBADA' },
+          })
+          .catch(() => {});
+      }
+
+      if (err instanceof ReciboError) {
+        return res.status(422).json({
+          error: { code: err.codigo, message: err.message, ...err.metadata },
+        });
+      }
+      return next(err);
+    }
+  }
+);
+
+// GET /:id/recibos — recibos emitidos de la liquidación (UF, número, totales y
+// la URL de descarga). Lista vacía mientras la liquidación no se envió.
+router.get(
+  '/:id/recibos',
+  requireAuth,
+  tenant,
+  validarLiquidacion,
+  autorizar('liquidacion', 'read', recursoLiquidacion),
+  async (req, res, next) => {
+    try {
+      const recibos = await prisma.recibo.findMany({
+        where: { organizacionId: req.organizacionId, liquidacionId: req.liquidacion.id },
+        include: { unidad: { select: { id: true, numero: true, tipo: true } } },
+        orderBy: { numero: 'asc' },
+      });
+
+      return res.json({
+        liquidacionId: req.liquidacion.id,
+        periodo: req.liquidacion.periodo,
+        estado: req.liquidacion.estado,
+        data: recibos.map(serializarRecibo),
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
 );
 
 export default router;
