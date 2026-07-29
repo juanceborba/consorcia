@@ -26,6 +26,7 @@ import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import { hoyISO, vincularResidenteSchema } from '@/lib/residente-schema';
 import InvitacionLinkDialog from '@/components/invitaciones/InvitacionLinkDialog';
+import AyudaLink from '@/components/ayuda/AyudaLink';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -194,7 +195,14 @@ export default function ResidentesDrawer({ unidad, isOpen, onClose }) {
       <Drawer
         isOpen={isOpen}
         onClose={cerrar}
-        title={`Residentes — UF ${unidad?.numero ?? ''}`}
+        title={
+          // El título admite ReactNode: el ícono de ayuda (cómo se habilitan
+          // los usuarios, §6.5) va junto al título del panel.
+          <span className="flex items-center gap-1">
+            Residentes — UF {unidad?.numero ?? ''}
+            <AyudaLink variant="icon" topic="usuarios/invitaciones" />
+          </span>
+        }
         description="Propietarios e inquilinos vinculados a esta unidad. Dar de baja un vínculo no borra el historial de expensas."
       >
         {isLoading ? (

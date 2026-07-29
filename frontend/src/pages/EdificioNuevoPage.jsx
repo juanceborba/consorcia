@@ -16,6 +16,7 @@ import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import { edificioFormSchema } from '@/lib/edificio-schema';
 import { TIPOS_EDIFICIO } from '@/lib/tipos-edificio';
+import AyudaLink from '@/components/ayuda/AyudaLink';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -136,7 +137,11 @@ export default function EdificioNuevoPage() {
 
       <Card className="max-w-2xl">
         <CardHeader>
-          <CardTitle className="text-2xl">Nuevo edificio</CardTitle>
+          <CardTitle className="flex items-center gap-1 text-2xl">
+            Nuevo edificio
+            {/* Ayuda contextual: conceptos del módulo Edificios (§6.5) */}
+            <AyudaLink variant="icon" topic="edificios" />
+          </CardTitle>
           <CardDescription>
             Datos generales del consorcio. Las unidades se cargan después,
             desde el detalle del edificio.

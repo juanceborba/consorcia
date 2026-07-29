@@ -5,6 +5,7 @@ import { Link } from 'react-router';
 import { Building2, MapPin, Plus } from 'lucide-react';
 import { useEdificios } from '@/hooks/useEdificios';
 import { useAuthStore, SIN_ROLES } from '@/stores/auth.store';
+import AyudaLink from '@/components/ayuda/AyudaLink';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -45,7 +46,11 @@ export default function EdificiosPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Edificios</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-semibold">Edificios</h1>
+            {/* Ayuda contextual: conceptos del módulo Edificios (PRD-07-02 §6.5) */}
+            <AyudaLink variant="icon" topic="edificios" />
+          </div>
           <p className="text-sm text-muted-foreground">
             Edificios administrados por tu organización
           </p>

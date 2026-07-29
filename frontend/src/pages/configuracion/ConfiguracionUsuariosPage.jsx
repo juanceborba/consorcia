@@ -28,6 +28,7 @@ import { ROL_LABEL } from '@/lib/staff-schema';
 import { useEdificios } from '@/hooks/useEdificios';
 import { useAuthStore } from '@/stores/auth.store';
 import InvitacionLinkDialog from '@/components/invitaciones/InvitacionLinkDialog';
+import AyudaLink from '@/components/ayuda/AyudaLink';
 import StaffEditarDialog from '@/pages/configuracion/StaffEditarDialog';
 import StaffEstadoDialog from '@/pages/configuracion/StaffEstadoDialog';
 import StaffInvitarDialog from '@/pages/configuracion/StaffInvitarDialog';
@@ -242,7 +243,11 @@ export default function ConfiguracionUsuariosPage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Usuarios ({staff.length})</CardTitle>
+        <CardTitle className="flex items-center gap-1">
+          Usuarios ({staff.length})
+          {/* Ayuda contextual: roles y accesos (§6.5) */}
+          <AyudaLink variant="icon" topic="usuarios/roles" />
+        </CardTitle>
         <CardDescription>
           Staff de la organización: administradores y gestores con acceso al
           backoffice. Los propietarios e inquilinos se administran desde cada

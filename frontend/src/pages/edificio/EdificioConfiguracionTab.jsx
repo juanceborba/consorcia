@@ -28,6 +28,7 @@ import { edificioFormSchema } from '@/lib/edificio-schema';
 import { TIPOS_EDIFICIO } from '@/lib/tipos-edificio';
 import { useAuthStore, SIN_ROLES } from '@/stores/auth.store';
 import { useEdificioStore } from '@/stores/edificio.store';
+import AyudaLink from '@/components/ayuda/AyudaLink';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -220,6 +221,8 @@ export default function EdificioConfiguracionTab() {
           <CardTitle className="flex items-center gap-2">
             <Settings className="size-5 shrink-0" />
             Datos del edificio
+            {/* Ayuda contextual: conceptos del módulo Edificios (§6.5) */}
+            <AyudaLink variant="icon" topic="edificios" />
           </CardTitle>
           <CardDescription>
             {puedeEditar

@@ -12,9 +12,16 @@
 //        ruta: breadcrumb legible (array, se muestra con ›),
 //        titulo: título del drawer,
 //        secciones: [{ titulo, cuerpo, items? }] — items es una lista opcional
-//        de viñetas.
-//   3. En la pantalla, renderizá <AyudaLink topic="tu/id" /> (o llamá
-//      abrirAyuda('tu/id') del store).
+//        de viñetas,
+//        relacionados: [ids] opcional — otros topics que el drawer muestra al
+//        pie como "Temas relacionados" (clickear navega dentro del drawer),
+//        pantallas: [paths] opcional — archivos (relativos a frontend/) que
+//        DEBEN contener una referencia a este topic; el gate
+//        `npm run check:ayuda` (scripts/check-ayuda.mjs, corre también en CI)
+//        falla si alguna deja de referenciarlo o el archivo no existe.
+//   3. En la pantalla, renderizá <AyudaLink topic="tu/id" /> (variante link
+//      con texto, o variant="icon" junto al título de la pantalla) o llamá
+//      abrirAyuda('tu/id') del store.
 // Un topic inexistente NUNCA rompe la UI: el drawer muestra un fallback.
 //
 // El contenido vive estático en el frontend (todo el copy es es-AR
@@ -23,12 +30,152 @@
 // los internals de este registro, no la API que consumen los componentes.
 
 export const AYUDA_TOPICS = {
+  // Concepto de alto nivel del módulo Edificios (PRD-04-01). Es el topic de
+  // las pantallas de listado, alta, resumen y configuración de edificio.
+  edificios: {
+    ruta: ['Edificios'],
+    titulo: 'Edificios',
+    relacionados: ['edificios/unidades'],
+    pantallas: [
+      'src/pages/EdificiosPage.jsx',
+      'src/pages/EdificioNuevoPage.jsx',
+      'src/pages/edificio/EdificioOverviewTab.jsx',
+      'src/pages/edificio/EdificioConfiguracionTab.jsx',
+    ],
+    secciones: [
+      {
+        titulo: '¿Qué es un edificio?',
+        cuerpo:
+          'Cada consorcio que administra tu organización. Es la unidad de trabajo principal de la app: todo cuelga del edificio — sus unidades, sus gastos y, más adelante, sus liquidaciones y cobranzas. Tu organización puede administrar varios edificios.',
+      },
+      {
+        titulo: 'Los datos del edificio',
+        cuerpo:
+          'Además del nombre y la dirección, cada edificio tiene un tipo y una superficie total.',
+        items: [
+          'Tipo: PH / Consorcio, Barrio privado, Centro comercial u Otro.',
+          'Superficie total (m²): la suma de los m² de todo el edificio. Es la base del coeficiente sugerido de cada unidad (m² de la unidad ÷ m² totales), así que conviene cargarla bien desde el alta.',
+        ],
+      },
+      {
+        titulo: '¿Quién puede hacer qué?',
+        items: [
+          'Crear y eliminar edificios: solo el administrador de la organización (org_admin).',
+          'Editar los datos: el org_admin y el gestor que tenga el edificio asignado.',
+          'Eliminar es una baja lógica: el edificio deja de listarse pero los datos se conservan (la Ley 941 exige conservar la documentación del consorcio).',
+        ],
+      },
+    ],
+  },
+
+  // Unidades funcionales y coeficientes (PRD-04-01 §1.2/§1.3, invariante
+  // informativa desde #57). Topic del tab Unidades del detalle de edificio.
+  'edificios/unidades': {
+    ruta: ['Edificios', 'Unidades'],
+    titulo: 'Unidades y coeficientes',
+    relacionados: ['edificios', 'edificios/unidades/categorias-gastos'],
+    pantallas: ['src/pages/edificio/EdificioUnidadesTab.jsx'],
+    secciones: [
+      {
+        titulo: '¿Qué es una unidad funcional?',
+        cuerpo:
+          'Cada parte del edificio que paga expensas por separado. Los tipos disponibles son departamento, local, cochera, baulera, oficina y subconsorcio (un sector con régimen propio, como una torre).',
+      },
+      {
+        titulo: 'El coeficiente de cada unidad',
+        cuerpo:
+          'Es la proporción de la unidad sobre el total del edificio: m² de la unidad ÷ m² totales. Se escribe con 6 decimales (por ejemplo 0.027742) y define qué porción de cada gasto paga esa unidad. Al cargar los m² la app lo sugiere automáticamente, y podés editarlo si el reglamento define otros valores.',
+      },
+      {
+        titulo: 'La suma tiene que cerrar en 1.000000',
+        cuerpo:
+          'Los coeficientes de todas las unidades del edificio tienen que sumar exactamente 1.000000. Mientras cargás unidades la app solo te avisa si la suma no cierra (podés guardar igual y cargar de a poco); el control estricto está al liquidar las expensas: si la suma no cierra, la liquidación no se puede emitir.',
+      },
+      {
+        titulo: 'Alta individual y carga rápida',
+        cuerpo:
+          'Hay dos formas de cargar unidades. "Agregar unidad" carga una por vez con todos sus datos, incluidas las categorías de gastos. "Carga rápida" carga varias a la vez con los datos mínimos: les deja la categoría A marcada y sin categorías B ni C, que podés ajustar después unidad por unidad.',
+      },
+    ],
+  },
+
+  // Roles y accesos (PRD-04-11 §2/§3: identidad global, staff vs residentes,
+  // multi-organización). Topic del backoffice de staff (/configuracion/usuarios).
+  'usuarios/roles': {
+    ruta: ['Usuarios', 'Roles y accesos'],
+    titulo: 'Roles y accesos',
+    relacionados: ['usuarios/invitaciones'],
+    pantallas: ['src/pages/configuracion/ConfiguracionUsuariosPage.jsx'],
+    secciones: [
+      {
+        titulo: 'Una persona, un solo login',
+        cuerpo:
+          'En ConsorcIA cada persona existe una sola vez, identificada por su email. Con ese único login puede acumular vínculos en distintos consorcios e incluso en distintas administraciones: ser gestor de un edificio, propietario en otro y administrador de una segunda organización, todo con la misma cuenta.',
+      },
+      {
+        titulo: 'Roles de la organización (staff)',
+        cuerpo:
+          'Son los que operan el backoffice. Se administran desde Configuración → Usuarios.',
+        items: [
+          'Administrador (org_admin): ve y puede todo en su organización — edificios, unidades, gastos y la gestión de usuarios.',
+          'Gestor: trabaja solo en los edificios que le asignan. Puede operar las unidades y los gastos de esos edificios, pero no crea edificios ni usuarios.',
+        ],
+      },
+      {
+        titulo: 'Roles del edificio (residentes)',
+        cuerpo:
+          'Propietarios e inquilinos se vinculan desde cada unidad (tab Unidades → fila → Residentes) y usan el portal, no el backoffice: ahí ven sus unidades —de todos sus consorcios—, sus expensas y sus recibos. Una misma unidad puede tener varios residentes vinculados, y una misma persona varias unidades.',
+      },
+      {
+        titulo: 'Varias organizaciones',
+        cuerpo:
+          'Si una persona es staff de más de una administración, al entrar elige con cuál trabajar desde el selector de organización del header. Cambiar de organización no cierra la sesión: es el mismo login con otro contexto de trabajo.',
+      },
+    ],
+  },
+
+  // Workflows de habilitación de usuarios (PRD-04-11 §4/§5/§6.3). Topic del
+  // drawer de residentes de la unidad.
+  'usuarios/invitaciones': {
+    ruta: ['Usuarios', 'Cómo se habilitan los usuarios'],
+    titulo: 'Cómo se habilitan los usuarios',
+    relacionados: ['usuarios/roles'],
+    pantallas: ['src/pages/edificio/ResidentesDrawer.jsx'],
+    secciones: [
+      {
+        titulo: 'Nadie se registra por su cuenta',
+        cuerpo:
+          'Los usuarios entran siempre invitados por la administración, que es quien conoce la titularidad de cada unidad. Hay dos caminos según el tipo de persona, y ambos terminan en un link de invitación que la app muestra para copiar y enviar.',
+        items: [
+          'Staff (gestores y administradores): el org_admin lo invita desde Configuración → Usuarios → "Invitar staff".',
+          'Residentes (propietarios e inquilinos): se vinculan desde la unidad — tab Unidades → fila → Residentes → "Vincular persona".',
+        ],
+      },
+      {
+        titulo: 'Qué hace el link de invitación',
+        cuerpo:
+          'Depende de si la persona ya tenía cuenta en ConsorcIA.',
+        items: [
+          'Si no tenía cuenta: al abrir el link define su contraseña y su cuenta queda activa.',
+          'Si ya tenía cuenta (porque ya es usuaria de otro consorcio o administración): entra con la contraseña que ya tenía — el link no se la cambia ni hace falta que lo abra para quedar vinculada.',
+        ],
+      },
+      {
+        titulo: 'Pendientes y reenvío',
+        cuerpo:
+          'El link es de un solo uso y vence a los 7 días. Si la persona todavía no activó su cuenta la app lo muestra como pendiente ("Invitado" en el staff, "Todavía no activó su cuenta" en la unidad): reenviá la invitación desde el mismo lugar donde la creaste y se genera un link nuevo.',
+      },
+    ],
+  },
+
   // Primer topic: categorías A/B/C del alta de unidad (Ley 941,
   // PRD-04-01 §1.4). El reparto que describe es el del motor de liquidación
   // de S3 (S3-03: A → todas las UF, B → UF con ese servicio, C → UF del sector).
   'edificios/unidades/categorias-gastos': {
     ruta: ['Edificios', 'Unidades', 'Categorías de gastos'],
     titulo: 'Categorías de gastos',
+    relacionados: ['edificios/unidades'],
+    pantallas: ['src/pages/edificio/UnidadCategoriasTab.jsx'],
     secciones: [
       {
         titulo: '¿Qué son las categorías de gastos?',
