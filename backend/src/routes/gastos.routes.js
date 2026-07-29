@@ -64,6 +64,19 @@
 //    frontend tendría que pedir el detalle de cada gasto de la página (N+1) para
 //    saber qué botones apagar. Se resuelve con UNA query por página
 //    (`gastosCongelados`), no una por gasto.
+//
+// 8. AGREGADO EN S3-08b: `totales` suma `ordinarios` y `extraordinarios` además
+//    del total. La pantalla los muestra segmentados arriba de la lista, y la
+//    distinción es del dominio, no cosmética: las expensas ordinarias y las
+//    extraordinarias se liquidan y se leen por separado (PRD-04-03). Sale de un
+//    `groupBy` sobre el MISMO `where` que el total, así que los tres números
+//    siempre reconcilian (total = ordinarios + extraordinarios).
+//
+// 9. AGREGADO EN S3-08b: cada fila trae `creadoPor: { id, nombre, apellido }`
+//    (o null) y la lista acepta `?createdBy=`. Es la trazabilidad que pide la
+//    columna "Cargado por" del listado: con varios gestores cargando gastos del
+//    mismo edificio, "quién cargó esto" es la primera pregunta cuando un monto
+//    no cierra. Ver `autoresDe` para por qué no es un `include`.
 
 import { Router } from 'express';
 import Decimal from 'decimal.js';
@@ -202,6 +215,40 @@ async function gastosCongelados(ids) {
   return new Set(detalles.map((d) => d.gastoId));
 }
 
+// Decisión 8: el groupBy por `esOrdinario` devuelve 0, 1 o 2 filas (un tipo sin
+// gastos no aparece). Se normaliza a los dos segmentos siempre presentes: el
+// totalizador de la pantalla no puede mostrar un hueco donde va un "$ 0,00".
+function segmentarPorTipo(filas) {
+  const vacio = () => ({ cantidad: 0, monto: '0.00' });
+  const segmentos = { ordinarios: vacio(), extraordinarios: vacio() };
+  for (const fila of filas) {
+    segmentos[fila.esOrdinario ? 'ordinarios' : 'extraordinarios'] = {
+      cantidad: fila._count._all,
+      monto: new Decimal(fila._sum.monto ?? 0).toFixed(2),
+    };
+  }
+  return segmentos;
+}
+
+// Decisión 9: quién cargó cada gasto, resuelto en una query por página.
+//
+// `Gasto.createdBy` es un String suelto, SIN relación Prisma a `Usuario` (el PRD
+// lo documenta como FK pero el schema nunca la declaró), así que no se puede
+// `include`. Se resuelven los nombres de la página en un `findMany` por ids, con
+// el mismo criterio que `gastosCongelados`. La identidad es global: el usuario
+// que cargó el gasto puede no ser staff de la organización HOY (se le dio de
+// baja la membresía), y su nombre sigue siendo el dato correcto para la
+// trazabilidad — de ahí que la búsqueda no se scopee por organización.
+async function autoresDe(ids) {
+  const unicos = [...new Set(ids)];
+  if (unicos.length === 0) return new Map();
+  const usuarios = await prisma.usuario.findMany({
+    where: { id: { in: unicos } },
+    select: { id: true, nombre: true, apellido: true },
+  });
+  return new Map(usuarios.map((u) => [u.id, u]));
+}
+
 // Recurso Cerbos: scope doble org + edificio (contrato en cerbos/policies/gasto.yaml).
 const recursoDeEdificio = (req) => ({
   id: req.edificio.id,
@@ -241,8 +288,19 @@ gastosDeEdificioRouter.get(
   validarQuery(listarGastosSchema),
   async (req, res, next) => {
     try {
-      const { periodo, categoria, esOrdinario, proveedorId, rubroId, desde, hasta, q, page, limit } =
-        req.filtros;
+      const {
+        periodo,
+        categoria,
+        esOrdinario,
+        proveedorId,
+        rubroId,
+        createdBy,
+        desde,
+        hasta,
+        q,
+        page,
+        limit,
+      } = req.filtros;
 
       const where = {
         organizacionId: req.organizacionId,
@@ -254,6 +312,7 @@ gastosDeEdificioRouter.get(
         ...(esOrdinario !== undefined ? { esOrdinario } : {}),
         ...(proveedorId ? { proveedorId } : {}),
         ...(rubroId ? { rubroId } : {}),
+        ...(createdBy ? { createdBy } : {}),
         ...(desde || hasta
           ? {
               fechaGasto: {
@@ -272,9 +331,16 @@ gastosDeEdificioRouter.get(
           : {}),
       };
 
-      const [agregado, gastos] = await Promise.all([
+      const [agregado, porTipo, gastos] = await Promise.all([
         // Decisión 5: los totales son del filtro completo, no de la página.
         prisma.gasto.aggregate({ where, _count: { _all: true }, _sum: { monto: true } }),
+        // Decisión 8: el mismo total, partido en ordinarios y extraordinarios.
+        prisma.gasto.groupBy({
+          by: ['esOrdinario'],
+          where,
+          _count: { _all: true },
+          _sum: { monto: true },
+        }),
         prisma.gasto.findMany({
           where,
           select: CAMPOS,
@@ -288,13 +354,22 @@ gastosDeEdificioRouter.get(
 
       const total = agregado._count._all;
       // Decisión 7: `editable` por fila, en UNA query para toda la página.
-      const congelados = await gastosCongelados(gastos.map((g) => g.id));
+      // Decisión 9: los nombres de quienes cargaron, en otra query para la página.
+      const [congelados, autores] = await Promise.all([
+        gastosCongelados(gastos.map((g) => g.id)),
+        autoresDe(gastos.map((g) => g.createdBy)),
+      ]);
       return res.json({
-        data: gastos.map((g) => ({ ...serializar(g), editable: !congelados.has(g.id) })),
+        data: gastos.map((g) => ({
+          ...serializar(g),
+          editable: !congelados.has(g.id),
+          creadoPor: autores.get(g.createdBy) ?? null,
+        })),
         pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
         totales: {
           cantidad: total,
           monto: new Decimal(agregado._sum.monto ?? 0).toFixed(2),
+          ...segmentarPorTipo(porTipo),
         },
       });
     } catch (err) {

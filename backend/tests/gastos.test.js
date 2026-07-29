@@ -474,12 +474,34 @@ describe('gastos (S3-02)', () => {
       'orden fechaGasto desc'
     );
 
+    // Decisión 8: los totales vienen segmentados y reconcilian con el total.
+    assert.deepEqual(todos.data.totales.ordinarios, { cantidad: 2, monto: '400.75' });
+    assert.deepEqual(todos.data.totales.extraordinarios, { cantidad: 1, monto: '200.25' });
+
+    // Decisión 9: cada fila dice quién la cargó.
+    const f1 = todos.data.data.find((g) => g.concepto === `F1 ${SUFIJO}`);
+    assert.equal(f1.creadoPor.id, admin.user.id);
+    assert.ok(f1.creadoPor.nombre && f1.creadoPor.apellido, 'nombre y apellido del autor');
+
     const soloA = await listar(admin.accessToken, torre.id, {
       periodo: PERIODO_ALT,
       categoria: 'A',
     });
     assert.equal(soloA.data.pagination.total, 2);
     assert.equal(soloA.data.totales.monto, '400.75');
+    // Un tipo sin gastos en el filtro sigue siendo un segmento en cero, no un hueco.
+    assert.deepEqual(soloA.data.totales.extraordinarios, { cantidad: 0, monto: '0.00' });
+
+    const porAutor = await listar(admin.accessToken, torre.id, {
+      periodo: PERIODO_ALT,
+      createdBy: admin.user.id,
+    });
+    assert.equal(porAutor.data.pagination.total, 3, 'los tres los cargó el admin');
+    const porOtroAutor = await listar(admin.accessToken, torre.id, {
+      periodo: PERIODO_ALT,
+      createdBy: gestor.user.id,
+    });
+    assert.equal(porOtroAutor.data.pagination.total, 0);
 
     const extraordinarios = await listar(admin.accessToken, torre.id, {
       periodo: PERIODO_ALT,

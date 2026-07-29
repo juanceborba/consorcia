@@ -55,7 +55,9 @@ test('carga de un gasto: combobox de proveedor con alta inline, cascada de rubro
   await loginAdmin(page);
   await irAGastosDeTorrePalermo(page);
 
-  const fila = page.getByRole('row', { name: new RegExp(CONCEPTO) });
+  // Scopeada al cuerpo de la tabla: la fila de FILTROS también contiene el
+  // concepto (es el valor tipeado en su buscador) y matchearía el mismo regex.
+  const fila = page.locator('tbody').getByRole('row', { name: new RegExp(CONCEPTO) });
 
   await test.step('el formulario abre con los defaults del período corriente', async () => {
     await page.getByRole('button', { name: 'Nuevo gasto' }).click();
@@ -139,6 +141,48 @@ test('carga de un gasto: combobox de proveedor con alta inline, cascada de rubro
     await expect(fila).toContainText('B: ascensor');
   });
 
+  await test.step('el totalizador se recalcula con el filtro y segmenta por tipo', async () => {
+    // El buscador de concepto tiene debounce y pega al backend: con la lista
+    // recortada a un solo gasto ordinario de $1.500,50, los tres números del
+    // totalizador tienen que decir exactamente eso (son del filtro activo, no de
+    // la página) y reconciliar: total = ordinarios + extraordinarios.
+    await page.locator('#filtro-concepto').fill(CONCEPTO);
+    await expect(page.getByRole('row')).toHaveCount(4); // 2 de header + fila + TOTAL
+    await expect(fila).toBeVisible();
+    await expect(page).toHaveURL(/q=/);
+
+    const tarjeta = (titulo) =>
+      page.getByText(titulo, { exact: true }).locator('..');
+    await expect(tarjeta('Total del filtro')).toContainText('$ 1.500,50');
+    await expect(tarjeta('Ordinarios')).toContainText('$ 1.500,50');
+    await expect(tarjeta('Extraordinarios')).toContainText('$ 0,00');
+  });
+
+  await test.step('filtros por columna: tipo y quién lo cargó', async () => {
+    // Filtrar por el tipo que el gasto NO es lo saca de la lista, y la fila de
+    // filtros sigue en pantalla para poder corregirlo.
+    await page.locator('#filtro-tipo').selectOption('extraordinario');
+    await expect(
+      page.getByText('Ningún gasto coincide con los filtros de las columnas'),
+    ).toBeVisible();
+    await expect(page.locator('#filtro-tipo')).toBeVisible();
+    await page.locator('#filtro-tipo').selectOption('ordinario');
+    await expect(fila).toBeVisible();
+
+    // La columna "Cargado por" abrevia el nombre del autor (el seed lo llama
+    // "María Fernanda Ruiz" → "María R.") y su filtro se alimenta de la nómina de
+    // staff, donde sí hay lugar para el nombre completo.
+    await expect(fila).toContainText('María R.');
+    await page.locator('#filtro-autor').selectOption({ label: 'María Fernanda Ruiz' });
+    await expect(fila).toBeVisible();
+    // Filtrar por otro miembro del staff lo saca de la lista.
+    await page.locator('#filtro-autor').selectOption({ label: 'Juan Carlos Medina' });
+    await expect(fila).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Limpiar filtros' }).click();
+    await expect(page.locator('#filtro-concepto')).toHaveValue('');
+  });
+
   await test.step('eliminar avisa que el registro se conserva (Ley 941)', async () => {
     await page.getByRole('button', { name: `Acciones de ${CONCEPTO}` }).click();
     await page.getByRole('menuitem', { name: 'Eliminar' }).click();
@@ -180,4 +224,10 @@ test('el gestor lee los gastos pero no los carga', async ({ page }) => {
   // `CardTitle` es un div, no un heading: se busca por texto.
   await expect(page.getByText(/^Gastos \(\d+\)$/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Nuevo gasto' })).toHaveCount(0);
+
+  // Los filtros de columna que no dependen de la nómina de staff sí los tiene
+  // (lee gastos), pero el de "Cargado por" no: su combo saldría de
+  // /api/organizaciones/me/usuarios, que al gestor le responde 403.
+  await expect(page.locator('#filtro-concepto')).toBeVisible();
+  await expect(page.locator('#filtro-autor')).toHaveCount(0);
 });

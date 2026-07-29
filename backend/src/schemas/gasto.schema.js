@@ -163,6 +163,8 @@ export const listarGastosSchema = z
     esOrdinario: booleanoDeQuery.optional(),
     proveedorId: z.string().uuid('proveedorId inválido').optional(),
     rubroId: z.string().uuid('rubroId inválido').optional(),
+    // Quién cargó el gasto (S3-08b): filtro de columna de la lista.
+    createdBy: z.string().uuid('createdBy inválido').optional(),
     desde: z.coerce.date({ invalid_type_error: 'desde: fecha inválida' }).optional(),
     hasta: z.coerce.date({ invalid_type_error: 'hasta: fecha inválida' }).optional(),
     q: z.string().trim().min(1).max(100).optional(),

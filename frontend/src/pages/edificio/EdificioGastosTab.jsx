@@ -1,9 +1,10 @@
 // frontend/src/pages/edificio/EdificioGastosTab.jsx — ConsorcIA
 // Tab "Gastos" del detalle de edificio (S3-07), según el mockup de
-// PRD-04-02 §4.1: columnas concepto / monto / categoría / tipo / período, fila
-// TOTAL del filtro activo, filtros de período + categoría + tipo y paginación
-// server-side. Sigue los patrones de tabla de S2-08 (EdificioUnidadesTab) y las
-// reglas de listados de PRD-07-02 §6.2 (empty state y skeleton siempre).
+// PRD-04-02 §4.1: columnas concepto / proveedor / monto / categoría / tipo /
+// fecha / cargado por / período, totalizador segmentado arriba, filtros por
+// columna y paginación server-side. Sigue los patrones de tabla de S2-08
+// (EdificioUnidadesTab) y las reglas de listados de PRD-07-02 §6.2 (empty state
+// y skeleton siempre).
 //
 // DECISIONES de S3-07:
 //
@@ -51,17 +52,48 @@
 //    `editable` que trae cada fila (decisión 7 de S3-02): el DoD del sprint pide
 //    que la UI lo impida, no que el usuario descubra el 409 recién después de
 //    completar el formulario.
-import { useMemo, useState } from 'react';
+//
+// DECISIONES de S3-08b (mejoras del listado):
+//
+// 7. LOS FILTROS VIVEN EN LA CABECERA DE SU COLUMNA, no en una barra suelta
+//    arriba. Con ocho columnas, una barra deja de decir QUÉ filtra cada control
+//    (el usuario tiene que adivinar si "Todas" es categoría o tipo); debajo del
+//    título de la columna, el control se explica solo. El mecanismo no cambia:
+//    cada uno sigue escribiéndose en la URL (decisión 2). Las columnas sin
+//    filtro posible (monto) quedan con la celda vacía a propósito, para no
+//    prometer un filtro que el endpoint no tiene.
+//
+// 8. EL BUSCADOR DE CONCEPTO TIENE DEBOUNCE (300 ms), como el de proveedores de
+//    S3-14: sin él cada tecla dispara una query paginada al backend. El estado
+//    tipeado es local y solo llega a la URL cuando se calma, así que el historial
+//    del browser no se llena de una entrada por letra.
+//
+// 9. EL TOTALIZADOR ESTÁ SEGMENTADO en total / ordinarios / extraordinarios, con
+//    los tres números del backend (decisión 8 de S3-02) sobre el MISMO filtro,
+//    así que siempre reconcilian. La distinción es del dominio: las expensas
+//    ordinarias y las extraordinarias se liquidan y se leen por separado
+//    (PRD-04-03), y "cuánto de este período es extraordinario" es la pregunta
+//    que un administrador hace antes de liquidar. Es el antecesor de los KPI
+//    cards de S3-16, que reemplazan este bloque cuando el tab pase a dashboard.
+//
+// 10. LA COLUMNA "CARGADO POR" Y SU FILTRO SON TRAZABILIDAD, no adorno: varios
+//     gestores cargan gastos del mismo edificio y "quién cargó esto" es la
+//     primera pregunta cuando un monto no cierra. El filtro se ofrece solo al
+//     org_admin porque su combo se alimenta de la nómina de staff
+//     (`/api/organizaciones/me/usuarios`), que al gestor le responde 403 — la
+//     COLUMNA, en cambio, la ve todo el staff.
+import { useEffect, useMemo, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ChevronLeft, ChevronRight, MoreHorizontal, Plus, Receipt } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MoreHorizontal, Plus, Receipt, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import { useGastos } from '@/hooks/useGastos';
 import { SIN_ROLES, useAuthStore } from '@/stores/auth.store';
 import AyudaLink from '@/components/ayuda/AyudaLink';
 import GastoFormDialog from '@/components/gastos/GastoFormDialog';
+import ProveedorSelect from '@/components/gastos/ProveedorSelect';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
@@ -71,8 +103,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  formatearFechaCorta,
   formatearMonto,
   formatearPeriodo,
+  nombreDeAutor,
+  nombreDeAutorCorto,
   periodoActual,
   ultimosPeriodos,
 } from '@/lib/formato';
@@ -86,6 +121,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import {
@@ -101,20 +137,31 @@ import {
 // Página del contrato de `listarGastosSchema` (default 50, máx 100).
 const LIMIT = 50;
 
+// Decisión 11: la columna de acciones queda PEGADA al borde derecho. Con nueve
+// columnas y una fila de filtros, la tabla scrollea horizontalmente en pantallas
+// de ~1280px (el contenedor de `Table` ya tiene `overflow-x-auto`), y el menú de
+// la fila es lo último que puede quedar fuera de vista: sin esto, editar un
+// gasto exige scrollear a la derecha en cada fila.
+const CELDA_ACCIONES = 'sticky right-0 bg-background';
+
 // Centinela de "sin filtro de período" (decisión 2).
 const TODOS_LOS_PERIODOS = 'todos';
 
+// Etiquetas CORTAS a propósito (decisión 7): el filtro vive debajo del título de
+// su columna, que ya dice "Categoría" y "Tipo", y ocho controles con etiquetas
+// largas mandan la tabla a scroll horizontal. El significado completo de A/B/C
+// está en el badge de cada fila y en la ayuda contextual.
 const CATEGORIAS = [
   { value: '', label: 'Todas' },
-  { value: 'A', label: 'A — Generales' },
-  { value: 'B', label: 'B — Servicio específico' },
-  { value: 'C', label: 'C — Sector específico' },
+  { value: 'A', label: 'A' },
+  { value: 'B', label: 'B' },
+  { value: 'C', label: 'C' },
 ];
 
 const TIPOS = [
   { value: '', label: 'Todos' },
   { value: 'ordinario', label: 'Ordinario' },
-  { value: 'extraordinario', label: 'Extraordinario' },
+  { value: 'extraordinario', label: 'Extraord.' },
 ];
 
 // Badge de la categoría con su detalle: A se reparte a todas las UF, B lleva el
@@ -135,7 +182,7 @@ function CategoriaGasto({ gasto }) {
 }
 
 // Skeleton de carga inicial (PRD-07-02 §6.2/§6.4): replica la estructura de la
-// tabla, igual que el de unidades.
+// pantalla — el totalizador y la tabla —, igual que el de unidades.
 function GastosSkeleton() {
   return (
     <Card className="animate-pulse">
@@ -143,13 +190,71 @@ function GastosSkeleton() {
         <div className="h-6 w-32 rounded bg-muted" />
         <div className="h-4 w-48 rounded bg-muted" />
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+      <CardContent className="flex flex-col gap-4">
+        <div className="grid gap-3 sm:grid-cols-3">
+          {Array.from({ length: 3 }, (_, i) => (
+            <div key={i} className="h-20 rounded-lg bg-muted" />
+          ))}
+        </div>
         <div className="h-10 rounded bg-muted" />
         {Array.from({ length: 5 }, (_, i) => (
           <div key={i} className="h-8 rounded bg-muted" />
         ))}
       </CardContent>
     </Card>
+  );
+}
+
+// Decisión 9: total del filtro, partido en ordinarios y extraordinarios. Los
+// tres números son del backend sobre el mismo `where`, así que la suma cierra.
+function Totalizador({ totales }) {
+  const segmentos = [
+    {
+      clave: 'total',
+      titulo: 'Total del filtro',
+      monto: totales?.monto ?? '0.00',
+      cantidad: totales?.cantidad ?? 0,
+      detalle: 'Ordinarios + extraordinarios',
+    },
+    {
+      clave: 'ordinarios',
+      titulo: 'Ordinarios',
+      monto: totales?.ordinarios?.monto ?? '0.00',
+      cantidad: totales?.ordinarios?.cantidad ?? 0,
+      detalle: 'Expensas del mes a mes',
+    },
+    {
+      clave: 'extraordinarios',
+      titulo: 'Extraordinarios',
+      monto: totales?.extraordinarios?.monto ?? '0.00',
+      cantidad: totales?.extraordinarios?.cantidad ?? 0,
+      detalle: 'Se liquidan aparte',
+    },
+  ];
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      {segmentos.map((segmento) => (
+        <div
+          key={segmento.clave}
+          className={`flex flex-col gap-1 rounded-lg border p-4 ${
+            segmento.clave === 'total' ? 'bg-muted/40' : ''
+          }`}
+        >
+          <p className="text-xs font-medium text-muted-foreground uppercase">
+            {segmento.titulo}
+          </p>
+          <p className="text-xl font-semibold tabular-nums">
+            {formatearMonto(segmento.monto)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {segmento.cantidad === 1 ? '1 gasto' : `${segmento.cantidad} gastos`}
+            {' · '}
+            {segmento.detalle}
+          </p>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -166,7 +271,7 @@ function EmptyState({ hayFiltros, onLimpiar, puedeEscribir, onNuevo }) {
       </p>
       <p className="text-sm text-muted-foreground">
         {hayFiltros
-          ? 'Probá con otro período o quitá los filtros de categoría y tipo.'
+          ? 'Probá con otro período o quitá los filtros de las columnas.'
           : 'Cargá los gastos del período para poder liquidar las expensas.'}
       </p>
       {hayFiltros ? (
@@ -284,7 +389,32 @@ export default function EdificioGastosTab() {
   const periodo = searchParams.get('periodo') ?? periodoDefault;
   const categoria = searchParams.get('categoria') ?? '';
   const tipo = searchParams.get('tipo') ?? '';
+  const proveedorId = searchParams.get('proveedorId') ?? '';
+  const createdBy = searchParams.get('createdBy') ?? '';
+  const desde = searchParams.get('desde') ?? '';
+  const hasta = searchParams.get('hasta') ?? '';
+  const q = searchParams.get('q') ?? '';
   const page = Math.max(1, Number(searchParams.get('page')) || 1);
+
+  // Decisión 8: lo tipeado es estado local y llega a la URL con debounce.
+  const [busqueda, setBusqueda] = useState(q);
+  useEffect(() => {
+    if (busqueda === q) return undefined;
+    const timer = setTimeout(() => setFiltro({ q: busqueda }), 300);
+    return () => clearTimeout(timer);
+    // `setFiltro` es estable (solo usa el setter de searchParams) y `q` entra
+    // para no reescribir la URL con lo que ya dice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busqueda, q]);
+
+  // Decisión 10: la nómina de staff alimenta el filtro "Cargado por" y solo el
+  // org_admin puede leerla.
+  const { data: staff } = useQuery({
+    queryKey: queryKeys.organizaciones.staff(),
+    queryFn: () => api.get('/api/organizaciones/me/usuarios'),
+    enabled: puedeEscribir,
+  });
+  const autores = staff ?? [];
 
   // Un período elegido a mano que no esté entre los últimos 12 (link viejo,
   // filtro compartido) tiene que seguir siendo seleccionable en el combo.
@@ -297,6 +427,11 @@ export default function EdificioGastosTab() {
     periodo: periodo === TODOS_LOS_PERIODOS ? undefined : periodo,
     categoria: categoria || undefined,
     esOrdinario: tipo === '' ? undefined : tipo === 'ordinario',
+    proveedorId: proveedorId || undefined,
+    createdBy: createdBy || undefined,
+    desde: desde || undefined,
+    hasta: hasta || undefined,
+    q: q || undefined,
     page,
     limit: LIMIT,
   };
@@ -321,6 +456,7 @@ export default function EdificioGastosTab() {
   }
 
   function limpiarFiltros() {
+    setBusqueda('');
     setSearchParams(new URLSearchParams());
   }
 
@@ -332,7 +468,14 @@ export default function EdificioGastosTab() {
   // "Con filtros" a los efectos del empty state: cualquier recorte por sobre el
   // default (el período corriente solo no cuenta como filtro elegido).
   const hayFiltros =
-    categoria !== '' || tipo !== '' || periodo !== periodoDefault;
+    categoria !== '' ||
+    tipo !== '' ||
+    proveedorId !== '' ||
+    createdBy !== '' ||
+    desde !== '' ||
+    hasta !== '' ||
+    q !== '' ||
+    periodo !== periodoDefault;
   const hayMonedaExtranjera = gastos.some((g) => g.moneda !== 'ARS');
 
   return (
@@ -360,96 +503,214 @@ export default function EdificioGastosTab() {
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4">
-        {/* Filtros (§4.1). Reactivos: cada cambio reescribe la URL y la query. */}
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="filtro-periodo">Período</Label>
-            <Select
-              id="filtro-periodo"
-              className="w-44"
-              value={periodo}
-              onChange={(e) => setFiltro({ periodo: e.target.value })}
-            >
-              {opcionesPeriodo.map((p) => (
-                <option key={p} value={p}>
-                  {formatearPeriodo(p)}
-                </option>
-              ))}
-              <option value={TODOS_LOS_PERIODOS}>Todos los períodos</option>
-            </Select>
-          </div>
+        {/* Decisión 9: el totalizador del filtro activo, segmentado. */}
+        <Totalizador totales={totales} />
 
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="filtro-categoria">Categoría</Label>
-            <Select
-              id="filtro-categoria"
-              className="w-52"
-              value={categoria}
-              onChange={(e) => setFiltro({ categoria: e.target.value })}
-            >
-              {CATEGORIAS.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="filtro-tipo">Tipo</Label>
-            <Select
-              id="filtro-tipo"
-              className="w-40"
-              value={tipo}
-              onChange={(e) => setFiltro({ tipo: e.target.value })}
-            >
-              {TIPOS.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          {hayFiltros && (
+        {hayFiltros && (
+          <div className="flex justify-end">
             <Button variant="ghost" size="sm" onClick={limpiarFiltros}>
-              Limpiar
+              Limpiar filtros
             </Button>
-          )}
-        </div>
+          </div>
+        )}
 
-        {gastos.length === 0 ? (
+        {gastos.length === 0 && !hayFiltros ? (
           <EmptyState
-            hayFiltros={hayFiltros}
+            hayFiltros={false}
             onLimpiar={limpiarFiltros}
             puedeEscribir={puedeEscribir}
             onNuevo={() => setAltaOpen(true)}
           />
         ) : (
           <>
-            {/* `refrescando` = está trayendo otra página con la anterior en
-                pantalla (keepPreviousData): se atenúa para que el cambio se note. */}
+            {/* `refrescando` = está trayendo otra página o el resultado de un
+                filtro nuevo con el anterior en pantalla (keepPreviousData): se
+                atenúa para que el cambio se note. La tabla se renderiza incluso
+                sin filas cuando hay filtros, porque sus cabeceras SON los
+                filtros (decisión 7) y esconderlas dejaría al usuario sin forma
+                de corregir el filtro que vació la lista. */}
             <div className={refrescando ? 'opacity-60 transition-opacity' : undefined}>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Concepto</TableHead>
+                    <TableHead>Proveedor</TableHead>
                     <TableHead className="text-right">Monto</TableHead>
                     <TableHead>Categoría</TableHead>
                     <TableHead>Tipo</TableHead>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Cargado por</TableHead>
                     <TableHead>Período</TableHead>
                     {puedeEscribir && (
-                      <TableHead>
+                      <TableHead className={CELDA_ACCIONES}>
                         <span className="sr-only">Acciones</span>
                       </TableHead>
                     )}
                   </TableRow>
+
+                  {/* Decisión 7: un filtro por columna, debajo de su título. */}
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="align-top">
+                      <div className="relative w-full min-w-36">
+                        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          id="filtro-concepto"
+                          className="h-9 w-full min-w-0 pl-8"
+                          placeholder="Buscar concepto"
+                          autoComplete="off"
+                          aria-label="Filtrar por concepto"
+                          value={busqueda}
+                          onChange={(e) => setBusqueda(e.target.value)}
+                        />
+                      </div>
+                    </TableHead>
+
+                    <TableHead className="align-top">
+                      {/* Reusa el combobox del form de gasto (S3-14): el
+                          directorio se pagina y no cabe en un <select>. Sin
+                          alta inline — crear un proveedor desde un filtro no
+                          tiene sentido. */}
+                      <div className="w-full min-w-40 font-normal">
+                        <ProveedorSelect
+                          id="filtro-proveedor"
+                          value={proveedorId}
+                          permitirAlta={false}
+                          onChange={(valor) => setFiltro({ proveedorId: valor })}
+                        />
+                      </div>
+                    </TableHead>
+
+                    {/* El endpoint no filtra por monto: la celda queda vacía en
+                        vez de prometer un control que no existe. */}
+                    <TableHead />
+
+                    <TableHead className="align-top">
+                      <Select
+                        id="filtro-categoria"
+                        className="h-9 w-20 font-normal"
+                        aria-label="Filtrar por categoría"
+                        value={categoria}
+                        onChange={(e) => setFiltro({ categoria: e.target.value })}
+                      >
+                        {CATEGORIAS.map((c) => (
+                          <option key={c.value} value={c.value}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </TableHead>
+
+                    <TableHead className="align-top">
+                      <Select
+                        id="filtro-tipo"
+                        className="h-9 w-28 font-normal"
+                        aria-label="Filtrar por tipo"
+                        value={tipo}
+                        onChange={(e) => setFiltro({ tipo: e.target.value })}
+                      >
+                        {TIPOS.map((t) => (
+                          <option key={t.value} value={t.value}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </TableHead>
+
+                    {/* La fecha filtra por rango (`desde`/`hasta` del endpoint):
+                        un solo día casi nunca es lo que se busca. */}
+                    <TableHead className="align-top">
+                      <div className="flex w-30 flex-col gap-1 font-normal">
+                        <Label htmlFor="filtro-desde" className="sr-only">
+                          Desde
+                        </Label>
+                        <Input
+                          id="filtro-desde"
+                          type="date"
+                          className="h-9 w-30 min-w-0 px-1.5"
+                          title="Desde"
+                          value={desde}
+                          onChange={(e) => setFiltro({ desde: e.target.value })}
+                        />
+                        <Label htmlFor="filtro-hasta" className="sr-only">
+                          Hasta
+                        </Label>
+                        <Input
+                          id="filtro-hasta"
+                          type="date"
+                          className="h-9 w-30 min-w-0 px-1.5"
+                          title="Hasta"
+                          value={hasta}
+                          onChange={(e) => setFiltro({ hasta: e.target.value })}
+                        />
+                      </div>
+                    </TableHead>
+
+                    <TableHead className="align-top">
+                      {/* Decisión 10: solo el org_admin lee la nómina. */}
+                      {puedeEscribir && (
+                        <Select
+                          id="filtro-autor"
+                          className="h-9 w-28 font-normal"
+                          aria-label="Filtrar por quién lo cargó"
+                          value={createdBy}
+                          onChange={(e) => setFiltro({ createdBy: e.target.value })}
+                        >
+                          <option value="">Todos</option>
+                          {autores.map((autor) => (
+                            <option key={autor.id} value={autor.id}>
+                              {nombreDeAutor(autor)}
+                            </option>
+                          ))}
+                        </Select>
+                      )}
+                    </TableHead>
+
+                    <TableHead className="align-top">
+                      <Select
+                        id="filtro-periodo"
+                        className="h-9 w-28 font-normal"
+                        aria-label="Filtrar por período"
+                        value={periodo}
+                        onChange={(e) => setFiltro({ periodo: e.target.value })}
+                      >
+                        {opcionesPeriodo.map((p) => (
+                          <option key={p} value={p} title={formatearPeriodo(p)}>
+                            {p}
+                          </option>
+                        ))}
+                        <option value={TODOS_LOS_PERIODOS}>Todos</option>
+                      </Select>
+                    </TableHead>
+
+                    {puedeEscribir && <TableHead className={CELDA_ACCIONES} />}
+                  </TableRow>
                 </TableHeader>
+
                 <TableBody>
                   {gastos.map((gasto) => (
                     <TableRow key={gasto.id}>
                       <TableCell className="font-medium">
-                        {gasto.concepto}
+                        <span
+                          className="block max-w-48 truncate"
+                          title={gasto.concepto}
+                        >
+                          {gasto.concepto}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className="flex max-w-36 flex-col"
+                          title={gasto.proveedor?.razonSocial ?? undefined}
+                        >
+                          <span className="truncate">
+                            {gasto.proveedor?.razonSocial ?? '—'}
+                          </span>
+                          {gasto.proveedor?.activo === false && (
+                            <span className="text-xs text-muted-foreground">
+                              dado de baja
+                            </span>
+                          )}
+                        </span>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {formatearMonto(gasto.monto, gasto.moneda)}
@@ -457,14 +718,31 @@ export default function EdificioGastosTab() {
                       <TableCell>
                         <CategoriaGasto gasto={gasto} />
                       </TableCell>
-                      <TableCell>
-                        {gasto.esOrdinario ? 'Ordinario' : 'Extraordinario'}
+                      <TableCell
+                        title={gasto.esOrdinario ? 'Ordinario' : 'Extraordinario'}
+                      >
+                        {gasto.esOrdinario ? 'Ordinario' : 'Extraord.'}
+                      </TableCell>
+                      {/* dd-mm: el año ya lo fija el filtro de período. El
+                          título trae la fecha completa para el caso raro en que
+                          el gasto sea de otro año que el período. */}
+                      <TableCell
+                        className="tabular-nums"
+                        title={(gasto.fechaGasto ?? '').slice(0, 10)}
+                      >
+                        {formatearFechaCorta(gasto.fechaGasto)}
+                      </TableCell>
+                      <TableCell
+                        className="text-muted-foreground"
+                        title={nombreDeAutor(gasto.creadoPor)}
+                      >
+                        {nombreDeAutorCorto(gasto.creadoPor)}
                       </TableCell>
                       <TableCell className="tabular-nums">
                         {gasto.periodo}
                       </TableCell>
                       {puedeEscribir && (
-                        <TableCell>
+                        <TableCell className={CELDA_ACCIONES}>
                           <AccionesGasto
                             gasto={gasto}
                             onEditar={() => setEditando(gasto)}
@@ -474,18 +752,35 @@ export default function EdificioGastosTab() {
                       )}
                     </TableRow>
                   ))}
+
+                  {/* Con filtros que no matchean, la tabla se queda con sus
+                      cabeceras (que son los filtros) y el vacío se explica acá. */}
+                  {gastos.length === 0 && (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell
+                        colSpan={puedeEscribir ? 9 : 8}
+                        className="py-10 text-center text-sm text-muted-foreground"
+                      >
+                        Ningún gasto coincide con los filtros de las columnas.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
+
                 {/* Decisión 4: el TOTAL es del filtro completo (backend). */}
                 <TableFooter>
                   <TableRow className="hover:bg-transparent">
                     <TableCell className="font-semibold">TOTAL</TableCell>
+                    <TableCell />
                     <TableCell className="text-right font-semibold tabular-nums">
                       {formatearMonto(totales?.monto ?? '0.00')}
                     </TableCell>
                     <TableCell />
                     <TableCell />
                     <TableCell />
-                    {puedeEscribir && <TableCell />}
+                    <TableCell />
+                    <TableCell />
+                    {puedeEscribir && <TableCell className={CELDA_ACCIONES} />}
                   </TableRow>
                 </TableFooter>
               </Table>

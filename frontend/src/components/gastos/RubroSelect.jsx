@@ -20,7 +20,14 @@
 //
 // Contrato para S3-08: controlado por `value` (rubroId hoja o '') +
 // `onChange(rubroId)`, apto para un `Controller` de RHF.
-import { useEffect, useState } from 'react';
+//
+// FIX de S3-08b: el sync desde `value` ignora los cambios que emitió ESTE
+// control. Antes no distinguía, y con un `value` precargado (el rubro habitual
+// del proveedor, o la edición de un gasto) elegir un rubro CON subrubros se
+// deshacía sola: `elegirRubro` emite '' para no fijar una rama (regla 1), el
+// efecto veía `!value` y reseteaba el primer select a "Elegí un rubro". La
+// cascada quedaba imposible de completar salvo empezando desde vacío.
+import { useEffect, useRef, useState } from 'react';
 import { useRubros } from '@/hooks/useRubros';
 import { Select } from '@/components/ui/select';
 
@@ -33,11 +40,15 @@ export default function RubroSelect({
 }) {
   const { arbol, cargando } = useRubros();
   const [rubroId, setRubroId] = useState('');
+  // Último valor emitido por este control: lo que vuelve por `value` después de
+  // emitirlo NO es un cambio externo y no tiene que re-sincronizar la cascada.
+  const emitido = useRef(null);
 
   // El `value` puede llegar de afuera (edición de un gasto, o la sugerencia del
   // rubro habitual del proveedor): hay que reconstruir en qué rama del árbol cae
   // para que el primer select muestre el padre correcto.
   useEffect(() => {
+    if (value === emitido.current) return;
     if (!value) {
       setRubroId('');
       return;
@@ -48,6 +59,11 @@ export default function RubroSelect({
     if (padre) setRubroId(padre.id);
   }, [value, arbol]);
 
+  const emitir = (nuevoValor) => {
+    emitido.current = nuevoValor;
+    onChange?.(nuevoValor);
+  };
+
   const rubro = arbol.find((r) => r.id === rubroId) ?? null;
   const subrubros = rubro?.subrubros ?? [];
   const necesitaSubrubro = subrubros.length > 0;
@@ -55,13 +71,13 @@ export default function RubroSelect({
   const elegirRubro = (nuevoId) => {
     setRubroId(nuevoId);
     if (!nuevoId) {
-      onChange?.('');
+      emitir('');
       return;
     }
     const elegido = arbol.find((r) => r.id === nuevoId);
     // Regla 2: rubro hoja → ya es un `rubroId` válido. Regla 1: con subrubros el
     // valor queda vacío hasta que se elija uno.
-    onChange?.(elegido && elegido.subrubros.length === 0 ? nuevoId : '');
+    emitir(elegido && elegido.subrubros.length === 0 ? nuevoId : '');
   };
 
   return (
@@ -89,7 +105,7 @@ export default function RubroSelect({
           disabled={disabled}
           aria-label="Subrubro"
           aria-invalid={invalido && !value ? true : undefined}
-          onChange={(event) => onChange?.(event.target.value)}
+          onChange={(event) => emitir(event.target.value)}
         >
           <option value="">Elegí un subrubro</option>
           {subrubros.map((subrubro) => (

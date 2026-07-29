@@ -59,6 +59,32 @@ export function formatearPeriodo(periodo) {
   return nombre ? `${nombre} ${anio}` : periodo;
 }
 
+// Fecha corta "dd-mm" para las tablas donde el año ya está implícito en el
+// filtro de período (columna "Fecha" del listado de gastos). Se lee la parte
+// UTC del ISO que devuelve la API: `new Date(...).getDate()` en Argentina
+// (UTC-3) devolvería el día anterior para una fecha guardada a medianoche UTC.
+export function formatearFechaCorta(iso) {
+  if (!iso) return '—';
+  const [, mes, dia] = String(iso).slice(0, 10).split('-');
+  return mes && dia ? `${dia}-${mes}` : '—';
+}
+
+// Nombre legible de quien cargó un registro (`creadoPor` de la API). Devuelve
+// "—" cuando el autor ya no existe: el gasto es el dato, el autor es metadata.
+export function nombreDeAutor(autor) {
+  if (!autor) return '—';
+  return [autor.nombre, autor.apellido].filter(Boolean).join(' ') || '—';
+}
+
+// "María Fernanda Ruiz" → "María F." Para columnas de tabla, donde el nombre
+// completo se lleva el ancho de una columna de datos: el completo va en el
+// `title` y en el combo del filtro, que sí tienen lugar.
+export function nombreDeAutorCorto(autor) {
+  if (!autor?.nombre) return nombreDeAutor(autor);
+  const inicial = autor.apellido ? ` ${autor.apellido[0]}.` : '';
+  return `${autor.nombre.split(' ')[0]}${inicial}`;
+}
+
 // Período corriente en hora local (es el mes que el usuario está viviendo, no
 // el UTC): default de los filtros de gastos.
 export function periodoActual(referencia = new Date()) {
