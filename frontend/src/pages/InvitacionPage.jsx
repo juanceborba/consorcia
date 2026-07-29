@@ -1,7 +1,6 @@
 // frontend/src/pages/InvitacionPage.jsx — ConsorcIA
 // Pantalla PÚBLICA de activación por invitación (S4-08, PRD-04-11 §4.5 y §5.4).
-// Es la única credencial que tiene el invitado: el token del link prueba
-// posesión del buzón (§7), así que la ruta va fuera de RequireAuth.
+// La ruta va fuera de RequireAuth: el invitado todavía no tiene sesión.
 //
 // GET /api/invitaciones/:token → a qué organización y con qué rol lo invitaron
 // (email enmascarado: el link puede terminar en manos de un tercero, Ley
@@ -9,15 +8,18 @@
 // vencida — la pantalla muestra un solo mensaje y manda a login.
 //
 // POST /api/invitaciones/:token/aceptar → define la password (mínimo 8, con
-// confirmación) y devuelve la sesión ya emitida: se guarda en el auth.store y
-// se entra sin pasar por el login.
+// confirmación). S4-11 (SEC-01): el backend solo emite sesión cuando la
+// invitación es la que creó la identidad. Si la cuenta ya estaba activa
+// responde `{ yaActivada: true }` SIN tokens y esta pantalla lo dice y manda a
+// /login, en vez de prometer una contraseña que el backend descartó (review S2).
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Loader2, MailX } from 'lucide-react';
+import { Loader2, MailCheck, MailX } from 'lucide-react';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import { useAuthStore } from '@/stores/auth.store';
@@ -62,6 +64,9 @@ export default function InvitacionPage() {
   const { token } = useParams();
   const navigate = useNavigate();
   const establecerSesion = useAuthStore((s) => s.establecerSesion);
+  // Resultado que no es una sesión: la cuenta ya estaba activa, o el link no
+  // puede activarla (la aprovisionó otra organización, o hay una baja lógica).
+  const [aviso, setAviso] = useState(null);
 
   const { data: invitacion, isLoading, error } = useQuery({
     queryKey: queryKeys.invitaciones.porToken(token),
@@ -88,7 +93,18 @@ export default function InvitacionPage() {
         confirmacion: valores.confirmacion,
       }),
     onSuccess: (sesion) => {
-      // El endpoint ya devuelve la sesión emitida: se entra sin login.
+      // La cuenta ya tenía password: el backend no emite sesión y la que se
+      // acaba de tipear se descarta (SEC-01). Se dice explícitamente.
+      if (sesion.yaActivada) {
+        setAviso({
+          titulo: 'Tu cuenta ya estaba activa',
+          detalle:
+            'El vínculo con esta administración ya quedó creado. Entrá con la contraseña que venías usando: la que acabás de escribir no se guardó.',
+        });
+        return;
+      }
+      // Invitación que creó la identidad: el endpoint devuelve la sesión ya
+      // emitida y se entra sin pasar por el login.
       establecerSesion(sesion);
       toast.success('Cuenta activada', {
         description: `¡Bienvenido/a, ${sesion.user.nombre || sesion.user.email}!`,
@@ -96,6 +112,12 @@ export default function InvitacionPage() {
       navigate('/', { replace: true });
     },
     onError: (err) => {
+      // 409 / 403 son condiciones permanentes del link, no fallas transitorias:
+      // van a pantalla completa con el motivo, no a un toast de "reintentá".
+      if (['ACTIVACION_NO_DISPONIBLE', 'MEMBRESIA_DESACTIVADA', 'CUENTA_DESACTIVADA'].includes(err.code)) {
+        setAviso({ titulo: 'No pudimos activar tu cuenta con este link', detalle: err.message });
+        return;
+      }
       toast.error('No se pudo activar la cuenta', {
         description: err.message ?? 'Error inesperado',
       });
@@ -130,6 +152,23 @@ export default function InvitacionPage() {
           <Button render={<Link to="/login" />} variant="outline">
             Ir a iniciar sesión
           </Button>
+        </CardContent>
+      </Pantalla>
+    );
+  }
+
+  // Resultado sin sesión (cuenta ya activa, link que no activa): estado final
+  // de la pantalla, con la salida clara al login.
+  if (aviso) {
+    return (
+      <Pantalla>
+        <CardHeader>
+          <MailCheck className="size-8 text-muted-foreground" />
+          <CardTitle>{aviso.titulo}</CardTitle>
+          <CardDescription>{aviso.detalle}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button render={<Link to="/login" />}>Ir a iniciar sesión</Button>
         </CardContent>
       </Pantalla>
     );

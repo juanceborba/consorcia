@@ -5,10 +5,23 @@
 //   POST /api/invitaciones/:token/aceptar  → 200 { accessToken, refreshToken, user }
 //
 // Ambos son PÚBLICOS: el invitado todavía no tiene sesión y el token del link
-// es la única credencial (prueba de posesión del buzón, PRD-04-11 §7). El
-// token es de un solo uso y vence a los 7 días: expirada, usada o inexistente
-// responden todas 410 `INVITACION_INVALIDA` (sin distinguir cuál, para no
-// filtrar si un email/organización existe).
+// es la única credencial. El token es de un solo uso y vence a los 7 días:
+// expirada, usada o inexistente responden todas 410 `INVITACION_INVALIDA` (sin
+// distinguir cuál, para no filtrar si un email/organización existe).
+//
+// S4-11 · REGLA DE DISEÑO (SEC-01/02/06, PRD-04-11 §6.3). En el MVP el link NO
+// se envía por email: se le devuelve al invitador. El token, entonces, NO
+// prueba posesión del buzón — lo posee quien invitó. De ahí la regla dura:
+//
+//   la aceptación NUNCA emite sesión ni fija password sobre un `Usuario`
+//   preexistente; solo la invitación que CREÓ la identidad puede activarla.
+//
+// Casos y respuesta (tabla completa en PRD-04-11 §6.3):
+//   identidad nueva / la creó esta invitación → 200 sesión (flujo feliz)
+//   cuenta ya activada (passwordHash != null) → 200 { yaActivada: true }, sin tokens
+//   sin activar y `creaUsuario = false`       → 409 ACTIVACION_NO_DISPONIBLE
+//   membresía de esa org dada de baja         → 403 MEMBRESIA_DESACTIVADA
+//   `Usuario` dado de baja global             → 403 CUENTA_DESACTIVADA
 //
 // Los endpoints que CREAN invitaciones son de S4-03 (staff) y S4-04
 // (residentes); acá solo se leen y se aceptan.
@@ -169,20 +182,70 @@ router.post('/:token/aceptar', validarBody(aceptarSchema), async (req, res, next
     const passwordHash = await bcrypt.hash(req.body.password, 10);
 
     // Todo o nada: si algo falla, la invitación NO queda consumida.
-    const usuario = await prisma.$transaction(async (tx) => {
+    const resultado = await prisma.$transaction(async (tx) => {
+      // Consumo del token: `usadaAt` + condición `usadaAt: null` para que dos
+      // aceptaciones simultáneas no apliquen los vínculos dos veces.
+      const consumirToken = async () => {
+        const consumida = await tx.invitacion.updateMany({
+          where: { id: invitacion.id, usadaAt: null },
+          data: { usadaAt: new Date() },
+        });
+        if (consumida.count === 0) {
+          throw Object.assign(new Error('invitación ya consumida'), { esInvitacionUsada: true });
+        }
+      };
+
       const existente = await tx.usuario.findUnique({ where: { email } });
 
-      // Si la persona ya tenía cuenta con password, NO se sobrescribe: la
-      // invitación suma vínculos, no resetea credenciales ajenas (PRD-04-11
-      // §4.3 "mismo login, sin password nuevo"). Solo se define cuando el
-      // Usuario todavía no fue activado.
+      // -----------------------------------------------------------------
+      // Efectos sobre una identidad PREEXISTENTE: los tres cortes de S4-11.
+      // -----------------------------------------------------------------
+      if (existente) {
+        // SEC-06: una baja lógica se revierte por acto administrativo, nunca
+        // con una invitación que el propio atacante genera.
+        if (!existente.activo || existente.deletedAt) {
+          return { cuentaDesactivada: true };
+        }
+
+        // SEC-06: el accept tampoco reactiva una membresía dada de baja. Que
+        // la persona vuelva al staff lo decide la organización (PATCH
+        // /me/usuarios/:id con `activo: true`), no el link.
+        if (invitacion.tipo === 'STAFF') {
+          const membresia = await tx.organizacionUsuario.findUnique({
+            where: {
+              organizacionId_usuarioId: {
+                organizacionId: invitacion.organizacionId,
+                usuarioId: existente.id,
+              },
+            },
+          });
+          if (membresia && !membresia.activo) return { membresiaDesactivada: true };
+        }
+
+        // SEC-01: la cuenta ya está activada → la invitación no aporta
+        // credenciales y NO puede emitir sesión (quien tiene el link es el
+        // invitador). El vínculo ya se materializó en el alta, así que no se
+        // pierde nada: se consume el token y la persona entra por /login.
+        if (existente.passwordHash) {
+          await consumirToken();
+          return { yaActivada: true };
+        }
+
+        // SEC-02: cuenta sin activar que aprovisionó OTRA invitación. Fijarle
+        // la password acá sería tomar una identidad de un tenant ajeno. No se
+        // consume el token: la invitación de origen sigue siendo la válida.
+        if (!invitacion.creaUsuario) return { noActivable: true };
+      }
+
+      // -----------------------------------------------------------------
+      // Activación legítima: la identidad la creó esta invitación (o no
+      // existía todavía). Acá sí se define la password y se emite sesión.
+      // -----------------------------------------------------------------
       const persona = existente
         ? await tx.usuario.update({
             where: { id: existente.id },
             data: {
-              activo: true,
-              deletedAt: null,
-              ...(existente.passwordHash ? {} : { passwordHash }),
+              passwordHash,
               nombre: existente.nombre || payload.nombre || '',
               apellido: existente.apellido || payload.apellido || '',
             },
@@ -197,8 +260,8 @@ router.post('/:token/aceptar', validarBody(aceptarSchema), async (req, res, next
           });
 
       if (invitacion.tipo === 'STAFF') {
-        // Membresía staff: si ya existía (invitación de "sumaste una
-        // organización"), se reactiva y se aplica el rol invitado.
+        // Membresía staff: si ya existía (la creó el alta), se le aplica el rol
+        // invitado. Nunca se reactiva una desactivada: ese caso salió arriba.
         await tx.organizacionUsuario.upsert({
           where: {
             organizacionId_usuarioId: {
@@ -211,7 +274,7 @@ router.post('/:token/aceptar', validarBody(aceptarSchema), async (req, res, next
             usuarioId: persona.id,
             rol: payload.rol,
           },
-          update: { rol: payload.rol, activo: true },
+          update: { rol: payload.rol },
         });
 
         // Edificios permitidos del gestor (los de otras orgs no se tocan)
@@ -255,20 +318,44 @@ router.post('/:token/aceptar', validarBody(aceptarSchema), async (req, res, next
         });
       }
 
-      // Consumo del token: `usadaAt` + condición `usadaAt: null` para que dos
-      // aceptaciones simultáneas no apliquen los vínculos dos veces.
-      const consumida = await tx.invitacion.updateMany({
-        where: { id: invitacion.id, usadaAt: null },
-        data: { usadaAt: new Date() },
-      });
-      if (consumida.count === 0) {
-        throw Object.assign(new Error('invitación ya consumida'), { esInvitacionUsada: true });
-      }
-
-      return persona;
+      await consumirToken();
+      return { persona };
     });
 
-    const sesion = await emitirSesion(usuario);
+    if (resultado.cuentaDesactivada) {
+      return res.status(403).json({
+        error: {
+          code: 'CUENTA_DESACTIVADA',
+          message:
+            'Esa cuenta está dada de baja. Reactivarla es un trámite con la administración: la invitación no la revive.',
+        },
+      });
+    }
+    if (resultado.membresiaDesactivada) {
+      return res.status(403).json({
+        error: {
+          code: 'MEMBRESIA_DESACTIVADA',
+          message:
+            'Tu acceso a esta administración fue dado de baja. Pedile a la administración que lo reactive.',
+        },
+      });
+    }
+    if (resultado.noActivable) {
+      return res.status(409).json({
+        error: {
+          code: 'ACTIVACION_NO_DISPONIBLE',
+          message:
+            'Tu cuenta ya existe y la creó otra administración: activala con el link que te mandaron ellos. Este link solo sumó tu vínculo con esta organización.',
+        },
+      });
+    }
+    // Cuenta ya activada: la invitación no aporta credenciales, así que no se
+    // emite sesión (SEC-01). El vínculo ya está creado; se entra por /login.
+    if (resultado.yaActivada) {
+      return res.status(200).json({ yaActivada: true });
+    }
+
+    const sesion = await emitirSesion(resultado.persona);
     return res.status(200).json(sesion);
   } catch (err) {
     if (err.esInvitacionUsada) return invitacionInvalida(res);

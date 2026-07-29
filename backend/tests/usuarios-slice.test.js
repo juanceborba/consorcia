@@ -41,6 +41,7 @@ describe('slice de usuarios: identidad global y aislamiento (S4-06)', () => {
   // Persona con identidad global: gestora en A y org_admin en B (test 2).
   let multiOrgEmail;
   let multiOrgId;
+  let multiOrgInvitacionUrlA;
   let multiOrgInvitacionUrlB;
   const PASSWORD_MULTI = 'multiorg1234';
 
@@ -249,12 +250,21 @@ describe('slice de usuarios: identidad global y aislamiento (S4-06)', () => {
     });
     assert.deepEqual(pendientes.map((i) => i.organizacionId).sort(), [orgAId, orgBId].sort());
 
-    // Guardamos el link de la invitación de B para activarla en el próximo test
+    // Links de las dos invitaciones: la de A creó la identidad, la de B no.
+    multiOrgInvitacionUrlA = enA.data.invitacionUrl;
     multiOrgInvitacionUrlB = enB.data.invitacionUrl;
   });
 
-  it('aceptar la invitación activa la cuenta y el segundo uso del mismo token devuelve 410', async () => {
-    const aceptada = await aceptarInvitacion(multiOrgInvitacionUrlB, PASSWORD_MULTI);
+  it('solo la invitación que creó la identidad activa la cuenta (SEC-02) y el segundo uso da 410', async () => {
+    // La invitación de B llegó sobre una identidad que aprovisionó A: no puede
+    // definirle la password (S4-11 / SEC-02).
+    const ajena = await aceptarInvitacion(multiOrgInvitacionUrlB, PASSWORD_MULTI);
+    assert.equal(ajena.status, 409);
+    assert.equal(ajena.data.error.code, 'ACTIVACION_NO_DISPONIBLE');
+    assert.equal((await login(baseUrl, multiOrgEmail, PASSWORD_MULTI)).status, 401);
+
+    // La de A sí: es la que creó al Usuario.
+    const aceptada = await aceptarInvitacion(multiOrgInvitacionUrlA, PASSWORD_MULTI);
     assert.equal(aceptada.status, 200);
     assert.equal(aceptada.data.user.id, multiOrgId);
     // Con dos membresías, la org activa es la primera alfabética: la del seed
@@ -263,12 +273,12 @@ describe('slice de usuarios: identidad global y aislamiento (S4-06)', () => {
     refreshTokensAbiertos.push(aceptada.data.refreshToken);
 
     // Reuso del mismo token: la invitación quedó consumida
-    const reuso = await aceptarInvitacion(multiOrgInvitacionUrlB, PASSWORD_MULTI);
+    const reuso = await aceptarInvitacion(multiOrgInvitacionUrlA, PASSWORD_MULTI);
     assert.equal(reuso.status, 410);
     assert.equal(reuso.data.error.code, 'INVITACION_INVALIDA');
 
     // Y ya no se puede ni mirar
-    const token = multiOrgInvitacionUrlB.split('/').pop();
+    const token = multiOrgInvitacionUrlA.split('/').pop();
     const detalle = await apiFetch(baseUrl, `/api/invitaciones/${token}`);
     assert.equal(detalle.status, 410);
 
@@ -590,5 +600,89 @@ describe('slice de usuarios: identidad global y aislamiento (S4-06)', () => {
     });
     assert.equal(otras.length, 2);
     assert.ok(otras.every((m) => m.activo));
+  });
+
+  // -------------------------------------------------------------------------
+  // S4-11 · Hardening de la aceptación y del contexto de acceso
+  // -------------------------------------------------------------------------
+
+  it('una organización ajena no obtiene sesión invitando a una cuenta activada (SEC-01)', async () => {
+    // Reproducción del reporte: el atacante es org_admin de una organización
+    // recién registrada (self-service por /register) y solo conoce el email de
+    // la víctima, que es org_admin de otra administración y ya tiene cuenta.
+    const atacante = await registrarOrganizacion('atacante-sec01', 'Zeta Atacante');
+    const victima = adminB.email;
+
+    const alta = await apiFetch(baseUrl, RUTA_STAFF, {
+      method: 'POST',
+      token: atacante.accessToken,
+      body: { email: victima, nombre: 'Vic', rol: 'GESTOR' },
+    });
+    assert.equal(alta.status, 201);
+
+    const aceptada = await aceptarInvitacion(alta.data.invitacionUrl, 'atacante-elige-1234');
+    assert.equal(aceptada.status, 200);
+    assert.equal(aceptada.data.yaActivada, true);
+    // Lo que bloquea el ataque: NINGÚN token para la identidad de la víctima
+    assert.equal(aceptada.data.accessToken, undefined);
+    assert.equal(aceptada.data.refreshToken, undefined);
+    assert.equal(aceptada.data.user, undefined);
+
+    // La password de la víctima sigue siendo la suya y la del atacante no entra
+    assert.equal((await login(baseUrl, victima, 'atacante-elige-1234')).status, 401);
+    const propia = await login(baseUrl, victima, 'password1234');
+    assert.equal(propia.status, 200);
+    refreshTokensAbiertos.push(propia.data.refreshToken);
+
+    // La invitación igual queda consumida: el vínculo ya se materializó al alta
+    const token = alta.data.invitacionUrl.split('/').pop();
+    const consumida = await prisma.invitacion.findUnique({ where: { token } });
+    assert.ok(consumida.usadaAt);
+  });
+
+  it('una membresía staff no borra los roles de residente: el contexto los une (SEC-03)', async () => {
+    // `residenteMultiOrgEmail` es propietario de una UF de la org A y no tiene
+    // ninguna membresía staff. La org B —ajena a esa UF— lo invita como gestor.
+    const alta = await apiFetch(baseUrl, RUTA_STAFF, {
+      method: 'POST',
+      token: adminB.accessToken,
+      body: {
+        email: residenteMultiOrgEmail,
+        nombre: 'Resi',
+        rol: 'GESTOR',
+        edificioIds: [edificioB1.id],
+      },
+    });
+    assert.equal(alta.status, 201);
+
+    // El login trae la UNIÓN: el rol de la membresía + los de sus UFs vigentes.
+    // Antes la membresía tapaba a `propietario` y el residente lo perdía.
+    const sesion = await login(baseUrl, residenteMultiOrgEmail, 'residente1234');
+    assert.equal(sesion.status, 200);
+    assert.deepEqual(sesion.data.user.roles.sort(), ['gestor', 'propietario']);
+    assert.equal(sesion.data.user.organizacionId, orgBId);
+    refreshTokensAbiertos.push(sesion.data.refreshToken);
+
+    // El switch de organización conserva la unión
+    const cambio = await apiFetch(baseUrl, '/api/auth/cambiar-organizacion', {
+      method: 'POST',
+      token: sesion.data.accessToken,
+      body: { organizacionId: orgBId, refreshToken: sesion.data.refreshToken },
+    });
+    assert.equal(cambio.status, 200);
+    assert.deepEqual(cambio.data.user.roles.sort(), ['gestor', 'propietario']);
+    refreshTokensAbiertos.push(cambio.data.refreshToken);
+
+    // Y el refresh también (los claims del access token son la fuente de Cerbos)
+    const refrescada = await apiFetch(baseUrl, '/api/auth/refresh', {
+      method: 'POST',
+      body: { refreshToken: cambio.data.refreshToken },
+    });
+    assert.equal(refrescada.status, 200);
+    assert.deepEqual(claimsDe(refrescada.data.accessToken).roles.sort(), [
+      'gestor',
+      'propietario',
+    ]);
+    refreshTokensAbiertos.push(refrescada.data.refreshToken);
   });
 });

@@ -285,7 +285,7 @@ describe('invitaciones (S4-02)', () => {
     assert.equal(sigueVigente.usadaAt, null);
   });
 
-  it('una persona ya registrada suma vínculos sin perder su password (identidad global)', async () => {
+  it('aceptar sobre una cuenta YA ACTIVADA no emite sesión: 200 { yaActivada } (SEC-01)', async () => {
     // Residente que ya activó su cuenta en la org demo
     const email = `multi-vinculo-${sufijo()}@test.dev`;
     const primera = await crearInvitacion({
@@ -304,7 +304,9 @@ describe('invitaciones (S4-02)', () => {
       body: { refreshToken: activacion.data.refreshToken },
     });
 
-    // Ahora la misma persona es invitada como staff de la misma organización
+    // Ahora la misma persona es invitada como staff de la misma organización.
+    // Es la reproducción de SEC-01: quien tiene el link (el invitador) NO puede
+    // obtener una sesión de la víctima, aunque el email sea el suyo.
     const segunda = await crearInvitacion({
       email,
       tipo: 'STAFF',
@@ -316,28 +318,136 @@ describe('invitaciones (S4-02)', () => {
       { method: 'POST', body: { password: 'intento-de-cambio-1234' } }
     );
     assert.equal(status, 200);
+    assert.equal(data.yaActivada, true);
+    // NINGÚN token: la invitación no aportó credenciales
+    assert.equal(data.accessToken, undefined);
+    assert.equal(data.refreshToken, undefined);
+    assert.equal(data.user, undefined);
 
-    // Un solo Usuario en la DB, con los dos vínculos
-    assert.equal(data.user.id, usuarioId);
+    // La invitación igual se consume (el vínculo ya se materializó en el alta)
+    const consumida = await prisma.invitacion.findUnique({ where: { id: segunda.id } });
+    assert.ok(consumida.usadaAt);
+
+    // Un solo Usuario en la DB y su password original intacta
     const usuarios = await prisma.usuario.findMany({ where: { email } });
     assert.equal(usuarios.length, 1);
-    const membresias = await prisma.organizacionUsuario.count({ where: { usuarioId } });
-    const unidades = await prisma.unidadUsuario.count({ where: { usuarioId } });
-    assert.equal(membresias, 1);
-    assert.equal(unidades, 1);
-    // Con membresía staff ya tiene organización activa y rol de gestor
-    assert.deepEqual(data.user.roles, ['gestor']);
-    assert.equal(data.user.organizacionId, orgId);
-
-    // La password original NO fue sobrescrita por quien tenía el link
+    assert.equal(usuarios[0].id, usuarioId);
     const conNueva = await login(baseUrl, email, 'intento-de-cambio-1234');
     assert.equal(conNueva.status, 401);
     const conOriginal = await login(baseUrl, email, 'original1234');
     assert.equal(conOriginal.status, 200);
 
-    for (const refreshToken of [data.refreshToken, conOriginal.data.refreshToken]) {
-      await apiFetch(baseUrl, '/api/auth/logout', { method: 'POST', body: { refreshToken } });
-    }
+    await apiFetch(baseUrl, '/api/auth/logout', {
+      method: 'POST',
+      body: { refreshToken: conOriginal.data.refreshToken },
+    });
+  });
+
+  it('no fija la password de una cuenta sin activar que aprovisionó otra invitación (SEC-02)', async () => {
+    // Org A da de alta la identidad (el Usuario nace sin password)
+    const email = `provisionado-${sufijo()}@test.dev`;
+    const origen = await crearInvitacion({
+      email,
+      tipo: 'STAFF',
+      payload: { rol: 'GESTOR', nombre: 'Provi', apellido: 'Sionado', edificioIds: [] },
+    });
+    await prisma.invitacion.update({ where: { id: origen.id }, data: { creaUsuario: true } });
+    await prisma.usuario.create({ data: { email, nombre: 'Provi', apellido: 'Sionado', passwordHash: null } });
+
+    // Otra invitación (la que tendría el atacante de OTRA organización) no
+    // puede definirle la credencial a esa identidad.
+    const ajena = await crearInvitacion({
+      email,
+      tipo: 'RESIDENTE',
+      payload: { unidadId, esPropietario: true },
+    });
+    const { status, data } = await apiFetch(
+      baseUrl,
+      `/api/invitaciones/${ajena.token}/aceptar`,
+      { method: 'POST', body: { password: 'atacante-fija-1234' } }
+    );
+    assert.equal(status, 409);
+    assert.equal(data.error.code, 'ACTIVACION_NO_DISPONIBLE');
+
+    // La cuenta sigue sin password y el login con la del atacante falla
+    const sinActivar = await prisma.usuario.findUnique({ where: { email } });
+    assert.equal(sinActivar.passwordHash, null);
+    assert.equal((await login(baseUrl, email, 'atacante-fija-1234')).status, 401);
+
+    // El token ajeno NO se consume: la invitación de origen sigue siendo la
+    // válida y activa la cuenta normalmente.
+    const sigueViva = await prisma.invitacion.findUnique({ where: { id: ajena.id } });
+    assert.equal(sigueViva.usadaAt, null);
+
+    const activacion = await apiFetch(baseUrl, `/api/invitaciones/${origen.token}/aceptar`, {
+      method: 'POST',
+      body: { password: 'legitima1234' },
+    });
+    assert.equal(activacion.status, 200);
+    assert.ok(activacion.data.accessToken);
+    await apiFetch(baseUrl, '/api/auth/logout', {
+      method: 'POST',
+      body: { refreshToken: activacion.data.refreshToken },
+    });
+  });
+
+  it('no reactiva una membresía dada de baja: 403 MEMBRESIA_DESACTIVADA (SEC-06)', async () => {
+    const email = `baja-membresia-${sufijo()}@test.dev`;
+    const invitacion = await crearInvitacion({
+      email,
+      tipo: 'STAFF',
+      payload: { rol: 'GESTOR', nombre: 'Baja', apellido: 'Lógica', edificioIds: [] },
+    });
+    await prisma.invitacion.update({ where: { id: invitacion.id }, data: { creaUsuario: true } });
+    const persona = await prisma.usuario.create({
+      data: { email, nombre: 'Baja', apellido: 'Lógica', passwordHash: null },
+    });
+    await prisma.organizacionUsuario.create({
+      data: { organizacionId: orgId, usuarioId: persona.id, rol: 'GESTOR', activo: false },
+    });
+
+    const { status, data } = await apiFetch(
+      baseUrl,
+      `/api/invitaciones/${invitacion.token}/aceptar`,
+      { method: 'POST', body: { password: 'revivir-1234' } }
+    );
+    assert.equal(status, 403);
+    assert.equal(data.error.code, 'MEMBRESIA_DESACTIVADA');
+
+    // Ni se reactivó la membresía ni se consumió el token ni se fijó password
+    const membresia = await prisma.organizacionUsuario.findFirst({
+      where: { organizacionId: orgId, usuarioId: persona.id },
+    });
+    assert.equal(membresia.activo, false);
+    const sigueViva = await prisma.invitacion.findUnique({ where: { id: invitacion.id } });
+    assert.equal(sigueViva.usadaAt, null);
+    const sinPassword = await prisma.usuario.findUnique({ where: { email } });
+    assert.equal(sinPassword.passwordHash, null);
+  });
+
+  it('no revive un Usuario dado de baja lógica: 403 CUENTA_DESACTIVADA (SEC-06)', async () => {
+    const email = `baja-usuario-${sufijo()}@test.dev`;
+    const invitacion = await crearInvitacion({
+      email,
+      tipo: 'RESIDENTE',
+      payload: { nombre: 'Baja', unidadId, esPropietario: true },
+    });
+    await prisma.invitacion.update({ where: { id: invitacion.id }, data: { creaUsuario: true } });
+    await prisma.usuario.create({
+      data: { email, nombre: 'Baja', apellido: 'Global', passwordHash: null, activo: false },
+    });
+
+    const { status, data } = await apiFetch(
+      baseUrl,
+      `/api/invitaciones/${invitacion.token}/aceptar`,
+      { method: 'POST', body: { password: 'revivir-1234' } }
+    );
+    assert.equal(status, 403);
+    assert.equal(data.error.code, 'CUENTA_DESACTIVADA');
+
+    const usuario = await prisma.usuario.findUnique({ where: { email } });
+    assert.equal(usuario.activo, false);
+    assert.equal(usuario.passwordHash, null);
   });
 
   it('solo puede haber una invitación pendiente por (email, organización, tipo)', async () => {

@@ -11,6 +11,7 @@ import { useEdificios } from '@/hooks/useEdificios';
 import { useOrganizacion } from '@/hooks/useOrganizacion';
 import Breadcrumbs from '@/components/layout/Breadcrumbs';
 import OrganizacionSelector from '@/components/layout/OrganizacionSelector';
+import SinAccesoOrganizacion from '@/components/layout/SinAccesoOrganizacion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -70,6 +71,14 @@ export default function AppLayout() {
     await logout();
     navigate('/login', { replace: true });
   };
+
+  // Sin membresía activa Y sin vínculos de unidad no hay nada que mostrar: el
+  // shell entero responde 403 y el usuario veía un error de red genérico
+  // (S4-11 / QA-03). Es una condición permanente, así que va antes del layout.
+  // Un residente puro sí entra: no tiene organización activa pero sí roles.
+  if (user && (user.organizaciones?.length ?? 0) === 0 && roles.length === 0) {
+    return <SinAccesoOrganizacion />;
+  }
 
   return (
     <div className="flex min-h-screen">
