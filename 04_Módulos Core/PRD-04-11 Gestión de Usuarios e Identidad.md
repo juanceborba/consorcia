@@ -90,7 +90,7 @@ Restricción: una sola invitación **pendiente** por `(email, organizacionId, ti
 |-----|-------|------|--------|
 | `org_admin` | Organización | `register` (el primero) o invitación staff | Todo en su org: edificios, unidades, gastos, **usuarios**, config |
 | `gestor` | Organización | Invitación staff (backoffice) | Lectura de su org; operación solo en `GestorEdificio` asignados (unidades, gastos del edificio). No crea edificios ni usuarios |
-| `propietario` | Edificio/UF | Invitación residente | Portal: sus UFs (de todos sus consorcios), expensas, recibos, pagos |
+| `propietario` | Edificio/UF | Invitación residente | Portal: sus UFs (de todos sus consorcios), expensas, recibos, pagos. **Hoy (S4-12): lectura de su edificio/unidad vía `GET /api/me/unidades`, §5.7** |
 | `inquilino` | Edificio/UF | Invitación residente | Igual que propietario (MVP; diferenciación de permisos queda para el portal) |
 
 La autorización sigue siendo Cerbos fail-closed ([[PRD-05-04 Cerbos RBAC]]); el fast-path de vínculo usuario↔unidad del portal se mantiene (ver §8, sync con PRD-04-05).
@@ -129,6 +129,28 @@ Gestión posterior (misma pantalla): listar staff, cambiar rol, editar edificios
 5. El residente **no tiene contexto de organización**: su JWT no lleva `org_id` de staff; el portal agrega todas sus UFs (`UnidadUsuario` por `usuarioId`), agrupadas por consorcio/edificio.
 6. Desvincular = `fechaFin` (baja temporal, preserva historial de expensas/pagos), nunca borrado físico del vínculo con actividad.
 
+### 5.7 Acceso de lectura del residente (S4-12, issue #58)
+
+Hasta S4-11 el residente activaba su cuenta y entraba a un backoffice que no le respondía nada: **todo** el backoffice pasa por el middleware `tenant`, que devuelve `403 SIN_ORGANIZACION_ACTIVA` cuando el JWT no trae `org_id` — y el residente puro no lo trae **por diseño** (§5.5). El síntoma era un dashboard vacío con el selector de edificios deshabilitado.
+
+**Decisión: endpoint residente-scoped aparte, no ampliar `GET /api/edificios`.**
+
+| Opción | Por qué no / sí |
+|--------|-----------------|
+| Que `GET /api/edificios` resuelva también por `UnidadUsuario` | ❌ Obliga a sacarlo de `tenant` y a que un endpoint de backoffice tenga dos modos de scope (organización activa vs. usuario). Rompe el aislamiento de PRD-02-01 §6.2, que es la invariante más cara de mantener del sistema |
+| `GET /api/me/unidades` (elegida) | ✅ El scope es `req.user.id`: no necesita `tenant` ni Cerbos porque el recurso **es** el usuario del token. Refleja el modelo tal cual está escrito (§2.1: la identidad es global, los permisos son vínculos) y agrega naturalmente por `usuarioId` cruzando organizaciones, que es justo lo que pide §5.5 |
+
+Contrato — devuelve los vínculos **vigentes** (`fechaFin: null`, la misma definición con la que `auth.service.js` deriva los roles del JWT, así el token y el listado nunca se contradicen), excluyendo los edificios dados de baja:
+
+```json
+[{ "id": "…", "esPropietario": false, "esInquilino": true, "fechaInicio": "…",
+   "unidad": { "id": "…", "numero": "6", "tipo": "departamento" },
+   "edificio": { "id": "…", "nombre": "Torre Palermo", "direccion": "…", "ciudad": "…" },
+   "organizacion": { "id": "…", "nombre": "Administración Demo S.A." } }]
+```
+
+**Alcance MVP (solo lectura).** El atributo del vínculo (`esPropietario` / `esInquilino`) define hoy qué se le muestra, no qué puede hacer: no hay escritura para el residente. En el frontend el residente puro tiene su propio shell — sidebar con "Mis unidades", selector de edificio alimentado por sus vínculos, nombre de la administración tomado del vínculo (no de una organización activa que no existe) — y las rutas del backoffice lo redirigen a `/mis-unidades` en vez de dejarlo en una pantalla vacía. El portal completo (expensas, recibos, pagos) es [[PRD-04-05 Portal del Residente]], S5.
+
 **Sin auto-registro de residentes en el MVP**: un residente solo entra invitado por su administración (la administración es quien conoce la titularidad de cada UF — Ley 25.326: minimización de datos, ver [[PRD-06-03 Ley 25.326 Datos Personales]]).
 
 ---
@@ -145,6 +167,7 @@ Gestión posterior (misma pantalla): listar staff, cambiar rol, editar edificios
 | `GET /api/unidades/:id/residentes` | org_admin, gestor asignado | Vínculos activos e históricos de la UF |
 | `POST /api/unidades/:id/residentes` | org_admin, gestor asignado | Vincula/invita residente (Workflow B) → 201 + `invitacionUrl` |
 | `DELETE /api/unidades/:id/residentes/:vinculoId` | org_admin, gestor asignado | Desvincula (`fechaFin = hoy`) |
+| `GET /api/me/unidades` | autenticado | Vínculos VIGENTES del propio usuario (unidad + edificio + organización), agregados por `usuarioId` y cruzando organizaciones. Único listado del residente puro: **no** pasa por `tenant` (S4-12, §5.7) |
 | `GET /api/invitaciones/:token` | público | Datos de la invitación (email enmascarado, org, tipo) para la pantalla de aceptación |
 | `POST /api/invitaciones/:token/aceptar` | público | Activa la cuenta **solo si esta invitación creó la identidad** → 200 { accessToken, refreshToken, user }. Si no, no emite sesión ni toca credenciales: ver §6.3 |
 
