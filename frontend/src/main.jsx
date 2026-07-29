@@ -22,6 +22,7 @@ import EdificioDetallePage from '@/pages/EdificioDetallePage';
 import EdificioOverviewTab from '@/pages/edificio/EdificioOverviewTab';
 import EdificioUnidadesTab from '@/pages/edificio/EdificioUnidadesTab';
 import EdificioConfiguracionTab from '@/pages/edificio/EdificioConfiguracionTab';
+import ConfiguracionUsuariosPage from '@/pages/configuracion/ConfiguracionUsuariosPage';
 import './index.css';
 
 const router = createBrowserRouter([
@@ -42,6 +43,13 @@ const router = createBrowserRouter([
             element: <RequireRole roles={['org_admin', 'superadmin']} />,
             children: [
               { path: '/edificios/nuevo', element: <EdificioNuevoPage /> },
+              // Backoffice de staff (S4-07, PRD-04-11 §4): administrar usuarios
+              // es exclusivo de org_admin (Cerbos `staff` no le da al gestor ni
+              // lectura de la nómina), así que la ruta va detrás del guard.
+              {
+                path: '/configuracion/usuarios',
+                element: <ConfiguracionUsuariosPage />,
+              },
             ],
           },
           {

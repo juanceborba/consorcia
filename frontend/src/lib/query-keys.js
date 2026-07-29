@@ -20,5 +20,19 @@ export const queryKeys = {
   organizaciones: {
     all: ['organizaciones'],
     me: () => [...queryKeys.organizaciones.all, 'me'],
+    // Nómina de staff de la organización activa (S4-07). No lleva el id de la
+    // organización: el endpoint es `/me` (sale del JWT) y el cambio de
+    // organización activa hace `queryClient.clear()` (S4-09).
+    staff: () => [...queryKeys.organizaciones.all, 'staff'],
+  },
+  unidades: {
+    all: ['unidades'],
+    // Vínculos (propietarios/inquilinos) de una UF, vigentes e históricos (S4-08).
+    residentes: (unidadId) => [...queryKeys.unidades.all, 'residentes', unidadId],
+  },
+  invitaciones: {
+    all: ['invitaciones'],
+    // Pantalla pública de activación: GET /api/invitaciones/:token (S4-08).
+    porToken: (token) => [...queryKeys.invitaciones.all, 'token', token],
   },
 };
