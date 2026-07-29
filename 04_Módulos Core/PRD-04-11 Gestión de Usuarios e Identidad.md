@@ -145,7 +145,16 @@ Gestión posterior (misma pantalla): listar staff, cambiar rol, editar edificios
 | `GET /api/invitaciones/:token` | público | Datos de la invitación (email enmascarado, org, tipo) para la pantalla de aceptación |
 | `POST /api/invitaciones/:token/aceptar` | público | Define password, activa cuenta, loguea → 200 { accessToken, refreshToken, user } |
 
-Errores del contrato `{ error: { code, message } }`. Códigos nuevos: `EMAIL_YA_REGISTRADO` (422), `INVITACION_INVALIDA` (410, expirada/usada/inexistente), `INVITACION_PENDIENTE` (409, ya hay una pendiente — sugiere reenviar), `VINCULO_DUPLICADO` (409, esa persona ya está en esa UF), `SIN_MEMBRESIA` (403, cambiar-organizacion a org ajena).
+Errores del contrato `{ error: { code, message } }`. Códigos nuevos: `EMAIL_YA_REGISTRADO` (422), `INVITACION_INVALIDA` (410, expirada/usada/inexistente), `INVITACION_PENDIENTE` (409, ya hay una pendiente — sugiere reenviar), `VINCULO_DUPLICADO` (409, esa persona ya está en esa UF), `SIN_MEMBRESIA` (403, cambiar-organizacion a org ajena o membresía desactivada), `SIN_ORGANIZACION_ACTIVA` (403, sesión sin org activa — residente puro contra el backoffice), `INVITACION_INCONSISTENTE` (422, el payload de la invitación no valida o su unidad ya no existe: hay que reenviarla).
+
+**Implementado en S4-02** (`src/routes/invitaciones.routes.js`):
+
+- Los dos endpoints públicos responden **410 `INVITACION_INVALIDA` sin distinguir** entre inexistente, usada y vencida: distinguir filtraría si un email/organización existe.
+- `GET` devuelve `{ email (enmascarado, "j***@demo.com"), tipo, organizacion: {id, nombre}, nombre, apellido, expiraAt }`. El email nunca viaja completo (Ley 25.326, minimización: el link puede terminar en manos de un tercero).
+- `aceptar` corre en **una sola transacción**: crea o reactiva el `Usuario`, materializa los vínculos del payload (STAFF → `OrganizacionUsuario` upsert + `GestorEdificio` de los edificios de la org que invita · RESIDENTE → `UnidadUsuario` upsert) y consume el token con `usadaAt` bajo condición `usadaAt IS NULL` (dos aceptaciones simultáneas no duplican vínculos). Si algo falla, la invitación **no** queda consumida.
+- **La password solo se define si el Usuario no tenía**: a una persona ya activada la invitación le suma vínculos sin resetear sus credenciales (§4.3 "mismo login, sin password nuevo"). Quien tenga el link de una persona ya registrada no puede tomarle la cuenta.
+- Un residente puro sale de `aceptar` con `org_id: null` y roles derivados de sus `UnidadUsuario` vigentes (§5.5); el backoffice le responde 403 `SIN_ORGANIZACION_ACTIVA`.
+- `usuarios.password_hash` pasa a nullable para admitir cuentas creadas por backoffice sin activar; el login las rechaza con el mismo 401 `CREDENCIALES_INVALIDAS` (sin oráculo).
 
 ---
 

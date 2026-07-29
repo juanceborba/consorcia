@@ -109,6 +109,13 @@ enum RolUsuario {
   PROVEEDOR   // Scope edificio
 }
 
+// Tipo de invitación (S4-02, PRD-04-11 §2.3): define qué vínculos crea al
+// aceptarse (STAFF → membresía + edificios de gestor · RESIDENTE → UnidadUsuario)
+enum TipoInvitacion {
+  STAFF
+  RESIDENTE
+}
+
 enum EstadoUnidad {
   ACTIVA
   INACTIVA
@@ -255,7 +262,10 @@ model GestorEdificio {
 model Usuario {
   id              String   @id @default(uuid())
   email           String   @unique
-  passwordHash    String   @map("password_hash")
+  // Null mientras la cuenta no fue activada: el alta por backoffice (S4-03/04)
+  // crea al Usuario sin password y la define él al aceptar la invitación
+  // (S4-02). Sin password no hay login posible.
+  passwordHash    String?  @map("password_hash")
   nombre          String
   apellido        String
   telefono        String?
@@ -276,6 +286,41 @@ model Usuario {
 
   @@index([activo])
   @@map("usuarios")
+}
+
+// Invitación de activación (S4-02, PRD-04-11 §2.3). La crea el backoffice
+// (S4-03 staff / S4-04 residentes) y la consume el invitado en
+// `/invitacion/:token`: define su password y los vínculos del `payload` se
+// materializan. Un solo uso (`usadaAt`) y vence a los 7 días.
+model Invitacion {
+  id              String   @id @default(uuid())
+  email           String   // Normalizado lowercase (identidad global)
+  organizacionId  String   @map("organizacion_id")
+  tipo            TipoInvitacion
+
+  // STAFF:     { rol, nombre?, apellido?, edificioIds[] }
+  // RESIDENTE: { nombre?, apellido?, unidadId, esPropietario, esInquilino, fechaInicio? }
+  payload         Json
+
+  token           String   @unique @default(uuid()) // va en el link /invitacion/:token
+  expiraAt        DateTime @map("expira_at")
+  usadaAt         DateTime? @map("usada_at")
+  invitadoPorId   String   @map("invitado_por_id") // auditoría: quién invitó
+
+  // Relaciones
+  organizacion    Organizacion @relation(fields: [organizacionId], references: [id])
+  invitadoPor     Usuario      @relation("InvitacionAutor", fields: [invitadoPorId], references: [id])
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Una sola invitación PENDIENTE por (email, organización, tipo): índice único
+  // PARCIAL `WHERE usada_at IS NULL`, creado a mano en la migración porque
+  // Prisma no expresa índices parciales. Reenviar = regenerar token/expiración.
+  @@index([organizacionId, email])
+  @@index([organizacionId, tipo])
+  @@map("invitaciones")
 }
 
 // ==========================================
@@ -893,6 +938,7 @@ ALTER TABLE cobros ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comunicaciones ENABLE ROW LEVEL SECURITY;
 ALTER TABLE documentos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invitaciones ENABLE ROW LEVEL SECURITY;  -- S4-02
 
 -- Política: cada organización solo ve sus propios datos
 CREATE POLICY organizacion_isolation_edificios ON edificios
@@ -920,6 +966,9 @@ CREATE POLICY organizacion_isolation_comunicaciones ON comunicaciones
     USING (organizacion_id = current_setting('app.current_organizacion_id', true));
 
 CREATE POLICY organizacion_isolation_documentos ON documentos
+    USING (organizacion_id = current_setting('app.current_organizacion_id', true));
+
+CREATE POLICY organizacion_isolation_invitaciones ON invitaciones
     USING (organizacion_id = current_setting('app.current_organizacion_id', true));
 ```
 
