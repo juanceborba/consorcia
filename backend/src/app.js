@@ -16,6 +16,7 @@ import edificiosRoutes from './routes/edificios.routes.js';
 import unidadesRoutes from './routes/unidades.routes.js';
 import proveedoresRoutes from './routes/proveedores.routes.js';
 import rubrosRoutes from './routes/rubros.routes.js';
+import gastosRoutes from './routes/gastos.routes.js';
 import meRoutes from './routes/me.routes.js';
 import invitacionesRoutes from './routes/invitaciones.routes.js';
 import { errorHandler, rutaNoEncontrada } from './middleware/error.middleware.js';
@@ -76,6 +77,11 @@ app.use('/api/unidades', unidadesRoutes);
 // dato propio de la org el catálogo global de plataforma.
 app.use('/api/proveedores', proveedoresRoutes);
 app.use('/api/rubros', rubrosRoutes);
+
+// Gastos (S3-02). El alta y la lista viven bajo `/api/edificios/:id/gastos`
+// (montadas en edificios.routes.js) porque el gasto SIEMPRE es de un edificio;
+// acá cuelgan las operaciones sobre un gasto ya identificado.
+app.use('/api/gastos', gastosRoutes);
 
 // Contexto propio del usuario (S4-12, #58): scopeado por `usuarioId`, no por
 // organización — es el único camino de lectura del residente puro, que por
