@@ -22,11 +22,11 @@
 
 ## Frontend
 
-- [ ] **S4-07 Backoffice de staff.** Ruta `/configuracion/usuarios` (07-03): tabla de staff (nombre, email, rol, edificios, estado), form de invitación (RHF + Zod, multi-select de edificios si rol=gestor), modal con `invitacionUrl` para copiar tras el alta. Edición de edificios del gestor y activar/desactivar con ConfirmDialog. Guards: solo org_admin (RequireRole, patrón de S2).
+- [x] **S4-07 Backoffice de staff.** Ruta `/configuracion/usuarios` (07-03): tabla de staff (nombre, email, rol, edificios, estado), form de invitación (RHF + Zod, multi-select de edificios si rol=gestor), modal con `invitacionUrl` para copiar tras el alta. Edición de edificios del gestor y activar/desactivar con ConfirmDialog. Guards: solo org_admin (RequireRole, patrón de S2).
   - _Depende de: S4-03._
-- [ ] **S4-08 Residentes + activación + register.** (a) Drawer "Residentes" desde la fila de la DataTable de unidades: lista vínculos, form "Vincular persona", desvincular con ConfirmDialog. (b) Pantalla pública `/invitacion/:token`: muestra a qué te invitaron y form de password (confirmación + validación de fuerza mínima). (c) `RegisterPage` en `/register` (pendiente de S1: endpoint ya existe) — alta de organización + org_admin.
+- [x] **S4-08 Residentes + activación + register.** (a) Drawer "Residentes" desde la fila de la DataTable de unidades: lista vínculos, form "Vincular persona", desvincular con ConfirmDialog. (b) Pantalla pública `/invitacion/:token`: muestra a qué te invitaron y form de password (confirmación + validación de fuerza mínima). (c) `RegisterPage` en `/register` (pendiente de S1: endpoint ya existe) — alta de organización + org_admin.
   - _Depende de: S4-02, S4-04._
-- [ ] **S4-09 Selector de organización en header.** Si el usuario staff tiene N membresías activas, dropdown en el header → `cambiar-organizacion` → `queryClient.clear()` + redirect al dashboard. Con 1 sola membresía no se muestra.
+- [x] **S4-09 Selector de organización en header.** Si el usuario staff tiene N membresías activas, dropdown en el header → `cambiar-organizacion` → `queryClient.clear()` + redirect al dashboard. Con 1 sola membresía no se muestra.
   - _Depende de: S4-05, S4-07._
 
 ## Cierre
