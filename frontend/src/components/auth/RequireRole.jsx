@@ -4,10 +4,10 @@
 // Es solo UX/defensa en profundidad — la autorización real la hace el
 // backend (Cerbos, fail-closed con 403).
 import { Navigate, Outlet } from 'react-router';
-import { useAuthStore } from '@/stores/auth.store';
+import { useAuthStore, SIN_ROLES } from '@/stores/auth.store';
 
 export default function RequireRole({ roles }) {
-  const userRoles = useAuthStore((s) => s.user?.roles ?? []);
+  const userRoles = useAuthStore((s) => s.user?.roles ?? SIN_ROLES);
 
   if (!roles.some((rol) => userRoles.includes(rol))) {
     return <Navigate to="/edificios" replace />;

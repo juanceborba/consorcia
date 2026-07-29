@@ -7,6 +7,12 @@ import { queryClient } from '@/lib/query-client';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
+// Array vacío ESTABLE para selectores `s.user?.roles ?? SIN_ROLES`: sin él,
+// cada snapshot devuelve un [] nuevo y useSyncExternalStore entra en loop
+// infinito ("Maximum update depth exceeded") cuando user es null (p. ej.
+// durante el logout, antes de que RequireAuth redirija a /login).
+export const SIN_ROLES = [];
+
 // Llama a un endpoint de /api/auth y devuelve el JSON, o lanza Error con el
 // message del contrato de errores ({ error: { code, message } }).
 async function authFetch(path, body) {

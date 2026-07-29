@@ -26,7 +26,7 @@ import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import { edificioFormSchema } from '@/lib/edificio-schema';
 import { TIPOS_EDIFICIO } from '@/lib/tipos-edificio';
-import { useAuthStore } from '@/stores/auth.store';
+import { useAuthStore, SIN_ROLES } from '@/stores/auth.store';
 import { useEdificioStore } from '@/stores/edificio.store';
 import { Button } from '@/components/ui/button';
 import {
@@ -80,7 +80,7 @@ export default function EdificioConfiguracionTab() {
   const { edificio } = useOutletContext();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const roles = useAuthStore((s) => s.user?.roles ?? []);
+  const roles = useAuthStore((s) => s.user?.roles ?? SIN_ROLES);
   const setEdificioId = useEdificioStore((s) => s.setEdificioId);
   const [confirmarBaja, setConfirmarBaja] = useState(false);
 
