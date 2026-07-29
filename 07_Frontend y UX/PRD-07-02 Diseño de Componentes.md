@@ -793,10 +793,10 @@ patrón de referencia para todos los módulos).
 
 | Pieza | Ubicación | Rol |
 |-------|-----------|-----|
-| Registro de topics | `frontend/src/lib/ayuda.js` | Mapa `AYUDA_TOPICS` con el contenido, keyed por ID de topic (path con slash, estable: es el contrato). Cada topic: `ruta` (breadcrumb), `titulo`, `secciones: [{ titulo, cuerpo, items? }]`. |
+| Registro de topics | `frontend/src/lib/ayuda.js` | Mapa `AYUDA_TOPICS` con el contenido, keyed por ID de topic (path con slash, estable: es el contrato). Cada topic: `ruta` (breadcrumb), `titulo`, `secciones: [{ titulo, cuerpo, items? }]` y `relacionados?` (IDs de otros topics). |
 | Store global | `frontend/src/stores/ayuda.store.js` | Zustand efímero: `{ topic, abrirAyuda, cerrarAyuda }`. |
-| `<AyudaDrawer />` | `frontend/src/components/ayuda/` | Única instancia montada en `AppLayout` (Drawer §-lateral sobre Base UI). Resuelve el topic del store, muestra breadcrumb con › + secciones; topic inexistente → fallback, nunca rompe. Se apila sobre modales sin conflicto (portal propio). |
-| `<AyudaLink />` | `frontend/src/components/ayuda/` | Trigger: `<AyudaLink topic="modulo/pantalla/tema" />` (botón link con ícono, `type="button"` para vivir dentro de forms). |
+| `<AyudaDrawer />` | `frontend/src/components/ayuda/` | Única instancia montada en `AppLayout` (Drawer §-lateral sobre Base UI). Resuelve el topic del store, muestra breadcrumb con › + secciones + "Temas relacionados" al pie (navegan dentro del mismo drawer). Topic inexistente → fallback, nunca rompe; relacionados rotos se filtran. Se apila sobre modales sin conflicto (portal propio). |
+| `<AyudaLink />` | `frontend/src/components/ayuda/` | Trigger: `<AyudaLink topic="modulo/pantalla/tema" />`. Variante default `link` (botón link con texto, `type="button"` para vivir dentro de forms) y variante `icon` (solo ícono, `aria-label="Ayuda"`) para títulos de pantalla. |
 
 **Reglas de uso:**
 
@@ -807,6 +807,24 @@ patrón de referencia para todos los módulos).
 3. Agregar ayuda a un módulo = una entrada en el registro + un `AyudaLink`.
    Nada más.
 4. El contenido vive estático en el frontend (copy es-AR, sin i18n ni CMS).
+5. **Cada pantalla tiene su acceso a ayuda**: variante `icon` de `AyudaLink`
+   junto al título (h1/CardTitle), apuntando al topic del concepto que la
+   pantalla opera. Cobertura actual: listado/alta de edificios, overview,
+   unidades y configuración del detalle → `edificios` y `edificios/unidades`;
+   backoffice de usuarios y drawer de residentes → `usuarios/roles` y
+   `usuarios/invitaciones`; tab de categorías del alta →
+   `edificios/unidades/categorias-gastos` (variante link). El Dashboard no
+   tiene acceso (placeholder).
+6. Los topics se encadenan con `relacionados` para navegar entre niveles de
+   detalle (ej. `edificios` ↔ `edificios/unidades` ↔
+   `edificios/unidades/categorias-gastos`).
+7. **Frescura (criterio de aprobación, regla dura de AGENTS.md):** si una
+   tarea cambia funcionalidad cubierta por un topic, el topic se actualiza en
+   la misma tarea (y los relacionados si el cambio los toca en profundidad).
+   Cada topic declara sus `pantallas` ancla y el gate
+   `npm run check:ayuda` (`frontend/scripts/check-ayuda.mjs`, corre en CI)
+   bloquea inconsistencias estructurales: referencias a topics inexistentes,
+   `relacionados` rotos, o una pantalla que pierde su acceso a ayuda.
 
 **Camino de evolución a FAQ completo** (aditivo, sin refactor de consumidores):
 hub `/ayuda` navegable, búsqueda cliente, deep links por topic y contenido en
