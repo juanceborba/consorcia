@@ -189,7 +189,10 @@ const gastoSchema = z.object({
 
 // GET /api/edificios/:edificioId/gastos — Listar gastos (paginado, orden fechaGasto desc)
 //   Filtros: ?periodo=&categoria=&esOrdinario=&proveedorId=&rubroId=&desde=&hasta=&page=&limit=
-//   Respuesta: { data: [...], pagination: { page, limit, total } }
+//   Respuesta: { data: [...], pagination: { page, limit, total, totalPages },
+//                totales: { cantidad, monto } }  ← totales del filtro completo (S3-02)
+//   Cada fila trae `editable` (false si el gasto está en una liquidación
+//   APROBADA/ENVIADA/COBRADA): la UI apaga sus acciones sin pedir el detalle (S3-08).
 
 // GET /api/gastos/:id — Detalle (incluye liquidaciones asociadas) → 404 si no existe
 
@@ -271,7 +274,22 @@ Las agregaciones se calculan **server-side con Prisma `groupBy` + decimal.js** (
 > - **No van detrás de `RequireRole org_admin`,** a diferencia de `/configuracion/usuarios`: las policies `proveedor.yaml` y `rubro.yaml` le dan **read** al gestor, que lo necesita para cargar gastos. El guard es `RequireStaff` y lo que se oculta al gestor son las acciones de escritura.
 > - **La baja se comunica como "dar de baja", no como "eliminar".** El backend decide: sin gastos borra, con gastos degrada a `activo=false` (Ley 941). El copy del `ConfirmDialog` lo anticipa y el toast dice qué pasó realmente, en vez de prometer un borrado que puede no ocurrir.
 > - **La ayuda contextual** (§6.5 de [[PRD-07-02 Diseño de Componentes]]) agrega los topics `gastos/proveedores` y `gastos/rubros`; el segundo insiste en la distinción rubro ≠ categoría A/B/C, que es el malentendido esperable del módulo.
-> - **Pendiente de S3-08:** los dos selectores existen y están tipados, pero ninguna pantalla los monta todavía — el formulario de carga de §4.2 es el que los consume, y su cobertura E2E va con esa tarea.
+> **Implementado (S3-08):** el formulario de carga de §4.2, que es el que monta los dos selectores de S3-14.
+>
+> | Ruta / componente | Guard | Archivo | Notas |
+> |---|---|---|---|
+> | `components/gastos/GastoFormDialog.jsx` | — | idem | Alta y edición en un solo diálogo (POST `/api/edificios/:id/gastos` vs PUT `/api/gastos/:id`), RHF + Zod con el espejo del schema del backend en `lib/gasto-schema.js`. `ProveedorSelect` y `RubroSelect` entran por `Controller`. El `422 PROVEEDOR_INVALIDO` / `RUBRO_INVALIDO` se muestra **inline en su selector**, y el `VALIDACION_FALLIDA` se rutea al campo cuando el mensaje del backend viene prefijado (`"monto: …"`) |
+> | `pages/edificio/EdificioGastosTab.jsx` | `RequireStaff` | idem | El tab de S3-07 suma botón "Nuevo gasto", acciones de fila (editar / eliminar con `ConfirmDialog`) y el acceso a ayuda del topic `gastos/carga`. Solo para org_admin: `gasto.yaml` le da al gestor únicamente `read` |
+>
+> Divergencias con este PRD, decididas en S3-08:
+>
+> - **El comprobante es un LINK, no un upload.** El backend tiene el campo `comprobanteUrl` y un servicio de storage (`services/almacenamiento.js`, driver filesystem, S3-05), pero **no** hay endpoint de subida (ni multipart, ni bucket de MinIO, ni bootstrap): construirlo es infraestructura nueva completa y queda fuera del alcance de un formulario. El campo acepta la URL del comprobante ya digitalizado; el upload propio entra cuando exista el endpoint.
+> - **El período es un desplegable de los últimos 12, no el input libre del mockup.** El formato es un contrato (`^\d{4}-\d{2}$`) y tipearlo a mano es una fuente gratuita de 422. En edición se agrega el período propio del gasto si cae fuera de la ventana.
+> - **El servicio (B) y el sector (C) son desplegables cerrados**, alimentados por lo que declaran las unidades del edificio (`categoriaB` / `categoriaC`). Es más que una comodidad: el motor de S3-03 tira `DESBALANCE_LIQUIDACION` si ninguna unidad queda alcanzada, así que un servicio tipeado a mano no rompe el alta del gasto — rompe la liquidación de todo el mes. Si el edificio no declara ninguno, la categoría queda **deshabilitada** con el motivo y un link a las unidades.
+> - **El monto se escribe en es-AR y viaja canónico.** El backend solo entiende el punto decimal, pero la app muestra "$ 1.500,50" y el usuario tipea eso: `normalizarMonto` traduce antes de validar (coma → decimal, puntos → miles) y valida con decimal.js, igual que el backend.
+> - **Sin sugerencia de categoría por IA** (el bloque "💡 Sugerencia IA" del mockup de §4.2 y §5): está declarado fuera del alcance de S3 en el backlog del sprint (Agente Contable, Fase 2).
+> - **La lista devuelve `editable` por fila** (agregado al endpoint de S3-02): el DoD del sprint pide que la acción de editar un gasto liquidado esté deshabilitada en la UI, y sin el flag por fila el frontend tendría que pedir el detalle de cada gasto de la página. Se resuelve con una query por página.
+> - **La ayuda contextual** agrega el topic `gastos/carga` (período vs fecha, rubro ≠ categoría, por qué el servicio es cerrado, gasto congelado) y le da al tab de gastos el acceso a ayuda que S3-07 no tenía.
 
 ### 4.1 Lista de Gastos
 
