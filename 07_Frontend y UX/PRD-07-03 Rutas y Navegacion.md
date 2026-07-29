@@ -121,6 +121,21 @@ outcomes:
 
 > **Implementado (S2-07):** el detalle de edificio usa tabs como rutas hijas (`/edificios/:id/overview|unidades|configuracion`); `/edificios/:id` a secas **redirige a `/unidades`** (tab default, ver backlog S2). El tab `usuarios` aún no existe (llega con gestión de usuarios del edificio). El formulario de alta (S2-06) vive en `/edificios/nuevo` y redirige al detalle del edificio creado.
 
+> **Implementado (S4-07/08/09):** rutas del slice de usuarios e identidad ([[PRD-04-11 Gestión de Usuarios e Identidad]] §8).
+>
+> | Ruta | Guard | Página | Notas |
+> |------|-------|--------|-------|
+> | `/register` | pública | `pages/RegisterPage.jsx` | Pendiente desde S1, ahora implementada: alta de organización + su org_admin. Link desde el login. **Único auto-registro del MVP** — los residentes entran solo por invitación (PRD-04-11 §5) |
+> | `/invitacion/:token` | **pública** | `pages/InvitacionPage.jsx` | Activación de cuenta: el token del link es la única credencial del invitado (§7), así que va FUERA de `RequireAuth`. 410 `INVITACION_INVALIDA` → pantalla "invitación inválida o vencida" sin distinguir el motivo |
+> | `/configuracion/usuarios` | `RequireRole org_admin` | `pages/configuracion/ConfiguracionUsuariosPage.jsx` | Backoffice de staff. Cerbos (`staff`) no le da al gestor ni lectura de la nómina, así que el guard de ruta y la entrada del sidebar se restringen al mismo set |
+>
+> Divergencias con §2.1 de este documento:
+>
+> - El **selector de organización** vive en el header del `AppLayout` (`components/layout/OrganizacionSelector.jsx`), no en una ruta: cambia el contexto del tenant con `POST /api/auth/cambiar-organizacion` + `queryClient.clear()` + redirect a `/`. Solo se muestra con **más de una** membresía activa (`user.organizaciones`, que viene en el DTO de usuario de todas las respuestas de auth); un residente puro no lo ve nunca.
+> - `/configuracion` **no tiene página propia todavía** (las tabs perfil/edificio/notificaciones/planes de §2.1 llegan más adelante): `usuarios` es su primera ruta hija y el breadcrumb del segmento intermedio va sin href.
+> - "Usuarios" entra al sidebar como módulo de primer nivel (no anidado bajo Configuración) porque es la única entrada de configuración que existe; se reacomoda cuando lleguen las demás.
+> - Las páginas de residentes de una UF **no son rutas**: el panel "Residentes" es un `Drawer` que se abre desde la fila de la DataTable de unidades (PRD-04-11 §5: "desde la unidad → fila → Residentes"), sin URL propia.
+
 | Regla | Ejemplo | Descripcion |
 |-------|---------|-------------|
 | **Recursos en plural** | `/edificios`, `/gastos` | Colecciones |
