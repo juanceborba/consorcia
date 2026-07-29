@@ -37,6 +37,13 @@ const MODULOS = [
   { nombre: 'Gastos', activo: false },
   { nombre: 'Liquidaciones', activo: false },
   { nombre: 'Cobranzas', activo: false },
+  // Configuración de la organización que alimenta la carga de gastos (S3-14).
+  // Sin `roles`: las policies `proveedor.yaml`/`rubro.yaml` le dan lectura al
+  // gestor, así que el link le responde 200 (a diferencia de "Usuarios", donde
+  // Cerbos no le da ni la nómina). Lo que no ve el gestor son las acciones de
+  // escritura, que las pantallas ocultan por rol.
+  { nombre: 'Proveedores', path: '/configuracion/proveedores', activo: true },
+  { nombre: 'Rubros', path: '/configuracion/rubros', activo: true },
   {
     nombre: 'Usuarios',
     path: '/configuracion/usuarios',

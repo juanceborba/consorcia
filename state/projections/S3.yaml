@@ -1,9 +1,9 @@
 # GENERADO por app/state/engine.py — no editar a mano
 sprint: S3
 titulo: "Gastos + motor contable"
-generado: 2026-07-29T21:56:27Z
+generado: 2026-07-29T22:49:41Z
 total: 17
-done: 7
+done: 8
 tareas:
   - id: S3-01
     titulo: "Ajustes de schema + policies Cerbos"
@@ -74,13 +74,13 @@ tareas:
   - id: S3-07
     titulo: "Lista de gastos + filtros"
     seccion: "Frontend — features"
-    status: ready
+    status: in-progress
     depende_de: [S3-02]
     desbloquea: [S3-08, S3-16]
     issue: 37
     lote: D
     fuente: [PRD-07-03]
-    claimed_by: null
+    claimed_by: claude
     score: 9.7
   - id: S3-08
     titulo: "Form nuevo gasto"
@@ -151,7 +151,7 @@ tareas:
   - id: S3-14
     titulo: "UI gestión proveedores y rubros"
     seccion: "Frontend — features"
-    status: ready
+    status: done
     depende_de: [S3-12, S3-13]
     desbloquea: []
     issue: 62

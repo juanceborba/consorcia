@@ -168,6 +168,105 @@ export const AYUDA_TOPICS = {
     ],
   },
 
+  // Directorio híbrido de proveedores (PRD-04-02 §1.3). Topic de
+  // /configuracion/proveedores.
+  'gastos/proveedores': {
+    ruta: ['Gastos', 'Proveedores'],
+    titulo: 'Proveedores',
+    relacionados: ['gastos/rubros'],
+    pantallas: ['src/pages/configuracion/ProveedoresPage.jsx'],
+    secciones: [
+      {
+        titulo: '¿Para qué sirve el directorio?',
+        cuerpo:
+          'Todo gasto se carga a nombre de un proveedor: no se puede guardar un gasto sin elegir uno. El directorio es la lista de con quiénes trabaja tu organización, y tenerlo cargado es lo que después permite ver cuánto se le pagó a cada uno en el período.',
+      },
+      {
+        titulo: 'Globales y propios',
+        cuerpo:
+          'El directorio mezcla dos orígenes, y cada fila lo aclara con un badge.',
+        items: [
+          'Global: viene del catálogo de la plataforma y lo comparten todas las administraciones. Lo podés usar en tus gastos, pero no editarlo ni borrarlo — lo mantiene ConsorcIA.',
+          'Propio: lo cargó tu organización. Solo lo ve tu organización y lo podés editar y dar de baja.',
+        ],
+      },
+      {
+        titulo: 'El CUIT y los duplicados',
+        cuerpo:
+          'El CUIT es opcional (el plomero del barrio suele no tener uno a mano), pero si lo cargás tiene que ir con el formato 30-12345678-9 y no puede repetirse en tu directorio: es lo que evita terminar con el mismo proveedor dos veces y los totales partidos entre ambos. Si el CUIT ya existe, la app te lo avisa en el campo.',
+      },
+      {
+        titulo: 'Rubro habitual',
+        cuerpo:
+          'Es opcional y funciona como atajo: al cargar un gasto de ese proveedor, la app propone ese rubro y te ahorra elegirlo. Siempre lo podés cambiar en el gasto.',
+      },
+      {
+        titulo: 'Dar de baja no siempre borra',
+        cuerpo:
+          'Si el proveedor todavía no tiene gastos, se elimina. Si ya tiene, no se borra: queda desactivado. Los gastos son documentación del consorcio que la Ley 941 obliga a conservar, y borrar al proveedor dejaría gastos históricos sin poder decir a quién se le pagaron. Un proveedor desactivado deja de ofrecerse al cargar gastos nuevos, y podés reactivarlo cuando quieras (tildá "Mostrar desactivados" para encontrarlo).',
+      },
+      {
+        titulo: '¿Quién puede hacer qué?',
+        items: [
+          'Crear, editar y dar de baja proveedores: el administrador de la organización.',
+          'El gestor ve el directorio (lo necesita para cargar gastos) pero no lo modifica.',
+        ],
+      },
+    ],
+  },
+
+  // Árbol de rubros: maestro + visibilidad + propios (PRD-04-02 §1.4). Topic de
+  // /configuracion/rubros.
+  'gastos/rubros': {
+    ruta: ['Gastos', 'Rubros'],
+    titulo: 'Rubros y subrubros',
+    relacionados: ['gastos/proveedores', 'edificios/unidades/categorias-gastos'],
+    pantallas: ['src/pages/configuracion/RubrosPage.jsx'],
+    secciones: [
+      {
+        titulo: '¿Qué es un rubro?',
+        cuerpo:
+          'Es la clasificación del gasto por su naturaleza: plomería, energía eléctrica, sueldos. Sirve para analizar en qué se gasta la plata del consorcio — es lo que después alimenta el "gasto por rubro" del dashboard.',
+      },
+      {
+        titulo: 'No confundir con las categorías A/B/C',
+        cuerpo:
+          'Son dos clasificaciones distintas y ninguna reemplaza a la otra. El rubro dice QUÉ se compró (plomería); la categoría dice QUIÉN lo paga (todas las unidades, solo las que tienen ese servicio, o solo las del sector). Un mismo rubro puede aparecer en gastos de categorías distintas: una reparación de plomería general es A, la del ascensor es B.',
+      },
+      {
+        titulo: 'Dos niveles: rubro y subrubro',
+        cuerpo:
+          'El árbol tiene exactamente dos niveles: el rubro agrupa (Mantenimiento) y el subrubro precisa (Plomería, Electricidad, Pintura). El gasto se carga siempre contra el nivel más específico — un subrubro, o un rubro que no tenga subrubros.',
+      },
+      {
+        titulo: 'El árbol de la plataforma y el tuyo',
+        cuerpo:
+          'Arrancás con un árbol que trae ConsorcIA, marcado como "Maestro": está pensado para un consorcio típico y se actualiza con el producto. No se edita ni se borra, pero lo adaptás de dos maneras.',
+        items: [
+          'Ocultar lo que no usás (el ícono del ojo): deja de aparecer al cargar gastos, sin tocar los gastos ya cargados con ese rubro. Ocultar un rubro oculta también sus subrubros.',
+          'Agregar los tuyos: un rubro nuevo de primer nivel, o un subrubro propio colgado de un rubro de la plataforma. Quedan marcados como "Propio" y esos sí los editás y los borrás.',
+        ],
+      },
+      {
+        titulo: 'Nombres repetidos',
+        cuerpo:
+          'No puede haber dos rubros con el mismo nombre en el mismo nivel, ni siquiera si uno es de la plataforma y el otro tuyo: en el selector del gasto serían indistinguibles. Si el nombre ya está tomado, la app te lo avisa en el campo — revisá si el que buscás ya existe en el maestro y está oculto.',
+      },
+      {
+        titulo: 'Eliminar no siempre borra',
+        cuerpo:
+          'Un rubro propio sin gastos se elimina. Si ya tiene gastos, no se borra: queda oculto, para que los gastos históricos sigan diciendo a qué rubro pertenecen (Ley 941). Y un rubro con subrubros no se elimina hasta sacar los subrubros: borrarlo ascendería a sus hijos a primer nivel y desarmaría la clasificación con la que se cargaron los gastos.',
+      },
+      {
+        titulo: '¿Quién puede hacer qué?',
+        items: [
+          'Ocultar, crear, editar y eliminar rubros: el administrador de la organización.',
+          'El gestor ve el árbol (lo necesita para cargar gastos) pero no lo modifica.',
+        ],
+      },
+    ],
+  },
+
   // Primer topic: categorías A/B/C del alta de unidad (Ley 941,
   // PRD-04-01 §1.4). El reparto que describe es el del motor de liquidación
   // de S3 (S3-03: A → todas las UF, B → UF con ese servicio, C → UF del sector).

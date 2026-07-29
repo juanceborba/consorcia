@@ -17,6 +17,25 @@ export const queryKeys = {
     detail: (id) => [...queryKeys.gastos.all, 'detail', id],
     porPeriodo: (periodo) => [...queryKeys.gastos.all, 'periodo', periodo],
   },
+  // Directorio de proveedores de la organización activa (S3-12/14). No lleva el
+  // id de la organización: el endpoint la saca del JWT y el cambio de
+  // organización activa hace `queryClient.clear()` (S4-09).
+  proveedores: {
+    all: ['proveedores'],
+    lists: (filtros) => [...queryKeys.proveedores.all, 'list', filtros],
+    detail: (id) => [...queryKeys.proveedores.all, 'detail', id],
+  },
+  // Árbol de rubros mergeado para la organización activa (S3-13/14). `incluirOcultos`
+  // es parte de la key: la pantalla de administración y el selector del form de
+  // gasto piden árboles distintos y no pueden compartir cache.
+  rubros: {
+    all: ['rubros'],
+    arbol: (incluirOcultos = false) => [
+      ...queryKeys.rubros.all,
+      'arbol',
+      { incluirOcultos },
+    ],
+  },
   // Contexto propio del usuario logueado (S4-12): no lleva scope de
   // organización porque el endpoint agrega por `usuarioId` (PRD-04-11 §5.5).
   me: {

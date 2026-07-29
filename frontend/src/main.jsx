@@ -27,6 +27,8 @@ import EdificioOverviewTab from '@/pages/edificio/EdificioOverviewTab';
 import EdificioUnidadesTab from '@/pages/edificio/EdificioUnidadesTab';
 import EdificioConfiguracionTab from '@/pages/edificio/EdificioConfiguracionTab';
 import ConfiguracionUsuariosPage from '@/pages/configuracion/ConfiguracionUsuariosPage';
+import ProveedoresPage from '@/pages/configuracion/ProveedoresPage';
+import RubrosPage from '@/pages/configuracion/RubrosPage';
 import './index.css';
 
 const router = createBrowserRouter([
@@ -71,6 +73,13 @@ const router = createBrowserRouter([
                   },
                 ],
               },
+              // Directorio de proveedores y árbol de rubros (S3-14,
+              // PRD-04-02 §1.3/§1.4). A diferencia de /configuracion/usuarios NO
+              // van detrás de RequireRole: las policies `proveedor.yaml` y
+              // `rubro.yaml` le dan READ al gestor, así que la pantalla le
+              // responde 200 y solo se le ocultan las acciones de escritura.
+              { path: '/configuracion/proveedores', element: <ProveedoresPage /> },
+              { path: '/configuracion/rubros', element: <RubrosPage /> },
               {
                 // Detalle con tabs anidados (S2-07, PRD-07-03 §2):
                 // /edificios/:id redirige a /unidades (tab default).

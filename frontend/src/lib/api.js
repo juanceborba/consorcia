@@ -47,6 +47,9 @@ async function request(path, { method = 'GET', body, reintentado = false } = {})
 export const api = {
   get: (path) => request(path),
   post: (path, body) => request(path, { method: 'POST', body }),
+  // PUT (reemplazo) lo usan proveedores y rubros (S3-12/13): su edición manda el
+  // set completo de campos, a diferencia del PATCH parcial de las membresías.
+  put: (path, body) => request(path, { method: 'PUT', body }),
   patch: (path, body) => request(path, { method: 'PATCH', body }),
   del: (path) => request(path, { method: 'DELETE' }),
 };
