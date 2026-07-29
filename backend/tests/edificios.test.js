@@ -42,15 +42,19 @@ describe('edificios', () => {
     };
   }
 
-  it('el org_admin ve los 2 edificios de su organización', async () => {
+  it('el org_admin ve los 2 edificios del seed en su organización', async () => {
     const { status, data } = await apiFetch(baseUrl, '/api/edificios', {
       token: admin.accessToken,
     });
     assert.equal(status, 200);
-    assert.equal(data.length, 2);
-    const nombres = data.map((e) => e.nombre);
-    assert.ok(nombres.includes('Torre Palermo'));
-    assert.ok(nombres.includes('Edificio San Martín'));
+    // No se afirma un total exacto de la lista: otros procesos (tests
+    // paralelos, smoke, spec E2E) pueden tener edificios de prueba activos
+    // en la misma org demo en este instante. Se verifica la presencia de
+    // los dos edificios del seed (S1-03).
+    const delSeed = data.filter((e) =>
+      ['Torre Palermo', 'Edificio San Martín'].includes(e.nombre)
+    );
+    assert.equal(delSeed.length, 2);
   });
 
   it('el gestor solo ve su edificio asignado (Torre Palermo)', async () => {

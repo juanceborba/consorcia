@@ -4,6 +4,7 @@
 import { Link } from 'react-router';
 import { Building2, MapPin, Plus } from 'lucide-react';
 import { useEdificios } from '@/hooks/useEdificios';
+import { useAuthStore } from '@/stores/auth.store';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -34,6 +35,11 @@ function EdificiosSkeleton() {
 
 export default function EdificiosPage() {
   const { edificios, cargando, error } = useEdificios();
+  // Alta de edificio: solo org_admin/superadmin (qa S2 #1). Al gestor el
+  // backend le responde 403, así que el CTA no se muestra (mismo criterio
+  // que la zona de peligro del tab Configuración).
+  const roles = useAuthStore((s) => s.user?.roles ?? []);
+  const puedeCrear = roles.some((r) => ['org_admin', 'superadmin'].includes(r));
 
   return (
     <div className="flex flex-col gap-6">
@@ -45,10 +51,12 @@ export default function EdificiosPage() {
           </p>
         </div>
         {/* Alta de edificio (S2-06) */}
-        <Button render={<Link to="/edificios/nuevo" />}>
-          <Plus className="size-4" />
-          Nuevo edificio
-        </Button>
+        {puedeCrear && (
+          <Button render={<Link to="/edificios/nuevo" />}>
+            <Plus className="size-4" />
+            Nuevo edificio
+          </Button>
+        )}
       </div>
 
       {cargando && <EdificiosSkeleton />}

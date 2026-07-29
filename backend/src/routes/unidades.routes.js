@@ -77,13 +77,22 @@ const recursoUnidad = (req) => ({
   },
 });
 
-// Suma actual de coeficientes del edificio (Decimales de Prisma)
-async function sumaActualEdificio(organizacionId, edificioId) {
-  const unidades = await prisma.unidad.findMany({
+// Suma actual de coeficientes del edificio (Decimales de Prisma). Recibe el
+// cliente a usar: dentro de una transacción interactiva debe ser `tx`.
+async function sumaActualEdificio(client, organizacionId, edificioId) {
+  const unidades = await client.unidad.findMany({
     where: { organizacionId, edificioId },
     select: { coeficiente: true },
   });
   return sumarCoeficientes(unidades.map((u) => u.coeficiente));
+}
+
+// Lock de la fila del edificio dentro de una transacción interactiva:
+// serializa bulk create / PATCH / DELETE concurrentes sobre las unidades del
+// mismo edificio y cierra la carrera TOCTOU de la invariante (review S2 #2 /
+// SEC-01). La validación de la suma y la escritura van siempre después.
+function lockEdificio(tx, edificioId) {
+  return tx.$queryRaw`SELECT id FROM edificios WHERE id = ${edificioId} FOR UPDATE`;
 }
 
 // PATCH /:id — edición de la UF. Si cambia el coeficiente, la suma resultante
@@ -97,19 +106,43 @@ router.patch(
   validarBody(editarUnidadSchema),
   async (req, res, next) => {
     try {
-      if (req.body.coeficiente !== undefined) {
-        const sumaActual = await sumaActualEdificio(req.organizacionId, req.unidad.edificioId);
-        const resultante = sumaActual.minus(req.unidad.coeficiente).plus(req.body.coeficiente);
-        if (!cuadra(resultante)) {
-          return res.status(422).json(errorCoeficientes(resultante));
-        }
-      }
+      const resultado = await prisma.$transaction(async (tx) => {
+        await lockEdificio(tx, req.unidad.edificioId);
 
-      const unidad = await prisma.unidad.update({
-        where: { id: req.unidad.id },
-        data: req.body,
+        if (req.body.coeficiente !== undefined) {
+          // Se re-lee la UF dentro del lock: pudo cambiar entre validarUnidad
+          // y la adquisición del lock por una operación concurrente.
+          const actual = await tx.unidad.findUnique({
+            where: { id: req.unidad.id },
+            select: { coeficiente: true },
+          });
+          // Un DELETE concurrente pudo ganar el lock y borrarla.
+          if (!actual) {
+            return { noExiste: true };
+          }
+          const sumaActual = await sumaActualEdificio(tx, req.organizacionId, req.unidad.edificioId);
+          const resultante = sumaActual.minus(actual.coeficiente).plus(req.body.coeficiente);
+          if (!cuadra(resultante)) {
+            return { suma: resultante };
+          }
+        }
+
+        const unidad = await tx.unidad.update({
+          where: { id: req.unidad.id },
+          data: req.body,
+        });
+        return { unidad };
       });
-      return res.json(unidad);
+
+      if (resultado.noExiste) {
+        return res.status(404).json({
+          error: { code: 'UNIDAD_NO_ENCONTRADA', message: 'La unidad no existe' },
+        });
+      }
+      if (!('unidad' in resultado)) {
+        return res.status(422).json(errorCoeficientes(resultado.suma));
+      }
+      return res.json(resultado.unidad);
     } catch (err) {
       // Número de UF duplicado en el edificio (unique org+edificio+numero)
       if (err.code === 'P2002') {
@@ -133,13 +166,35 @@ router.delete(
   autorizar('unidad', 'delete', recursoUnidad),
   async (req, res, next) => {
     try {
-      const sumaActual = await sumaActualEdificio(req.organizacionId, req.unidad.edificioId);
-      const resultante = sumaActual.minus(req.unidad.coeficiente);
-      if (!cuadra(resultante)) {
-        return res.status(422).json(errorCoeficientes(resultante));
-      }
+      const resultado = await prisma.$transaction(async (tx) => {
+        await lockEdificio(tx, req.unidad.edificioId);
 
-      await prisma.unidad.delete({ where: { id: req.unidad.id } });
+        const actual = await tx.unidad.findUnique({
+          where: { id: req.unidad.id },
+          select: { coeficiente: true },
+        });
+        // Un DELETE concurrente pudo ganar el lock y borrarla.
+        if (!actual) {
+          return { noExiste: true };
+        }
+        const sumaActual = await sumaActualEdificio(tx, req.organizacionId, req.unidad.edificioId);
+        const resultante = sumaActual.minus(actual.coeficiente);
+        if (!cuadra(resultante)) {
+          return { suma: resultante };
+        }
+
+        await tx.unidad.delete({ where: { id: req.unidad.id } });
+        return { eliminada: true };
+      });
+
+      if (resultado.noExiste) {
+        return res.status(404).json({
+          error: { code: 'UNIDAD_NO_ENCONTRADA', message: 'La unidad no existe' },
+        });
+      }
+      if (!('eliminada' in resultado)) {
+        return res.status(422).json(errorCoeficientes(resultado.suma));
+      }
       return res.status(204).send();
     } catch (err) {
       // La UF tiene vínculos (UnidadUsuario, cobros, liquidaciones)

@@ -12,6 +12,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { queryClient } from '@/lib/query-client';
 import { Toaster } from '@/components/ui/sonner';
 import RequireAuth from '@/components/auth/RequireAuth';
+import RequireRole from '@/components/auth/RequireRole';
 import AppLayout from '@/components/layout/AppLayout';
 import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
@@ -34,7 +35,15 @@ const router = createBrowserRouter([
         children: [
           { path: '/', element: <DashboardPage /> },
           { path: '/edificios', element: <EdificiosPage /> },
-          { path: '/edificios/nuevo', element: <EdificioNuevoPage /> },
+          {
+            // Alta de edificio: solo org_admin/superadmin (qa S2 #1). El
+            // backend ya devuelve 403 al resto; esto evita mostrar un form
+            // que siempre falla al submit.
+            element: <RequireRole roles={['org_admin', 'superadmin']} />,
+            children: [
+              { path: '/edificios/nuevo', element: <EdificioNuevoPage /> },
+            ],
+          },
           {
             // Detalle con tabs anidados (S2-07, PRD-07-03 §2): /edificios/:id
             // redirige a /unidades (tab default).

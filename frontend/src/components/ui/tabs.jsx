@@ -31,6 +31,9 @@ function TabsList({
 
 // El tab activo expone data-active (Base UI); mantiene foco visible y
 // estados disabled acordes al resto de los componentes base-nova.
+// La transición se limita al color de texto: transicionar también el fondo
+// hacía que el pill del tab activo "viajara" con delay respecto del tab
+// seleccionado (qa S2 #2).
 function TabsTab({
   className,
   ...props
@@ -39,7 +42,7 @@ function TabsTab({
     <TabsPrimitive.Tab
       data-slot="tabs-tab"
       className={cn(
-        "inline-flex h-7 items-center justify-center rounded-md px-3 text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-active:bg-background data-active:text-foreground data-active:shadow-sm",
+        "inline-flex h-7 items-center justify-center rounded-md px-3 text-sm font-medium whitespace-nowrap transition-[color] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-active:bg-background data-active:text-foreground data-active:shadow-sm",
         className
       )}
       {...props} />

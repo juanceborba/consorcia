@@ -211,6 +211,48 @@ describe('unidades (S2)', () => {
     assert.equal(data.error.code, 'UNIDAD_DUPLICADA');
   });
 
+  it('bulk concurrente sobre el mismo edificio: uno commitea y el otro recibe 422 (TOCTOU, SEC-01)', async () => {
+    // Dos bulk en paralelo cuyos lotes suman 1.000000 cada uno: sin el lock
+    // del edificio ambos leen "0 existentes", ambos validan OK y commitean,
+    // dejando la suma en 2.000000. Con el lock se serializan: el segundo
+    // re-lee las UFs del primero y la invariante lo rechaza.
+    const edificio = await crearEdificio(`Test S2 Concurrencia ${Date.now()}`);
+    try {
+      const lote = (prefijo) => [
+        { numero: `${prefijo}-1`, tipo: 'departamento', m2: 60, coeficiente: '0.600000' },
+        { numero: `${prefijo}-2`, tipo: 'departamento', m2: 40, coeficiente: '0.400000' },
+      ];
+      const [r1, r2] = await Promise.all([
+        apiFetch(baseUrl, `/api/edificios/${edificio.id}/unidades`, {
+          method: 'POST',
+          ...auth(admin),
+          body: lote('A'),
+        }),
+        apiFetch(baseUrl, `/api/edificios/${edificio.id}/unidades`, {
+          method: 'POST',
+          ...auth(admin),
+          body: lote('B'),
+        }),
+      ]);
+
+      assert.deepEqual([r1.status, r2.status].sort((a, b) => a - b), [201, 422]);
+      const perdedor = r1.status === 422 ? r1 : r2;
+      assert.equal(perdedor.data.error.code, 'COEFICIENTES_NO_CUADRAN');
+      assert.equal(perdedor.data.error.sumaActual, '2.000000');
+
+      // El edificio quedó cuadrado con un solo lote (la invariante se sostuvo)
+      const { data: lista } = await apiFetch(
+        baseUrl,
+        `/api/edificios/${edificio.id}/unidades`,
+        auth(admin)
+      );
+      assert.equal(lista.pagination.total, 2);
+    } finally {
+      await prisma.unidad.deleteMany({ where: { edificioId: edificio.id } });
+      await prisma.edificio.deleteMany({ where: { id: edificio.id } });
+    }
+  });
+
   it('el gestor no puede crear unidades en un edificio no asignado (403)', async () => {
     // El edificio de prueba es de la org demo pero NO está asignado al gestor
     const { status, data } = await apiFetch(baseUrl, `/api/edificios/${edificioVacioId}/unidades`, {

@@ -205,26 +205,39 @@ router.post(
         });
       }
 
-      const existentes = await prisma.unidad.findMany({
-        where: { organizacionId: req.organizacionId, edificioId: req.edificio.id },
-        select: { coeficiente: true },
-      });
-      const suma = sumarCoeficientes([
-        ...existentes.map((u) => u.coeficiente),
-        ...req.body.map((u) => u.coeficiente),
-      ]);
-      if (!cuadra(suma)) {
-        return res.status(422).json(errorCoeficientes(suma));
-      }
+      // Validación + escritura en transacción interactiva con lock de la fila
+      // del edificio (SELECT ... FOR UPDATE): serializa las operaciones
+      // concurrentes sobre las unidades del mismo edificio y cierra la
+      // carrera TOCTOU de la invariante (review S2 #2 / SEC-01).
+      const resultado = await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM edificios WHERE id = ${req.edificio.id} FOR UPDATE`;
 
-      const creadas = await prisma.$transaction(
-        req.body.map((u) =>
-          prisma.unidad.create({
-            data: { ...u, organizacionId: req.organizacionId, edificioId: req.edificio.id },
-          })
-        )
-      );
-      return res.status(201).json(creadas);
+        const existentes = await tx.unidad.findMany({
+          where: { organizacionId: req.organizacionId, edificioId: req.edificio.id },
+          select: { coeficiente: true },
+        });
+        const suma = sumarCoeficientes([
+          ...existentes.map((u) => u.coeficiente),
+          ...req.body.map((u) => u.coeficiente),
+        ]);
+        if (!cuadra(suma)) {
+          return { suma };
+        }
+
+        const creadas = await Promise.all(
+          req.body.map((u) =>
+            tx.unidad.create({
+              data: { ...u, organizacionId: req.organizacionId, edificioId: req.edificio.id },
+            })
+          )
+        );
+        return { creadas };
+      });
+
+      if (!('creadas' in resultado)) {
+        return res.status(422).json(errorCoeficientes(resultado.suma));
+      }
+      return res.status(201).json(resultado.creadas);
     } catch (err) {
       if (err.code === 'P2002') {
         return res.status(409).json({

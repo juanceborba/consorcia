@@ -15,7 +15,11 @@ export const queryClient = new QueryClient({
       networkMode: 'online',
     },
     mutations: {
-      retry: 1,
+      // Sin retry automático (default de TanStack): los POST/PATCH/DELETE no
+      // son idempotentes y reintentarlos tras un error de red/5xx puede
+      // duplicar escrituras (review S2 #3). El retry manual queda en manos
+      // del usuario.
+      retry: 0,
       networkMode: 'online',
     },
   },
