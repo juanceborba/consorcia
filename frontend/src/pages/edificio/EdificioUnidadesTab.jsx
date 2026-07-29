@@ -12,7 +12,7 @@
 // necesita el set completo de unidades para verificar la invariante. Si un
 // edificio supera las 100 unidades (fuera de escala del MVP), el pie aclara
 // que los totales son parciales.
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -28,9 +28,11 @@ import {
   ArrowUpDown,
   Building2,
   Plus,
+  Users,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
+import ResidentesDrawer from '@/pages/edificio/ResidentesDrawer';
 import UnidadAltaDialog from '@/pages/edificio/UnidadAltaDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -112,7 +114,9 @@ function HeaderSorteable({ column, titulo, alignRight = false }) {
   );
 }
 
-const columns = [
+// Las columnas se arman con una factory porque la de acciones necesita el
+// callback que abre el panel de residentes (S4-08).
+const crearColumnas = (onVerResidentes) => [
   columnHelper.accessor('numero', {
     header: ({ column }) => <HeaderSorteable column={column} titulo="Número" />,
     cell: (info) => <span className="font-medium">{info.getValue()}</span>,
@@ -151,6 +155,29 @@ const columns = [
     header: 'Categorías',
     enableSorting: false,
     cell: (info) => <CategoriasUnidad unidad={info.getValue()} />,
+  }),
+  // Acción "Residentes" de la fila (S4-08, PRD-04-11 §5: el alta de residentes
+  // se hace desde la unidad). Abre el panel lateral con los vínculos de la UF.
+  columnHelper.accessor((unidad) => unidad, {
+    id: 'residentes',
+    header: () => <span className="sr-only">Residentes</span>,
+    enableSorting: false,
+    cell: (info) => {
+      const unidad = info.getValue();
+      return (
+        <span className="flex justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label={`Residentes de la unidad ${unidad.numero}`}
+            onClick={() => onVerResidentes(unidad)}
+          >
+            <Users className="size-4" />
+            Residentes
+          </Button>
+        </span>
+      );
+    },
   }),
 ];
 
@@ -191,6 +218,9 @@ export default function EdificioUnidadesTab() {
   const { edificio } = useOutletContext();
   const [sorting, setSorting] = useState([{ id: 'numero', desc: false }]);
   const [altaOpen, setAltaOpen] = useState(false);
+  // UF cuyo panel de residentes está abierto (S4-08).
+  const [unidadResidentes, setUnidadResidentes] = useState(null);
+  const columns = useMemo(() => crearColumnas(setUnidadResidentes), []);
 
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.edificios.unidades(edificio.id),
@@ -302,6 +332,8 @@ export default function EdificioUnidadesTab() {
                       {formatearCoeficiente(totalCoeficiente)}
                     </span>
                   </TableCell>
+                  {/* Categorías y acciones no suman nada en el pie */}
+                  <TableCell />
                   <TableCell />
                 </TableRow>
               </TableFooter>
@@ -322,6 +354,13 @@ export default function EdificioUnidadesTab() {
         unidadesExistentes={unidades}
         isOpen={altaOpen}
         onClose={() => setAltaOpen(false)}
+      />
+
+      {/* Residentes de la UF (S4-08): panel lateral desde la fila */}
+      <ResidentesDrawer
+        unidad={unidadResidentes}
+        isOpen={unidadResidentes !== null}
+        onClose={() => setUnidadResidentes(null)}
       />
     </Card>
   );

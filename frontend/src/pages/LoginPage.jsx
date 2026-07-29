@@ -4,7 +4,7 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Navigate, useLocation, useNavigate } from 'react-router';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth.store';
 import { Button } from '@/components/ui/button';
@@ -92,6 +92,13 @@ export default function LoginPage() {
               {isSubmitting ? 'Ingresando…' : 'Ingresar'}
             </Button>
           </form>
+          {/* Alta de una administración nueva (S4-08) */}
+          <p className="mt-4 text-sm text-muted-foreground">
+            ¿Administrás consorcios y todavía no tenés cuenta?{' '}
+            <Link to="/register" className="text-primary hover:underline">
+              Creá tu administración
+            </Link>
+          </p>
           {import.meta.env.DEV && (
             <p className="mt-4 text-xs text-muted-foreground">
               Demo — admin@demo.com / demo1234 (org_admin) · gestor@demo.com /

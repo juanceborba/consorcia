@@ -49,6 +49,14 @@ export const useAuthStore = create()(
         });
       },
 
+      // Guarda una sesión ya emitida por el backend. Todas las respuestas de
+      // auth tienen la misma forma ({ accessToken, refreshToken, user }), así
+      // que register (S4-08), aceptar invitación (S4-08) y cambiar-organización
+      // (S4-09) entran por acá sin repetir el shape del contrato.
+      establecerSesion({ user, accessToken, refreshToken }) {
+        set({ user, accessToken, refreshToken });
+      },
+
       // POST /api/auth/logout (best effort), limpia la sesión local y el
       // cache de TanStack Query (S2-04: datos del tenant no sobreviven al logout).
       async logout() {

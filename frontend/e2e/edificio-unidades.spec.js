@@ -121,7 +121,10 @@ test('crear edificio y agregar unidades (bulk con invariante)', async ({ page })
   });
 
   await test.step('la tabla muestra las unidades y TOTAL en 1.000000 verde', async () => {
-    await expect(page.getByRole('cell', { name: '1A' })).toBeVisible();
+    // exact: desde S4-08 cada fila tiene un botón "Residentes de la unidad 1A"
+    await expect(
+      page.getByRole('cell', { name: '1A', exact: true }),
+    ).toBeVisible();
     await expect(page.getByRole('cell', { name: 'COCH', exact: true })).toBeVisible();
     await expect(page.getByRole('cell', { name: 'TOTAL' })).toBeVisible();
     const suma = page.getByRole('cell', { name: '1.000000' });
