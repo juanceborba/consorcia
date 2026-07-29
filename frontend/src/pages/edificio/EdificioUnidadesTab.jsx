@@ -3,8 +3,10 @@
 // Table según PRD-07-02 §3.5 — sort por número/tipo/m²/coeficiente, fila
 // TOTAL al pie (Σm² y Σcoeficiente en 6 decimales, success si cierra en
 // 1.000000 / warning si no), badges de categorías A/B/C (tokens S2-05),
-// empty state (§6.2) y skeleton de carga. El botón "+ Agregar" del header
-// (wireframe §3.5) abre el modal de alta de S2-09 (UnidadAltaDialog).
+// empty state (§6.2) y skeleton de carga. Desde #57 el header tiene dos
+// botones, uno por flujo de alta (S2-09): "Agregar unidad" abre el alta
+// individual (UnidadAltaDialog, con tab de categorías A/B/C) y "Carga rápida"
+// abre la grilla bulk (UnidadBulkDialog).
 //
 // Invariante de coeficientes (#57): es INFORMATIVA. Si Σ≠1 no se bloquea nada;
 // se muestra un Alert warning arriba de la tabla ("Faltan/Sobran X…") y la fila
@@ -40,6 +42,7 @@ import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import ResidentesDrawer from '@/pages/edificio/ResidentesDrawer';
 import UnidadAltaDialog from '@/pages/edificio/UnidadAltaDialog';
+import UnidadBulkDialog from '@/pages/edificio/UnidadBulkDialog';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -243,7 +246,10 @@ function AlertaCoeficientes({ delta }) {
 export default function EdificioUnidadesTab() {
   const { edificio } = useOutletContext();
   const [sorting, setSorting] = useState([{ id: 'numero', desc: false }]);
+  // Un estado por flujo de alta (#57): individual y carga rápida son dos
+  // dialogs independientes, cada uno con su botón.
   const [altaOpen, setAltaOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   // UF cuyo panel de residentes está abierto (S4-08).
   const [unidadResidentes, setUnidadResidentes] = useState(null);
   const columns = useMemo(() => crearColumnas(setUnidadResidentes), []);
@@ -294,10 +300,15 @@ export default function EdificioUnidadesTab() {
           {total === 1 ? '1 unidad' : `${total} unidades`} del edificio
         </CardDescription>
         <CardAction>
-          <Button onClick={() => setAltaOpen(true)}>
-            <Plus className="size-4" />
-            Agregar
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setBulkOpen(true)}>
+              Carga rápida
+            </Button>
+            <Button onClick={() => setAltaOpen(true)}>
+              <Plus className="size-4" />
+              Agregar unidad
+            </Button>
+          </div>
         </CardAction>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
@@ -371,13 +382,21 @@ export default function EdificioUnidadesTab() {
         )}
       </CardContent>
 
-      {/* Alta de unidades (S2-09): modal con form individual + bulk */}
+      {/* Alta de unidades (S2-09): dos flujos separados desde #57 — el alta
+          individual (con tab de categorías A/B/C) y la carga rápida bulk */}
       <UnidadAltaDialog
         edificioId={edificio.id}
         edificioTotalM2={edificio.totalM2}
         unidadesExistentes={unidades}
         isOpen={altaOpen}
         onClose={() => setAltaOpen(false)}
+      />
+      <UnidadBulkDialog
+        edificioId={edificio.id}
+        edificioTotalM2={edificio.totalM2}
+        unidadesExistentes={unidades}
+        isOpen={bulkOpen}
+        onClose={() => setBulkOpen(false)}
       />
 
       {/* Residentes de la UF (S4-08): panel lateral desde la fila */}
