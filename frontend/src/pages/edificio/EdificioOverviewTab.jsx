@@ -5,6 +5,7 @@
 import { useOutletContext } from 'react-router';
 import { Building2, Ruler, CalendarDays, LayoutGrid } from 'lucide-react';
 import { etiquetaTipoEdificio } from '@/lib/tipos-edificio';
+import AyudaLink from '@/components/ayuda/AyudaLink';
 import {
   Card,
   CardContent,
@@ -75,7 +76,11 @@ export default function EdificioOverviewTab() {
       {/* Datos generales */}
       <Card className="max-w-2xl">
         <CardHeader>
-          <CardTitle>Datos del edificio</CardTitle>
+          <CardTitle className="flex items-center gap-1">
+            Datos del edificio
+            {/* Ayuda contextual: conceptos del módulo Edificios (§6.5) */}
+            <AyudaLink variant="icon" topic="edificios" />
+          </CardTitle>
           <CardDescription>Información general del consorcio</CardDescription>
         </CardHeader>
         <CardContent>

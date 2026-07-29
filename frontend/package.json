@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "test": "echo \"tests: pendiente de configurar (Vitest)\" && exit 0",
     "test:e2e": "playwright test",
+    "check:ayuda": "node scripts/check-ayuda.mjs",
     "lint": "echo \"lint: pendiente de configurar\" && exit 0",
     "format": "echo \"format: pendiente de configurar\" && exit 0"
   },

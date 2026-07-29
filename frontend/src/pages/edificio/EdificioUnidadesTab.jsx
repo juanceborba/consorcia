@@ -43,6 +43,7 @@ import { queryKeys } from '@/lib/query-keys';
 import ResidentesDrawer from '@/pages/edificio/ResidentesDrawer';
 import UnidadAltaDialog from '@/pages/edificio/UnidadAltaDialog';
 import UnidadBulkDialog from '@/pages/edificio/UnidadBulkDialog';
+import AyudaLink from '@/components/ayuda/AyudaLink';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -295,7 +296,11 @@ export default function EdificioUnidadesTab() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Unidades ({total})</CardTitle>
+        <CardTitle className="flex items-center gap-1">
+          Unidades ({total})
+          {/* Ayuda contextual: unidades y coeficientes (§6.5) */}
+          <AyudaLink variant="icon" topic="edificios/unidades" />
+        </CardTitle>
         <CardDescription>
           {total === 1 ? '1 unidad' : `${total} unidades`} del edificio
         </CardDescription>
