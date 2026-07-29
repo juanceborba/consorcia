@@ -23,12 +23,17 @@ import { validarBody } from '../middleware/validation.middleware.js';
 import { bulkUnidadesSchema } from '../schemas/unidad.schema.js';
 import { sumarCoeficientes, estadoCoeficientes } from '../services/coeficientes.js';
 import { gastosDeEdificioRouter } from './gastos.routes.js';
+import { liquidacionesDeEdificioRouter } from './liquidaciones.routes.js';
 
 const router = Router();
 
 // Gastos del edificio (S3-02). Va antes de las rutas `/:id` para que el prefijo
 // más específico gane; el router hereda `:id` con `mergeParams`.
 router.use('/:id/gastos', gastosDeEdificioRouter);
+
+// Liquidaciones del edificio (S3-04): calcular el período y listarlas. Las
+// operaciones sobre una liquidación ya identificada viven en /api/liquidaciones.
+router.use('/:id/liquidaciones', liquidacionesDeEdificioRouter);
 
 // Estado informativo de la suma de coeficientes del edificio (#57): siempre
 // sobre el set COMPLETO de unidades, nunca sobre la página pedida — la UI usa
