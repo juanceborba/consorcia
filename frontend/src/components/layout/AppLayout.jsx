@@ -34,7 +34,19 @@ import { cn } from '@/lib/utils';
 // pattern/require-role-guards-ui).
 const MODULOS = [
   { nombre: 'Edificios', path: '/edificios', activo: true },
-  { nombre: 'Gastos', activo: false },
+  // Gastos vive como tab del edificio (S3-07), así que el link del sidebar
+  // necesita el edificio de trabajo del header: `path` se resuelve abajo con el
+  // `edificioId` del store y el módulo queda inactivo mientras no haya ninguno
+  // seleccionado. La sección top-level `/gastos` de PRD-07-03 §2.1 es la vista
+  // consolidada de la organización (Business+) y llega con el dashboard (S3-16).
+  {
+    nombre: 'Gastos',
+    activo: true,
+    pathDeEdificio: (id) => `/edificios/${id}/gastos`,
+    // Lo que se muestra cuando no hay edificio de trabajo: el módulo existe, lo
+    // que falta es el contexto — no es el "próximamente" del resto.
+    inactivo: { badge: 'Elegí edificio', title: 'Elegí un edificio en el header' },
+  },
   { nombre: 'Liquidaciones', activo: false },
   { nombre: 'Cobranzas', activo: false },
   // Configuración de la organización que alimenta la carga de gastos (S3-14).
@@ -103,6 +115,17 @@ export default function AppLayout() {
     : MODULOS.filter(
         (modulo) =>
           !modulo.roles || modulo.roles.some((rol) => roles.includes(rol)),
+      ).map((modulo) =>
+        // Módulos scopeados al edificio de trabajo (Gastos, S3-07): sin edificio
+        // seleccionado no hay ruta a la que ir, así que el link se apaga en vez
+        // de mandar a una URL incompleta.
+        modulo.pathDeEdificio
+          ? {
+              ...modulo,
+              path: edificioId ? modulo.pathDeEdificio(edificioId) : undefined,
+              activo: Boolean(edificioId),
+            }
+          : modulo,
       );
 
   const handleLogout = async () => {
@@ -146,11 +169,11 @@ export default function AppLayout() {
               <span
                 key={modulo.nombre}
                 className="flex cursor-not-allowed items-center justify-between rounded-md px-3 py-2 text-sm text-sidebar-foreground/40"
-                title="Disponible próximamente"
+                title={modulo.inactivo?.title ?? 'Disponible próximamente'}
               >
                 {modulo.nombre}
                 <Badge variant="secondary" className="text-[10px]">
-                  {residente ? 'S5' : 'S2+'}
+                  {modulo.inactivo?.badge ?? (residente ? 'S5' : 'S2+')}
                 </Badge>
               </span>
             ),

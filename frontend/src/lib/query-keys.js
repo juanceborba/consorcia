@@ -16,6 +16,15 @@ export const queryKeys = {
     lists: (filters) => [...queryKeys.gastos.all, 'list', filters],
     detail: (id) => [...queryKeys.gastos.all, 'detail', id],
     porPeriodo: (periodo) => [...queryKeys.gastos.all, 'periodo', periodo],
+    // Lista del tab `gastos` de un edificio (S3-07). El edificio va antes que
+    // los filtros para poder invalidar todas las páginas y combinaciones de
+    // filtros de un edificio con un prefijo (`[...all, 'edificio', id]`).
+    porEdificio: (edificioId, filtros) => [
+      ...queryKeys.gastos.all,
+      'edificio',
+      edificioId,
+      filtros,
+    ],
   },
   // Directorio de proveedores de la organización activa (S3-12/14). No lleva el
   // id de la organización: el endpoint la saca del JWT y el cambio de

@@ -25,6 +25,7 @@ import EdificioNuevoPage from '@/pages/EdificioNuevoPage';
 import EdificioDetallePage from '@/pages/EdificioDetallePage';
 import EdificioOverviewTab from '@/pages/edificio/EdificioOverviewTab';
 import EdificioUnidadesTab from '@/pages/edificio/EdificioUnidadesTab';
+import EdificioGastosTab from '@/pages/edificio/EdificioGastosTab';
 import EdificioConfiguracionTab from '@/pages/edificio/EdificioConfiguracionTab';
 import ConfiguracionUsuariosPage from '@/pages/configuracion/ConfiguracionUsuariosPage';
 import ProveedoresPage from '@/pages/configuracion/ProveedoresPage';
@@ -89,6 +90,9 @@ const router = createBrowserRouter([
                   { index: true, element: <Navigate to="unidades" replace /> },
                   { path: 'overview', element: <EdificioOverviewTab /> },
                   { path: 'unidades', element: <EdificioUnidadesTab /> },
+                  // Tab de gastos (S3-07). Ruta hija según la convención de
+                  // PRD-07-03 §2.2; ver decisión 1 en EdificioGastosTab.jsx.
+                  { path: 'gastos', element: <EdificioGastosTab /> },
                   {
                     path: 'configuracion',
                     element: <EdificioConfiguracionTab />,

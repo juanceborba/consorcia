@@ -23,6 +23,7 @@ import { Tabs, TabsList, TabsTab } from '@/components/ui/tabs';
 const TABS = [
   { value: 'overview', label: 'Resumen' },
   { value: 'unidades', label: 'Unidades' },
+  { value: 'gastos', label: 'Gastos' },
   { value: 'configuracion', label: 'Configuración' },
 ];
 

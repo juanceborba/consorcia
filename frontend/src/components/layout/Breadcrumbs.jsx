@@ -13,6 +13,7 @@ import { queryKeys } from '@/lib/query-keys';
 const TAB_LABELS = {
   overview: 'Overview',
   unidades: 'Unidades',
+  gastos: 'Gastos',
   configuracion: 'Configuración',
 };
 
@@ -34,7 +35,7 @@ const RUTAS = [
       { label: 'Nuevo' },
     ],
   },
-  ...['overview', 'unidades', 'configuracion'].map((tab) => ({
+  ...['overview', 'unidades', 'gastos', 'configuracion'].map((tab) => ({
     pattern: `/edificios/:id/${tab}`,
     items: [
       { label: 'Inicio', href: '/' },
