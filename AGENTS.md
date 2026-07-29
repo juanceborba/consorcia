@@ -67,6 +67,7 @@ Definidas en el MOC (`PRD-00-00`, sección "Notas para el Equipo"):
 - **Links bidireccionales:** usar `[[PRD-XX-YY]]` para conectar documentos.
 - **Regla de actualización:** si cambiás una decisión de diseño, actualizá el PRD correspondiente **y** el MOC.
 - **Regla de sincronización con la implementación:** el código vive en `../app` (sibling del vault). Siempre que una implementación diverja de lo que dice un PRD (puertos, versiones, servicios, configs, ADRs), **actualizá el PRD en la misma tarea** — el PRD debe reflejar lo que realmente existe, no el diseño original. No dejar secciones de "notas de implementación" permanentes: integrar la corrección en el cuerpo del documento. Si un documento entero queda divergente, marcarlo `status: obsoleto`, reducir su contenido a un puntero al documento canónico y anotarlo en el MOC.
+- **Dashboard generado:** `00_MOC/Estado de Implementación.md` lo genera `app/state/engine.py` (motor de estado). No editarlo a mano: el próximo `rebuild` pisa los cambios.
 - **Tags principales:** `#consorcIA #mvp #fase2 #fase3 #agente #core #integracion #compliance #frontend #devops #riesgo #decision`.
 
 ## Consideraciones de dominio y seguridad
