@@ -58,3 +58,26 @@ S2-05 ──┘      └────► S2-10                │
 - Intento de guardar unidades que suman 0.9 → 422 con mensaje de delta (API) y botón deshabilitado (UI).
 - Gestor no puede crear edificio ni tocar un edificio no asignado (test automático).
 - Breadcrumbs muestran Inicio / Edificios / {nombre} / Unidades.
+
+## Refinamiento posterior: invariante informativa (issue #57, 2026-07-29)
+
+La invariante dura del DoD frenaba la carga incremental (la primera UF nunca
+puede cerrar en 1.000000), así que se revisó la UX del slice:
+
+- **Backend:** el bulk, el `PATCH` y el `DELETE` de unidades **guardan aunque
+  Σ≠1** — se eliminó el 422 `COEFICIENTES_NO_CUADRAN` de las escrituras. Las
+  respuestas (y el `GET /:id/unidades` y el detalle del edificio) traen
+  `coeficientes: { suma, delta, cuadra }` con decimal.js a 6 decimales. El
+  `DELETE` pasó de 204 a `200 { eliminada, coeficientes }`, el bulk de array a
+  `201 { unidades, coeficientes }`. Se quitó el `SELECT … FOR UPDATE` del
+  edificio (existía solo para serializar la invariante); la unicidad del número
+  de UF la garantiza el índice único → 409 `UNIDAD_DUPLICADA`.
+- **Gate duro en la liquidación (S3):** `validarParaLiquidacion` en
+  `backend/src/services/coeficientes.js` (con tests en
+  `backend/tests/coeficientes.test.js`) es la función que S3 debe llamar antes
+  de emitir expensas.
+- **Frontend:** coeficiente **sugerido** al cargar los m² (`m² / totalM2`, 6
+  decimales, editable) en el alta individual y en cada fila del bulk; feedback
+  "Suma actual: X — falta/sobra Y" en los dos modos y **Guardar nunca se
+  deshabilita por la suma**; `Alert` warning arriba de la DataTable ("Faltan /
+  Sobran X…") y fila TOTAL en warning (ya no danger) cuando Σ≠1.

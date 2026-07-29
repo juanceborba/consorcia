@@ -1,4 +1,4 @@
-// src/routes/unidades.routes.js — Unidades individuales (S2-02)
+// src/routes/unidades.routes.js — Unidades individuales (S2-02, UX #57)
 // Spec: PRD-04-01 §2. Contrato:
 //   PATCH  /api/unidades/:id → actualiza campos de la UF (incl. coeficiente)
 //   DELETE /api/unidades/:id → baja física de la UF
@@ -7,13 +7,20 @@
 // residentes.routes.js; la resolución de la UF con su aislamiento
 // (`validarUnidad`) es compartida y vive en middleware/unidad.middleware.js.
 //
-// Invariante (PRD-04-01 §1.3): ambas operaciones validan con decimal.js que
-// la suma de coeficientes del edificio siga siendo 1.000000 tras el cambio;
-// si descuadra → 422 COEFICIENTES_NO_CUADRAN (suma actual + delta).
-// Consecuencia deliberada: en un edificio ya cuadrado no se puede cambiar un
-// coeficiente ni eliminar una UF de a una — la redistribución atómica de
-// coeficientes es una operación futura (consistente con la regla del PRD de
-// no tocar unidades una vez cerrada la configuración).
+// Invariante de coeficientes (PRD-04-01 §1.3) — INFORMATIVA desde #57: ambas
+// operaciones guardan aunque la suma del edificio no cierre en 1.000000, y
+// devuelven el estado de la suma resultante (`coeficientes: { suma, delta,
+// cuadra }`) para que la UI muestre la alerta. El gate duro vive en la
+// liquidación (S3, `validarParaLiquidacion` en services/coeficientes.js).
+//
+// Concurrencia: se eliminó el `SELECT ... FOR UPDATE` sobre el edificio. Su
+// única razón era cerrar la carrera TOCTOU de la invariante (review S2 #2 /
+// SEC-01), que ya no rechaza nada; la unicidad del número de UF sigue siendo
+// segura porque la garantiza el índice único (organizacion_id, edificio_id,
+// numero) de la DB, cuyo P2002 se traduce a 409 acá abajo. La suma que se
+// devuelve se lee después de escribir: es informativa, no un invariante
+// serializado, y puede quedar desactualizada si otra operación commitea justo
+// después (la UI la refresca con el GET del listado).
 //
 // Aislamiento: la UF se resuelve a su edificio y se valida organización
 // (del JWT) + asignación del gestor antes de cualquier escritura.
@@ -26,7 +33,7 @@ import { autorizar } from '../middleware/rbac.middleware.js';
 import { validarBody } from '../middleware/validation.middleware.js';
 import { validarUnidad } from '../middleware/unidad.middleware.js';
 import { editarUnidadSchema } from '../schemas/unidad.schema.js';
-import { sumarCoeficientes, cuadra, errorCoeficientes } from '../services/coeficientes.js';
+import { sumarCoeficientes, estadoCoeficientes } from '../services/coeficientes.js';
 import residentesRoutes from './residentes.routes.js';
 
 const router = Router();
@@ -45,26 +52,17 @@ const recursoUnidad = (req) => ({
   },
 });
 
-// Suma actual de coeficientes del edificio (Decimales de Prisma). Recibe el
-// cliente a usar: dentro de una transacción interactiva debe ser `tx`.
-async function sumaActualEdificio(client, organizacionId, edificioId) {
-  const unidades = await client.unidad.findMany({
+// Estado informativo de la suma de coeficientes del edificio (se lee después
+// de la escritura, así refleja lo que quedó persistido).
+export async function estadoEdificio(organizacionId, edificioId) {
+  const unidades = await prisma.unidad.findMany({
     where: { organizacionId, edificioId },
     select: { coeficiente: true },
   });
-  return sumarCoeficientes(unidades.map((u) => u.coeficiente));
+  return estadoCoeficientes(sumarCoeficientes(unidades.map((u) => u.coeficiente)));
 }
 
-// Lock de la fila del edificio dentro de una transacción interactiva:
-// serializa bulk create / PATCH / DELETE concurrentes sobre las unidades del
-// mismo edificio y cierra la carrera TOCTOU de la invariante (review S2 #2 /
-// SEC-01). La validación de la suma y la escritura van siempre después.
-function lockEdificio(tx, edificioId) {
-  return tx.$queryRaw`SELECT id FROM edificios WHERE id = ${edificioId} FOR UPDATE`;
-}
-
-// PATCH /:id — edición de la UF. Si cambia el coeficiente, la suma resultante
-// del edificio debe seguir cerrando en 1.000000.
+// PATCH /:id — edición de la UF. Guarda siempre; informa la suma resultante.
 router.patch(
   '/:id',
   requireAuth,
@@ -74,43 +72,12 @@ router.patch(
   validarBody(editarUnidadSchema),
   async (req, res, next) => {
     try {
-      const resultado = await prisma.$transaction(async (tx) => {
-        await lockEdificio(tx, req.unidad.edificioId);
-
-        if (req.body.coeficiente !== undefined) {
-          // Se re-lee la UF dentro del lock: pudo cambiar entre validarUnidad
-          // y la adquisición del lock por una operación concurrente.
-          const actual = await tx.unidad.findUnique({
-            where: { id: req.unidad.id },
-            select: { coeficiente: true },
-          });
-          // Un DELETE concurrente pudo ganar el lock y borrarla.
-          if (!actual) {
-            return { noExiste: true };
-          }
-          const sumaActual = await sumaActualEdificio(tx, req.organizacionId, req.unidad.edificioId);
-          const resultante = sumaActual.minus(actual.coeficiente).plus(req.body.coeficiente);
-          if (!cuadra(resultante)) {
-            return { suma: resultante };
-          }
-        }
-
-        const unidad = await tx.unidad.update({
-          where: { id: req.unidad.id },
-          data: req.body,
-        });
-        return { unidad };
+      const unidad = await prisma.unidad.update({
+        where: { id: req.unidad.id },
+        data: req.body,
       });
-
-      if (resultado.noExiste) {
-        return res.status(404).json({
-          error: { code: 'UNIDAD_NO_ENCONTRADA', message: 'La unidad no existe' },
-        });
-      }
-      if (!('unidad' in resultado)) {
-        return res.status(422).json(errorCoeficientes(resultado.suma));
-      }
-      return res.json(resultado.unidad);
+      const coeficientes = await estadoEdificio(req.organizacionId, req.unidad.edificioId);
+      return res.json({ ...unidad, coeficientes });
     } catch (err) {
       // Número de UF duplicado en el edificio (unique org+edificio+numero)
       if (err.code === 'P2002') {
@@ -118,14 +85,20 @@ router.patch(
           error: { code: 'UNIDAD_DUPLICADA', message: 'Ya existe una unidad con ese número en el edificio' },
         });
       }
+      // Un DELETE concurrente pudo borrarla entre validarUnidad y el update.
+      if (err.code === 'P2025') {
+        return res.status(404).json({
+          error: { code: 'UNIDAD_NO_ENCONTRADA', message: 'La unidad no existe' },
+        });
+      }
       return next(err);
     }
   }
 );
 
-// DELETE /:id — baja física de la UF. La suma resultante del edificio debe
-// seguir cerrando en 1.000000 (en la práctica: solo es posible si el edificio
-// aún no está cuadrado; si lo está, hay que redistribuir coeficientes antes).
+// DELETE /:id — baja física de la UF. Guarda siempre; informa la suma
+// resultante (borrar una UF de un edificio cuadrado lo descuadra, y eso es
+// esperado: la UI lo muestra como alerta, no como error).
 router.delete(
   '/:id',
   requireAuth,
@@ -134,37 +107,16 @@ router.delete(
   autorizar('unidad', 'delete', recursoUnidad),
   async (req, res, next) => {
     try {
-      const resultado = await prisma.$transaction(async (tx) => {
-        await lockEdificio(tx, req.unidad.edificioId);
-
-        const actual = await tx.unidad.findUnique({
-          where: { id: req.unidad.id },
-          select: { coeficiente: true },
-        });
-        // Un DELETE concurrente pudo ganar el lock y borrarla.
-        if (!actual) {
-          return { noExiste: true };
-        }
-        const sumaActual = await sumaActualEdificio(tx, req.organizacionId, req.unidad.edificioId);
-        const resultante = sumaActual.minus(actual.coeficiente);
-        if (!cuadra(resultante)) {
-          return { suma: resultante };
-        }
-
-        await tx.unidad.delete({ where: { id: req.unidad.id } });
-        return { eliminada: true };
-      });
-
-      if (resultado.noExiste) {
+      await prisma.unidad.delete({ where: { id: req.unidad.id } });
+      const coeficientes = await estadoEdificio(req.organizacionId, req.unidad.edificioId);
+      return res.json({ eliminada: true, coeficientes });
+    } catch (err) {
+      // Un DELETE concurrente ganó la carrera.
+      if (err.code === 'P2025') {
         return res.status(404).json({
           error: { code: 'UNIDAD_NO_ENCONTRADA', message: 'La unidad no existe' },
         });
       }
-      if (!('eliminada' in resultado)) {
-        return res.status(422).json(errorCoeficientes(resultado.suma));
-      }
-      return res.status(204).send();
-    } catch (err) {
       // La UF tiene vínculos (UnidadUsuario, cobros, liquidaciones)
       if (err.code === 'P2003' || err.code === 'P2014') {
         return res.status(409).json({

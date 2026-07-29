@@ -113,20 +113,41 @@ fi
 if [ -z "$S2_ID" ]; then
   fail "sin edificio de prueba: se saltean los chequeos de unidades"
 else
-  # Bulk que no cuadra (0.500000 + 0.400000 = 0.900000) → 422 con delta
+  # Carga incremental (#57): un lote que no cuadra se GUARDA e informa el delta
+  # (antes era 422 COEFICIENTES_NO_CUADRAN — la invariante es informativa y su
+  # gate duro se movió a la liquidación de S3).
   req POST "/api/edificios/$S2_ID/unidades" "$ADMIN_TOKEN" '[{"numero":"1A","tipo":"departamento","m2":80,"coeficiente":"0.500000"},{"numero":"1B","tipo":"departamento","m2":70,"coeficiente":"0.400000"}]'
-  check "bulk que suma 0.900000 → 422" 422 "$STATUS"
-  check "error COEFICIENTES_NO_CUADRAN" "COEFICIENTES_NO_CUADRAN" "$(json_eval 'd.error.code' <<< "$BODY")"
-  check "el 422 informa el delta (0.100000)" "0.100000" "$(json_eval 'd.error.delta' <<< "$BODY")"
+  check "bulk que suma 0.900000 → 201 (guarda igual)" 201 "$STATUS"
+  check "creó las 2 unidades del lote parcial" 2 "$(json_eval 'd.unidades.length' <<< "$BODY")"
+  check "informa la suma parcial (0.900000)" "0.900000" "$(json_eval 'd.coeficientes.suma' <<< "$BODY")"
+  check "informa el delta (0.100000)" "0.100000" "$(json_eval 'd.coeficientes.delta' <<< "$BODY")"
+  check "informa que no cuadra" "false" "$(json_eval 'd.coeficientes.cuadra' <<< "$BODY")"
 
-  # Bulk que cierra la invariante (suma 1.000000) → 201
-  req POST "/api/edificios/$S2_ID/unidades" "$ADMIN_TOKEN" '[{"numero":"1A","tipo":"departamento","m2":80,"coeficiente":"0.300000"},{"numero":"1B","tipo":"departamento","m2":70,"coeficiente":"0.250000"},{"numero":"2A","tipo":"departamento","m2":65,"coeficiente":"0.200000"},{"numero":"2B","tipo":"departamento","m2":60,"coeficiente":"0.150000"},{"numero":"COCH","tipo":"cochera","m2":25,"coeficiente":"0.100000"}]'
-  check "bulk que suma 1.000000 → 201" 201 "$STATUS"
-  check "creó las 5 unidades" 5 "$(json_eval 'd.length' <<< "$BODY")"
+  # Segundo lote que completa la suma en 1.000000 → 201 y cuadra
+  req POST "/api/edificios/$S2_ID/unidades" "$ADMIN_TOKEN" '[{"numero":"2A","tipo":"departamento","m2":65,"coeficiente":"0.060000"},{"numero":"2B","tipo":"departamento","m2":60,"coeficiente":"0.030000"},{"numero":"COCH","tipo":"cochera","m2":25,"coeficiente":"0.010000"}]'
+  check "segundo lote → 201" 201 "$STATUS"
+  check "creó las 3 unidades restantes" 3 "$(json_eval 'd.unidades.length' <<< "$BODY")"
+  check "la suma llegó a 1.000000" "1.000000" "$(json_eval 'd.coeficientes.suma' <<< "$BODY")"
+  check "informa que cuadra" "true" "$(json_eval 'd.coeficientes.cuadra' <<< "$BODY")"
 
   req GET "/api/edificios/$S2_ID/unidades?page=1&limit=100" "$ADMIN_TOKEN"
   check "GET unidades paginado → 200" 200 "$STATUS"
   check "la paginación reporta 5 unidades" 5 "$(json_eval 'd.pagination.total' <<< "$BODY")"
+  check "el listado informa la suma de coeficientes" "1.000000" "$(json_eval 'd.coeficientes.suma' <<< "$BODY")"
+
+  LISTADO_S2="$BODY"
+
+  # DELETE de una UF descuadra el edificio: se elimina igual e informa (#57)
+  UF_COCH=$(json_eval 'd.data.find(u => u.numero === "COCH").id' <<< "$LISTADO_S2")
+  req DELETE "/api/unidades/$UF_COCH" "$ADMIN_TOKEN"
+  check "DELETE de UF que descuadra → 200 (guarda igual)" 200 "$STATUS"
+  check "el DELETE informa la suma resultante (0.990000)" "0.990000" "$(json_eval 'd.coeficientes.suma' <<< "$BODY")"
+
+  # PATCH de coeficiente que vuelve a cuadrar el edificio
+  UF_2B=$(json_eval 'd.data.find(u => u.numero === "2B").id' <<< "$LISTADO_S2")
+  req PATCH "/api/unidades/$UF_2B" "$ADMIN_TOKEN" '{"coeficiente":"0.040000"}'
+  check "PATCH de coeficiente → 200" 200 "$STATUS"
+  check "el PATCH informa que la suma volvió a cuadrar" "true" "$(json_eval 'd.coeficientes.cuadra' <<< "$BODY")"
 
   req PATCH "/api/edificios/$S2_ID" "$ADMIN_TOKEN" "{\"nombre\":\"$NOMBRE_S2 (editado)\"}"
   check "PATCH /api/edificios/:id → 200" 200 "$STATUS"

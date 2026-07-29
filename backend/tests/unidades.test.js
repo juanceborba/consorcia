@@ -1,6 +1,10 @@
 // tests/unidades.test.js — Tests de integración del slice S2 (S2-03)
 // Contrato: docs/sprints/S2-edificios-unidades.md (S2-01, S2-02),
-// PRD-04-01 §1.3 (invariante de coeficientes) y §2 (endpoints).
+// PRD-04-01 §1.3 (invariante de coeficientes, INFORMATIVA desde #57) y §2
+// (endpoints). Las escrituras de unidades ya no rechazan con 422 cuando la
+// suma no cierra en 1.000000: guardan e informan `coeficientes: { suma, delta,
+// cuadra }`. El gate duro es de la liquidación (S3) y se testea aparte en
+// tests/coeficientes.test.js.
 // Corre contra la DB del stack dockerizado. Crea sus propios edificios de
 // prueba dentro de la org demo y los limpia en after() (baja física vía
 // Prisma de lo que el API solo puede dar de baja lógica).
@@ -99,22 +103,28 @@ describe('unidades (S2)', () => {
     await cerrarApp(server);
   });
 
-  it('bulk feliz: crea las 5 UFs cuya suma de coeficientes es 1.000000', async () => {
+  it('bulk feliz: crea las 5 UFs y reporta la suma cuadrada', async () => {
     const { status, data } = await apiFetch(baseUrl, `/api/edificios/${edificioId}/unidades`, {
       method: 'POST',
       ...auth(admin),
       body: LOTE_OK,
     });
     assert.equal(status, 201);
-    assert.equal(data.length, 5);
-    unidad1A = data.find((u) => u.numero === '1A');
+    assert.equal(data.unidades.length, 5);
+    // Estado informativo de la invariante (#57)
+    assert.deepEqual(data.coeficientes, {
+      suma: '1.000000',
+      delta: '0.000000',
+      cuadra: true,
+    });
+    unidad1A = data.unidades.find((u) => u.numero === '1A');
     assert.ok(unidad1A?.id);
     // Defaults del schema: categoriaA true, categoriaC null
     assert.equal(unidad1A.categoriaA, true);
     assert.equal(unidad1A.categoriaC, null);
   });
 
-  it('GET /:id/unidades pagina con ?page=&limit=', async () => {
+  it('GET /:id/unidades pagina con ?page=&limit= e informa la suma del edificio', async () => {
     const { status, data } = await apiFetch(
       baseUrl,
       `/api/edificios/${edificioId}/unidades?page=2&limit=2`,
@@ -123,9 +133,15 @@ describe('unidades (S2)', () => {
     assert.equal(status, 200);
     assert.equal(data.data.length, 2);
     assert.deepEqual(data.pagination, { page: 2, limit: 2, total: 5, totalPages: 3 });
+    // La suma es del set COMPLETO del edificio, no de la página
+    assert.deepEqual(data.coeficientes, {
+      suma: '1.000000',
+      delta: '0.000000',
+      cuadra: true,
+    });
   });
 
-  it('rechaza bulk cuyos coeficientes no suman 1 (422 con suma y delta)', async () => {
+  it('#57: guarda el bulk cuyos coeficientes no suman 1 e informa el delta', async () => {
     // Sobre el edificio vacío: lote que suma 0.900000 → falta 0.100000
     const { status, data } = await apiFetch(baseUrl, `/api/edificios/${edificioVacioId}/unidades`, {
       method: 'POST',
@@ -135,46 +151,85 @@ describe('unidades (S2)', () => {
         { numero: '1B', tipo: 'departamento', m2: 60, coeficiente: '0.400000' },
       ],
     });
-    assert.equal(status, 422);
-    assert.equal(data.error.code, 'COEFICIENTES_NO_CUADRAN');
-    assert.equal(data.error.sumaActual, '0.900000');
-    assert.equal(data.error.delta, '0.100000');
+    assert.equal(status, 201);
+    assert.equal(data.unidades.length, 2);
+    assert.deepEqual(data.coeficientes, {
+      suma: '0.900000',
+      delta: '0.100000',
+      cuadra: false,
+    });
 
-    // Y no quedó nada persistido
+    // Quedó persistido (carga incremental) y el GET reporta el mismo estado
     const { data: lista } = await apiFetch(
       baseUrl,
       `/api/edificios/${edificioVacioId}/unidades`,
       auth(admin)
     );
-    assert.equal(lista.pagination.total, 0);
+    assert.equal(lista.pagination.total, 2);
+    assert.equal(lista.coeficientes.suma, '0.900000');
+    assert.equal(lista.coeficientes.cuadra, false);
+
+    // Y el detalle del edificio también lo trae
+    const { data: detalle } = await apiFetch(
+      baseUrl,
+      `/api/edificios/${edificioVacioId}`,
+      auth(admin)
+    );
+    assert.equal(detalle.coeficientes.suma, '0.900000');
+
+    // Limpieza: el resto del spec asume este edificio vacío
+    await prisma.unidad.deleteMany({ where: { edificioId: edificioVacioId } });
   });
 
-  it('rechaza agregar UFs a un edificio ya cuadrado (suma > 1)', async () => {
+  it('#57: agregar UFs a un edificio ya cuadrado guarda e informa que sobra', async () => {
     const { status, data } = await apiFetch(baseUrl, `/api/edificios/${edificioId}/unidades`, {
       method: 'POST',
       ...auth(admin),
       body: [{ numero: '9Z', tipo: 'departamento', m2: 50, coeficiente: '0.100000' }],
     });
-    assert.equal(status, 422);
-    assert.equal(data.error.code, 'COEFICIENTES_NO_CUADRAN');
-    assert.equal(data.error.sumaActual, '1.100000');
-    assert.equal(data.error.delta, '-0.100000');
+    assert.equal(status, 201);
+    assert.deepEqual(data.coeficientes, {
+      suma: '1.100000',
+      delta: '-0.100000',
+      cuadra: false,
+    });
+
+    // Revertir: el resto del spec asume el edificio cuadrado en 1.000000
+    const del = await apiFetch(baseUrl, `/api/unidades/${data.unidades[0].id}`, {
+      method: 'DELETE',
+      ...auth(admin),
+    });
+    assert.equal(del.status, 200);
+    assert.equal(del.data.coeficientes.suma, '1.000000');
   });
 
-  it('rechaza PATCH de coeficiente que descuadra el edificio (422)', async () => {
+  it('#57: PATCH de coeficiente que descuadra el edificio guarda e informa (200)', async () => {
     const { status, data } = await apiFetch(baseUrl, `/api/unidades/${unidad1A.id}`, {
       method: 'PATCH',
       ...auth(admin),
       body: { coeficiente: '0.300000' },
     });
-    assert.equal(status, 422);
-    assert.equal(data.error.code, 'COEFICIENTES_NO_CUADRAN');
-    assert.equal(data.error.sumaActual, '1.050000');
-    assert.equal(data.error.delta, '-0.050000');
+    assert.equal(status, 200);
+    // Los Decimal de Prisma se serializan sin ceros a la derecha ("0.3"); los
+    // 6 decimales del contrato los garantiza el estado informativo.
+    assert.equal(Number(data.coeficiente), 0.3);
+    assert.deepEqual(data.coeficientes, {
+      suma: '1.050000',
+      delta: '-0.050000',
+      cuadra: false,
+    });
+
+    // Revertir al valor del lote
+    const revert = await apiFetch(baseUrl, `/api/unidades/${unidad1A.id}`, {
+      method: 'PATCH',
+      ...auth(admin),
+      body: { coeficiente: '0.250000' },
+    });
+    assert.equal(revert.data.coeficientes.cuadra, true);
   });
 
-  it('PATCH de datos sin coeficiente funciona y DELETE en edificio cuadrado → 422', async () => {
-    // PATCH de numero (no toca la invariante)
+  it('#57: PATCH sin coeficiente y DELETE en edificio cuadrado funcionan', async () => {
+    // PATCH de numero (no toca la suma, que sigue cuadrada)
     const patch = await apiFetch(baseUrl, `/api/unidades/${unidad1A.id}`, {
       method: 'PATCH',
       ...auth(admin),
@@ -182,6 +237,7 @@ describe('unidades (S2)', () => {
     });
     assert.equal(patch.status, 200);
     assert.equal(patch.data.numero, '1A-PH');
+    assert.equal(patch.data.coeficientes.cuadra, true);
     // Revertir para no afectar otros tests
     await apiFetch(baseUrl, `/api/unidades/${unidad1A.id}`, {
       method: 'PATCH',
@@ -189,14 +245,29 @@ describe('unidades (S2)', () => {
       body: { numero: '1A' },
     });
 
-    // DELETE: la suma resultante (0.750000) no cuadra → 422
+    // DELETE de una UF de un edificio cuadrado: se elimina e informa que la
+    // suma quedó en 0.750000 (antes era un 422).
     const del = await apiFetch(baseUrl, `/api/unidades/${unidad1A.id}`, {
       method: 'DELETE',
       ...auth(admin),
     });
-    assert.equal(del.status, 422);
-    assert.equal(del.data.error.code, 'COEFICIENTES_NO_CUADRAN');
-    assert.equal(del.data.error.sumaActual, '0.750000');
+    assert.equal(del.status, 200);
+    assert.equal(del.data.eliminada, true);
+    assert.deepEqual(del.data.coeficientes, {
+      suma: '0.750000',
+      delta: '0.250000',
+      cuadra: false,
+    });
+
+    // Recrear la UF para el resto del spec (mismo número y coeficiente)
+    const recrear = await apiFetch(baseUrl, `/api/edificios/${edificioId}/unidades`, {
+      method: 'POST',
+      ...auth(admin),
+      body: [{ numero: '1A', tipo: 'departamento', m2: 60, coeficiente: '0.250000' }],
+    });
+    assert.equal(recrear.status, 201);
+    assert.equal(recrear.data.coeficientes.cuadra, true);
+    unidad1A = recrear.data.unidades[0];
   });
 
   it('rechaza número de UF duplicado en el edificio (409)', async () => {
@@ -209,42 +280,72 @@ describe('unidades (S2)', () => {
     assert.equal(data.error.code, 'UNIDAD_DUPLICADA');
   });
 
-  it('bulk concurrente sobre el mismo edificio: uno commitea y el otro recibe 422 (TOCTOU, SEC-01)', async () => {
-    // Dos bulk en paralelo cuyos lotes suman 1.000000 cada uno: sin el lock
-    // del edificio ambos leen "0 existentes", ambos validan OK y commitean,
-    // dejando la suma en 2.000000. Con el lock se serializan: el segundo
-    // re-lee las UFs del primero y la invariante lo rechaza.
+  it('bulk concurrente con el mismo número de UF: uno commitea y el otro 409 (unicidad, #57)', async () => {
+    // Al quitarse el lock del edificio (ya no hay invariante que serializar,
+    // #57) la unicidad del número de UF queda a cargo del índice único
+    // (organizacion_id, edificio_id, numero): dos bulk en paralelo que traen
+    // el mismo número se serializan en el índice y el perdedor recibe 409.
     const edificio = await crearEdificio(`Test S2 Concurrencia ${Date.now()}`);
     try {
-      const lote = (prefijo) => [
-        { numero: `${prefijo}-1`, tipo: 'departamento', m2: 60, coeficiente: '0.600000' },
-        { numero: `${prefijo}-2`, tipo: 'departamento', m2: 40, coeficiente: '0.400000' },
-      ];
+      const lote = [{ numero: 'DUP-1', tipo: 'departamento', m2: 60, coeficiente: '0.600000' }];
       const [r1, r2] = await Promise.all([
         apiFetch(baseUrl, `/api/edificios/${edificio.id}/unidades`, {
           method: 'POST',
           ...auth(admin),
-          body: lote('A'),
+          body: lote,
         }),
         apiFetch(baseUrl, `/api/edificios/${edificio.id}/unidades`, {
           method: 'POST',
           ...auth(admin),
-          body: lote('B'),
+          body: lote,
         }),
       ]);
 
-      assert.deepEqual([r1.status, r2.status].sort((a, b) => a - b), [201, 422]);
-      const perdedor = r1.status === 422 ? r1 : r2;
-      assert.equal(perdedor.data.error.code, 'COEFICIENTES_NO_CUADRAN');
-      assert.equal(perdedor.data.error.sumaActual, '2.000000');
+      assert.deepEqual([r1.status, r2.status].sort((a, b) => a - b), [201, 409]);
+      const perdedor = r1.status === 409 ? r1 : r2;
+      assert.equal(perdedor.data.error.code, 'UNIDAD_DUPLICADA');
 
-      // El edificio quedó cuadrado con un solo lote (la invariante se sostuvo)
+      // Quedó UNA sola UF (el lote perdedor no dejó rastro: la transacción del
+      // bulk sigue siendo atómica)
       const { data: lista } = await apiFetch(
         baseUrl,
         `/api/edificios/${edificio.id}/unidades`,
         auth(admin)
       );
-      assert.equal(lista.pagination.total, 2);
+      assert.equal(lista.pagination.total, 1);
+      assert.equal(lista.coeficientes.suma, '0.600000');
+    } finally {
+      await prisma.unidad.deleteMany({ where: { edificioId: edificio.id } });
+      await prisma.edificio.deleteMany({ where: { id: edificio.id } });
+    }
+  });
+
+  it('#57: carga incremental — dos bulk sucesivos llegan a 1.000000', async () => {
+    const edificio = await crearEdificio(`Test S2 Incremental ${Date.now()}`);
+    try {
+      const primero = await apiFetch(baseUrl, `/api/edificios/${edificio.id}/unidades`, {
+        method: 'POST',
+        ...auth(admin),
+        body: [{ numero: '1A', tipo: 'departamento', m2: 60, coeficiente: '0.400000' }],
+      });
+      assert.equal(primero.status, 201);
+      assert.deepEqual(primero.data.coeficientes, {
+        suma: '0.400000',
+        delta: '0.600000',
+        cuadra: false,
+      });
+
+      const segundo = await apiFetch(baseUrl, `/api/edificios/${edificio.id}/unidades`, {
+        method: 'POST',
+        ...auth(admin),
+        body: [{ numero: '1B', tipo: 'departamento', m2: 90, coeficiente: '0.600000' }],
+      });
+      assert.equal(segundo.status, 201);
+      assert.deepEqual(segundo.data.coeficientes, {
+        suma: '1.000000',
+        delta: '0.000000',
+        cuadra: true,
+      });
     } finally {
       await prisma.unidad.deleteMany({ where: { edificioId: edificio.id } });
       await prisma.edificio.deleteMany({ where: { id: edificio.id } });
