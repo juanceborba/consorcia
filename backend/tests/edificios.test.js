@@ -73,8 +73,14 @@ describe('edificios', () => {
     });
     assert.equal(status, 200);
     assert.equal(data.nombre, 'Torre Palermo');
-    // Torre Palermo tiene 13 unidades en el seed (S1-03)
-    assert.equal(data.unidades.length, 13);
+    // Torre Palermo tiene 13 unidades en el seed (S1-03). El piso es >= y no
+    // == porque la DB de desarrollo acumula UFs cargadas a mano entre reseeds:
+    // un conteo absoluto convierte cualquier dato de prueba del equipo en un
+    // test roto (know-how bug/tests-conteos-absolutos-flaky).
+    assert.ok(
+      data.unidades.length >= 13,
+      `Torre Palermo debería tener al menos las 13 UFs del seed, tiene ${data.unidades.length}`
+    );
     assert.ok(data.unidades.some((u) => u.numero === 'PB'));
   });
 

@@ -17,6 +17,12 @@ export const queryKeys = {
     detail: (id) => [...queryKeys.gastos.all, 'detail', id],
     porPeriodo: (periodo) => [...queryKeys.gastos.all, 'periodo', periodo],
   },
+  // Contexto propio del usuario logueado (S4-12): no lleva scope de
+  // organización porque el endpoint agrega por `usuarioId` (PRD-04-11 §5.5).
+  me: {
+    all: ['me'],
+    unidades: () => [...queryKeys.me.all, 'unidades'],
+  },
   organizaciones: {
     all: ['organizaciones'],
     me: () => [...queryKeys.organizaciones.all, 'me'],

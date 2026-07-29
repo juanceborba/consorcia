@@ -14,6 +14,7 @@ import authRoutes from './routes/auth.routes.js';
 import organizacionesRoutes from './routes/organizaciones.routes.js';
 import edificiosRoutes from './routes/edificios.routes.js';
 import unidadesRoutes from './routes/unidades.routes.js';
+import meRoutes from './routes/me.routes.js';
 import invitacionesRoutes from './routes/invitaciones.routes.js';
 import { errorHandler, rutaNoEncontrada } from './middleware/error.middleware.js';
 
@@ -67,6 +68,11 @@ app.use('/api/auth', authRoutes);
 app.use('/api/organizaciones', organizacionesRoutes);
 app.use('/api/edificios', edificiosRoutes);
 app.use('/api/unidades', unidadesRoutes);
+
+// Contexto propio del usuario (S4-12, #58): scopeado por `usuarioId`, no por
+// organización — es el único camino de lectura del residente puro, que por
+// diseño no tiene org activa (PRD-04-11 §5.5).
+app.use('/api/me', meRoutes);
 
 // Activación por invitación (S4-02) — público: el token del link es la
 // credencial, el invitado todavía no tiene sesión.

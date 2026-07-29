@@ -13,7 +13,9 @@ import { queryClient } from '@/lib/query-client';
 import { Toaster } from '@/components/ui/sonner';
 import RequireAuth from '@/components/auth/RequireAuth';
 import RequireRole from '@/components/auth/RequireRole';
+import RequireStaff from '@/components/auth/RequireStaff';
 import AppLayout from '@/components/layout/AppLayout';
+import MisUnidadesPage from '@/pages/MisUnidadesPage';
 import LoginPage from '@/pages/LoginPage';
 import RegisterPage from '@/pages/RegisterPage';
 import InvitacionPage from '@/pages/InvitacionPage';
@@ -41,34 +43,49 @@ const router = createBrowserRouter([
       {
         element: <AppLayout />,
         children: [
-          { path: '/', element: <DashboardPage /> },
-          { path: '/edificios', element: <EdificiosPage /> },
+          // Vista de solo lectura del residente (S4-12, #58). Fuera de
+          // RequireStaff: también la puede abrir un staff que además tenga UFs
+          // a su nombre.
+          { path: '/mis-unidades', element: <MisUnidadesPage /> },
           {
-            // Alta de edificio: solo org_admin/superadmin (qa S2 #1). El
-            // backend ya devuelve 403 al resto; esto evita mostrar un form
-            // que siempre falla al submit.
-            element: <RequireRole roles={['org_admin', 'superadmin']} />,
+            // Backoffice: el residente puro no tiene organización activa, así
+            // que estas rutas responderían 403 en cadena. RequireStaff lo
+            // manda a /mis-unidades (#58, BUG 2).
+            element: <RequireStaff />,
             children: [
-              { path: '/edificios/nuevo', element: <EdificioNuevoPage /> },
-              // Backoffice de staff (S4-07, PRD-04-11 §4): administrar usuarios
-              // es exclusivo de org_admin (Cerbos `staff` no le da al gestor ni
-              // lectura de la nómina), así que la ruta va detrás del guard.
+              { path: '/', element: <DashboardPage /> },
+              { path: '/edificios', element: <EdificiosPage /> },
               {
-                path: '/configuracion/usuarios',
-                element: <ConfiguracionUsuariosPage />,
+                // Alta de edificio: solo org_admin/superadmin (qa S2 #1). El
+                // backend ya devuelve 403 al resto; esto evita mostrar un form
+                // que siempre falla al submit.
+                element: <RequireRole roles={['org_admin', 'superadmin']} />,
+                children: [
+                  { path: '/edificios/nuevo', element: <EdificioNuevoPage /> },
+                  // Backoffice de staff (S4-07, PRD-04-11 §4): administrar
+                  // usuarios es exclusivo de org_admin (Cerbos `staff` no le da
+                  // al gestor ni lectura de la nómina): va detrás del guard.
+                  {
+                    path: '/configuracion/usuarios',
+                    element: <ConfiguracionUsuariosPage />,
+                  },
+                ],
               },
-            ],
-          },
-          {
-            // Detalle con tabs anidados (S2-07, PRD-07-03 §2): /edificios/:id
-            // redirige a /unidades (tab default).
-            path: '/edificios/:id',
-            element: <EdificioDetallePage />,
-            children: [
-              { index: true, element: <Navigate to="unidades" replace /> },
-              { path: 'overview', element: <EdificioOverviewTab /> },
-              { path: 'unidades', element: <EdificioUnidadesTab /> },
-              { path: 'configuracion', element: <EdificioConfiguracionTab /> },
+              {
+                // Detalle con tabs anidados (S2-07, PRD-07-03 §2):
+                // /edificios/:id redirige a /unidades (tab default).
+                path: '/edificios/:id',
+                element: <EdificioDetallePage />,
+                children: [
+                  { index: true, element: <Navigate to="unidades" replace /> },
+                  { path: 'overview', element: <EdificioOverviewTab /> },
+                  { path: 'unidades', element: <EdificioUnidadesTab /> },
+                  {
+                    path: 'configuracion',
+                    element: <EdificioConfiguracionTab />,
+                  },
+                ],
+              },
             ],
           },
         ],

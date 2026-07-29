@@ -8,7 +8,9 @@ import { Building2, ChevronsUpDown, LogOut, UserRound } from 'lucide-react';
 import { SIN_ROLES, useAuthStore } from '@/stores/auth.store';
 import { useEdificioStore } from '@/stores/edificio.store';
 import { useEdificios } from '@/hooks/useEdificios';
+import { useMisUnidades } from '@/hooks/useMisUnidades';
 import { useOrganizacion } from '@/hooks/useOrganizacion';
+import { esResidentePuro, sinAcceso } from '@/lib/acceso';
 import AyudaDrawer from '@/components/ayuda/AyudaDrawer';
 import Breadcrumbs from '@/components/layout/Breadcrumbs';
 import OrganizacionSelector from '@/components/layout/OrganizacionSelector';
@@ -43,15 +45,40 @@ const MODULOS = [
   },
 ];
 
+// Sidebar del residente puro (S4-12, #58): ningún módulo del backoffice le
+// responde 200 (todos pasan por `tenant` y él no tiene org activa). Su única
+// vista hoy es la lectura de sus UFs; el portal completo es S5 (PRD-04-05).
+const MODULOS_RESIDENTE = [
+  { nombre: 'Mis unidades', path: '/mis-unidades', activo: true },
+  { nombre: 'Expensas', activo: false },
+  { nombre: 'Pagos', activo: false },
+];
+
 export default function AppLayout() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
-  const { edificios, cargando } = useEdificios();
+  // El residente puro no tiene organización activa: /api/edificios y
+  // /api/organizaciones/me le responden 403 SIN_ORGANIZACION_ACTIVA. Su
+  // contexto sale de sus vínculos (GET /api/me/unidades), así que las queries
+  // del backoffice ni se disparan — antes reintentaban 3 veces y dejaban el
+  // header en "Sin edificios" (#58, BUG 2).
+  const residente = esResidentePuro(user);
+  const staff = useEdificios({ enabled: !residente });
+  const misUnidades = useMisUnidades({ enabled: residente });
+  const edificios = residente ? misUnidades.edificios : staff.edificios;
+  const cargando = residente ? misUnidades.cargando : staff.cargando;
+
   const edificioId = useEdificioStore((s) => s.edificioId);
   const setEdificioId = useEdificioStore((s) => s.setEdificioId);
-  // Nombre de la organización para el header (GET /api/organizaciones/me).
-  const { organizacion } = useOrganizacion();
+  // Nombre de la organización para el header (GET /api/organizaciones/me). Al
+  // residente lo administran N organizaciones (una por consorcio), así que la
+  // suya sale del vínculo, no de una organización activa que no tiene.
+  const { organizacion } = useOrganizacion({ enabled: !residente });
+  const organizacionResidente =
+    misUnidades.vinculos.find((v) => v.edificio.id === edificioId)?.organizacion ??
+    misUnidades.vinculos[0]?.organizacion ??
+    null;
 
   // Si no hay edificio elegido (o el guardado ya no es visible), usar el primero.
   useEffect(() => {
@@ -64,9 +91,12 @@ export default function AppLayout() {
 
   // Los módulos con `roles` se ocultan a quien no los tiene.
   const roles = user?.roles ?? SIN_ROLES;
-  const modulosVisibles = MODULOS.filter(
-    (modulo) => !modulo.roles || modulo.roles.some((rol) => roles.includes(rol)),
-  );
+  const modulosVisibles = residente
+    ? MODULOS_RESIDENTE
+    : MODULOS.filter(
+        (modulo) =>
+          !modulo.roles || modulo.roles.some((rol) => roles.includes(rol)),
+      );
 
   const handleLogout = async () => {
     await logout();
@@ -77,7 +107,7 @@ export default function AppLayout() {
   // shell entero responde 403 y el usuario veía un error de red genérico
   // (S4-11 / QA-03). Es una condición permanente, así que va antes del layout.
   // Un residente puro sí entra: no tiene organización activa pero sí roles.
-  if (user && (user.organizaciones?.length ?? 0) === 0 && roles.length === 0) {
+  if (sinAcceso(user)) {
     return <SinAccesoOrganizacion />;
   }
 
@@ -109,11 +139,11 @@ export default function AppLayout() {
               <span
                 key={modulo.nombre}
                 className="flex cursor-not-allowed items-center justify-between rounded-md px-3 py-2 text-sm text-sidebar-foreground/40"
-                title="Disponible a partir del Sprint 2"
+                title="Disponible próximamente"
               >
                 {modulo.nombre}
                 <Badge variant="secondary" className="text-[10px]">
-                  S2+
+                  {residente ? 'S5' : 'S2+'}
                 </Badge>
               </span>
             ),
@@ -131,7 +161,8 @@ export default function AppLayout() {
             <OrganizacionSelector />
           ) : (
             <span className="truncate text-sm font-medium">
-              {organizacion?.nombre ?? '…'}
+              {(residente ? organizacionResidente?.nombre : organizacion?.nombre) ??
+                '…'}
             </span>
           )}
 
@@ -156,13 +187,21 @@ export default function AppLayout() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
               <DropdownMenuGroup>
-                <DropdownMenuLabel>Edificio de trabajo</DropdownMenuLabel>
+                <DropdownMenuLabel>
+                  {residente ? 'Mi edificio' : 'Edificio de trabajo'}
+                </DropdownMenuLabel>
                 {edificios.map((edificio) => (
                   <DropdownMenuItem
                     key={edificio.id}
                     onClick={() => {
                       setEdificioId(edificio.id);
-                      navigate(`/edificios/${edificio.id}/unidades`);
+                      // El residente no tiene acceso al detalle de staff:
+                      // su vista es la lectura de sus propias UFs.
+                      navigate(
+                        residente
+                          ? '/mis-unidades'
+                          : `/edificios/${edificio.id}/unidades`,
+                      );
                     }}
                   >
                     <span
