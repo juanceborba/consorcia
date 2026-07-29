@@ -76,6 +76,7 @@ outcomes:
 - [[PRD-04-08 Dashboard Administrador]] — Fase 2: estadísticas, reportes, anomalías
 - [[PRD-04-09 Gestión Personal del Hogar]] — Fase 3: costos de vivienda, impuestos
 - [[PRD-04-10 Benchmarking]] — Fase 3: costos por m², KPIs comparativos
+- [[PRD-04-11 Gestión de Usuarios e Identidad]] — Identidad global por email, alta de staff (backoffice) y residentes (invitación), multi-pertenencia
 
 ### 05 — Integraciones
 - [[PRD-05-01 AgentMail]] — Emails programáticos, webhooks, labeling
