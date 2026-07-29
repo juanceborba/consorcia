@@ -22,8 +22,13 @@ import { autorizar } from '../middleware/rbac.middleware.js';
 import { validarBody } from '../middleware/validation.middleware.js';
 import { bulkUnidadesSchema } from '../schemas/unidad.schema.js';
 import { sumarCoeficientes, estadoCoeficientes } from '../services/coeficientes.js';
+import { gastosDeEdificioRouter } from './gastos.routes.js';
 
 const router = Router();
+
+// Gastos del edificio (S3-02). Va antes de las rutas `/:id` para que el prefijo
+// más específico gane; el router hereda `:id` con `mergeParams`.
+router.use('/:id/gastos', gastosDeEdificioRouter);
 
 // Estado informativo de la suma de coeficientes del edificio (#57): siempre
 // sobre el set COMPLETO de unidades, nunca sobre la página pedida — la UI usa
