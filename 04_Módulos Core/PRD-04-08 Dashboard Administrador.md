@@ -238,9 +238,12 @@ interface AlertaConfig {
 | **Responsive** | Sí, hasta tablet | El admin puede revisar desde tablet en reuniones. |
 | **Multi-edificio** | Business+ | Starter/Pro ven un edificio a la vez. |
 
+> **Nota — dashboard del módulo de gastos:** el módulo de gastos tiene su propio dashboard interactivo ([[PRD-04-02 Gestor de Gastos]] §3), que es un reporte por módulo (KPIs de gastos, top proveedores, distribución por rubro) y comparte con este PRD el gate Business+ para la consolidación multi-edificio. Este PRD-04-08 sigue siendo el dashboard global de la administradora: incluye cobros, morosidad, tickets, exportaciones PDF/Excel y narrativa IA.
+
 ---
 
 *Documento relacionado:* [[PRD-03-08 Agente Dashboard]]  
+*Documento relacionado:* [[PRD-04-02 Gestor de Gastos]]  
 *Documento relacionado:* [[PRD-04-03 Liquidación de Expensas]]  
 *Documento relacionado:* [[PRD-04-06 Kanban de Tareas]]  
 *Documento relacionado:* [[PRD-04-10 Benchmarking]]  

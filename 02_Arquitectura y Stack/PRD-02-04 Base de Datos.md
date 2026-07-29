@@ -199,6 +199,8 @@ model Organizacion {
   edificios       Edificio[]
   miembros        OrganizacionUsuario[]
   config          OrganizacionConfig?
+  proveedores     Proveedor[]
+  rubros          Rubro[]
 
   // Timestamps
   createdAt       DateTime @default(now()) @map("created_at")
@@ -437,10 +439,97 @@ model UnidadUsuario {
 // GASTOS
 // ==========================================
 
+// Directorio híbrido de proveedores (PRD-04-02 §1.3): organizacionId null =
+// global de plataforma (lo ven todas las orgs); set = propio de la org.
+// La org ve globales + propios activos. Ningún gasto se carga sin proveedor.
+model Proveedor {
+  id              String   @id @default(uuid())
+  organizacionId  String?  @map("organizacion_id") // null = global plataforma
+
+  razonSocial     String   @map("razon_social")
+  // Dedup por org: índice único PARCIAL SQL creado a mano en la migración
+  // (Prisma no expresa índices parciales):
+  //   CREATE UNIQUE INDEX proveedores_cuit_org_unique
+  //     ON proveedores (organizacion_id, cuit) WHERE cuit IS NOT NULL;
+  cuit            String?
+  email           String?
+  telefono        String?
+  direccion       String?
+  rubroHabitualId String?  @map("rubro_habitual_id") // rubro sugerido al cargar gastos
+  notas           String?
+  activo          Boolean  @default(true)
+
+  // Relaciones
+  organizacion    Organizacion? @relation(fields: [organizacionId], references: [id])
+  rubroHabitual   Rubro?        @relation(fields: [rubroHabitualId], references: [id])
+  gastos          Gasto[]
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdBy       String?  @map("created_by")
+
+  @@index([organizacionId])
+  @@map("proveedores")
+}
+
+// Árbol de rubros de 2 niveles fijos (PRD-04-02 §1.4): organizacionId null =
+// ítem del maestro plataforma; parentId null = rubro (nivel 1), set = subrubro
+// (nivel 2, hoja). Un subrubro propio puede colgar de un rubro maestro visible
+// o de un rubro propio. Nunca se borra un ítem con gastos → activo = false.
+model Rubro {
+  id              String   @id @default(uuid())
+  organizacionId  String?  @map("organizacion_id") // null = maestro plataforma
+  parentId        String?  @map("parent_id")       // null = rubro; set = subrubro
+
+  nombre          String
+  orden           Int      @default(0)
+  activo          Boolean  @default(true)
+
+  // Relaciones
+  organizacion    Organizacion? @relation(fields: [organizacionId], references: [id])
+  parent          Rubro?        @relation("RubroHijos", fields: [parentId], references: [id])
+  hijos           Rubro[]       @relation("RubroHijos")
+  visibilidad     RubroVisibilidad[]
+  gastos          Gasto[]
+  proveedoresHabituales Proveedor[]
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([organizacionId, parentId, nombre])
+  @@index([organizacionId])
+  @@map("rubros")
+}
+
+// Override de visibilidad por org sobre ítems del maestro (PRD-04-02 §1.4):
+// visible = false oculta el ítem para esa org (ocultar un rubro oculta sus
+// subrubros). Árbol de la org = maestro visible + ítems propios activos.
+model RubroVisibilidad {
+  organizacionId  String  @map("organizacion_id")
+  rubroId         String  @map("rubro_id")
+  visible         Boolean
+
+  // Relaciones
+  rubro           Rubro   @relation(fields: [rubroId], references: [id])
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@id([organizacionId, rubroId])
+  @@map("rubro_visibilidad")
+}
+
 model Gasto {
   id              String   @id @default(uuid())
   organizacionId        String   @map("organizacion_id")
   edificioId      String   @map("edificio_id")
+
+  // Proveedor y segmentación (PRD-04-02 §1.1): ambos obligatorios
+  proveedorId     String   @map("proveedor_id")
+  rubroId         String   @map("rubro_id") // siempre un subrubro/rubro hoja visible para la org
 
   // Datos del gasto
   concepto        String
@@ -465,19 +554,29 @@ model Gasto {
 
   // Relaciones
   edificio        Edificio @relation(fields: [edificioId], references: [id])
+  proveedor       Proveedor @relation(fields: [proveedorId], references: [id])
+  rubro           Rubro     @relation(fields: [rubroId], references: [id])
   liquidaciones   LiquidacionDetalle[]
 
   // Timestamps
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
   createdBy       String   @map("created_by")
+  deletedAt       DateTime? @map("deleted_at") // soft delete (Ley 941)
 
   @@index([organizacionId, edificioId])
   @@index([organizacionId, edificioId, periodo])
   @@index([organizacionId, edificioId, categoria])
   @@index([organizacionId, edificioId, esOrdinario])
+  @@index([organizacionId, edificioId, proveedorId])
+  @@index([organizacionId, edificioId, rubroId])
   @@map("gastos")
 }
+
+// NOTA RLS: `proveedores`, `rubros` y `rubro_visibilidad` son híbridas (ítems
+// globales de plataforma con organizacion_id NULL + propios por org), así que
+// no aplican la policy estándar de aislamiento del §4; la visibilidad se
+// resuelve a nivel aplicación (merge maestro + propios, PRD-04-02 §1.3/§1.4).
 
 // ==========================================
 // LIQUIDACIONES
@@ -515,7 +614,12 @@ model Liquidacion {
   approvedBy      String?  @map("approved_by")
   approvedAt      DateTime? @map("approved_at")
 
-  @@unique([organizacionId, edificioId, periodo])
+  // Unicidad de período por edificio: índice único PARCIAL SQL creado a mano
+  // en la migración (Prisma no soporta índices parciales), excluyendo ANULADA
+  // para permitir anular → regenerar el mismo período (PRD-04-02 §6):
+  //   CREATE UNIQUE INDEX liquidaciones_periodo_activo_unique
+  //     ON liquidaciones (organizacion_id, edificio_id, periodo)
+  //     WHERE estado != 'ANULADA';
   @@index([organizacionId, edificioId])
   @@index([organizacionId, edificioId, estado])
   @@map("liquidaciones")

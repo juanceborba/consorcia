@@ -2,16 +2,19 @@
 title: "PRD-04-02: Gestor de Gastos"
 description: "Carga, categorización y asignación de gastos. Categorías A/B/C, ordinarias vs extraordinarias, comprobantes adjuntos."
 author: "ConsorcIA Team"
-date: 2026-07-28
+date: 2026-07-29
 status: "vigente"
 priority: "P0"
-tags: [modulo, core, gastos, categoria, ordinarias, extraordinarias, comprobantes, mvp]
+tags: [modulo, core, gastos, categoria, ordinarias, extraordinarias, comprobantes, proveedores, rubros, dashboard, mvp]
 outcomes:
   - "Cargar gastos individuales o en batch con validación completa"
   - "Categorizar automáticamente con sugerencias del Agente Contable"
   - "Asignar categorías A/B/C con preview de distribución"
   - "Distinguir entre gastos ordinarios y extraordinarios"
   - "Adjuntar comprobantes (facturas, recibos) a cada gasto"
+  - "Asociar cada gasto a un proveedor obligatorio (directorio híbrido global + propio)"
+  - "Segmentar gastos por rubro/subrubro con árbol maestro de 2 niveles"
+  - "Analizar gastos en un dashboard interactivo con KPIs y filtros reactivos"
 ---
 
 # PRD-04-02: Gestor de Gastos
@@ -32,6 +35,8 @@ Ver [[PRD-02-04 Base de Datos]] para el schema Prisma completo.
 | `id` | UUID | PK | — |
 | `organizacionId` | UUID | Organización (tenant raíz) | FK → organizaciones |
 | `edificioId` | UUID | Edificio | FK → edificios |
+| `proveedorId` | UUID | Proveedor del gasto | FK → proveedores. **Obligatorio** |
+| `rubroId` | UUID | Rubro de segmentación | FK → rubros. **Obligatorio** — siempre un subrubro o rubro hoja |
 | `concepto` | String | Nombre del gasto | Min 3, max 100 chars |
 | `descripcion` | String? | Detalle opcional | Max 500 chars |
 | `monto` | Decimal(12,2) | Monto en ARS | > 0 |
@@ -81,157 +86,176 @@ Ver [[PRD-02-04 Base de Datos]] para el schema Prisma completo.
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### 1.3 Proveedores
+
+**Regla de oro: ningún gasto se carga sin proveedor asociado.** El directorio de proveedores es **híbrido**: combina un catálogo global de plataforma con proveedores propios de cada organización.
+
+- `organizacionId = null` → proveedor **global** de la plataforma (lo ven todas las organizaciones).
+- `organizacionId = org` → proveedor **propio** de esa organización.
+- Una organización ve y puede usar: **globales + propios activos**.
+
+| Campo | Tipo | Descripción | Validación |
+|-------|------|-------------|------------|
+| `id` | UUID | PK | — |
+| `organizacionId` | UUID? | null = global plataforma | FK → organizaciones |
+| `razonSocial` | String | Nombre del proveedor | Obligatorio |
+| `cuit` | String? | CUIT del proveedor | Dedup por org (índice único parcial SQL) |
+| `email` | String? | Contacto | — |
+| `telefono` | String? | Contacto | — |
+| `direccion` | String? | — | — |
+| `rubroHabitualId` | UUID? | Rubro sugerido al cargar gastos | FK → rubros, opcional |
+| `notas` | String? | Observaciones internas | — |
+| `activo` | Boolean | Baja lógica | Default true |
+
+**Endpoints:**
+
+```
+GET    /api/proveedores           → globales + propios de la org (filtro ?q= por razón social/CUIT)
+POST   /api/proveedores           → crea propio de la org (409 CUIT_DUPLICADO si ya existe el CUIT en la org)
+GET    /api/proveedores/:id       → detalle
+PUT    /api/proveedores/:id       → edita propios (los globales solo los edita SUPERADMIN)
+DELETE /api/proveedores/:id       → si tiene gastos asociados: soft delete vía activo=false
+```
+
+**Dedup por CUIT:** un solo proveedor por CUIT dentro de cada organización. Se implementa con un **índice único parcial SQL** `ON proveedores (organizacion_id, cuit) WHERE cuit IS NOT NULL` (Prisma no soporta índices parciales → migration SQL manual). Los globales (`organizacion_id` null) quedan fuera del dedup por org y los gestiona la plataforma.
+
+**Promoción a global (flujo futuro):** un SUPERADMIN podrá promover un proveedor propio a global de plataforma (`organizacionId → null`), resolviendo duplicados. Fuera del scope actual.
+
+### 1.4 Rubros (segmentación de gastos)
+
+Los rubros segmentan los gastos para análisis (son **independientes de la categoría A/B/C**, que gobierna la distribución a UF). Es un **árbol maestro de 2 niveles fijos**: rubro (nivel 1) → subrubro (nivel 2, hoja). El gasto siempre apunta a un subrubro o rubro hoja.
+
+- `Rubro.organizacionId = null` → ítem del **maestro plataforma** (compartido por todas las orgs).
+- `Rubro.parentId = null` → rubro (nivel 1); `parentId` set → subrubro (nivel 2).
+- `RubroVisibilidad` (`organizacionId + rubroId → visible`) → permite a una org **ocultar** ítems del maestro.
+
+**Merge del árbol para una organización** (`GET /api/rubros`):
+
+1. Base: ítems maestro activos, aplicando los overrides de `rubro_visibilidad` (`visible=false` oculta el ítem; **ocultar un rubro oculta también sus subrubros**).
+2. Sumar: ítems propios activos de la org. Un subrubro propio puede colgar de un **rubro maestro visible** o de un **rubro propio**.
+3. Nunca se borra un ítem con gastos asociados → se desactiva (`activo=false`).
+
+**Endpoints:**
+
+```
+GET    /api/rubros                     → árbol mergeado para la org del usuario
+POST   /api/rubros                     → crea ítem propio (rubro o subrubro con parentId)
+PUT    /api/rubros/:id                 → edita ítem propio
+PUT    /api/rubros/:id/visibilidad     → toggle de override sobre ítem maestro (visible true/false)
+DELETE /api/rubros/:id                 → solo propios sin gastos asociados
+```
+
+**Árbol maestro propuesto (seed):**
+
+- **Administración**: Honorarios administración · Asesoría contable · Asesoría legal · Seguros (incendio/RC) · Gastos bancarios · Papelería y gestiones · Asambleas
+- **Personal**: Sueldos y cargas sociales (CCT 589/10) · Suplencias · Horas extras · Uniformes e indumentaria · Indemnizaciones
+- **Limpieza**: Limpieza general · Insumos de limpieza · Control de plagas · Higiene y desinfección · Manejo de residuos
+- **Mantenimiento**: Plomería · Electricidad · Albañilería · Pintura · Herrería · Techos e impermeabilización · Carpintería
+- **Seguridad**: Vigilancia física · Cámaras y monitoreo · Alarmas · Control de accesos · Portero eléctrico
+- **Servicios públicos**: Energía eléctrica · Agua · Gas · ABL y tasas municipales · Telecomunicaciones
+- **Ascensores**: Mantenimiento preventivo · Reparaciones · Inspecciones y certificaciones
+- **Climatización**: Calderas y calefacción central · Aire acondicionado · Ventilación
+- **Espacios comunes**: Pileta · SUM y parrilla · Gimnasio · Jardines y espacios verdes · Cocheras
+- **Otros**: Varios (subrubro comodín siempre visible)
+
 ---
 
 ## 2. API Endpoints
 
 ```javascript
-// routes/gastos.routes.js
-const express = require('express');
-const router = express.Router();
-const { authenticate, authorize } = require('../middleware/auth.middleware');
-const { validate } = require('../middleware/validation.middleware');
-const { z } = require('zod');
+// routes/gastos.routes.js (resumen del contrato)
+// Todas las rutas van autenticadas y autorizadas vía Cerbos (resource 'gasto'),
+// y scopeadas a { organizacionId, edificioId } del tenant middleware.
 
 const gastoSchema = z.object({
   concepto: z.string().min(3).max(100),
   descripcion: z.string().max(500).optional(),
+  proveedorId: z.string().uuid(),   // obligatorio: ningún gasto sin proveedor
+  rubroId: z.string().uuid(),       // obligatorio: subrubro/rubro hoja visible para la org
   monto: z.number().positive(),
   moneda: z.enum(['ARS', 'USD']).default('ARS'),
   categoria: z.enum(['A', 'B', 'C']),
-  servicioEspecifico: z.string().optional().refine(
-    val => !val || val.length > 0,
-    { message: 'Servicio específico requerido para categoría B' }
-  ),
-  sectorEspecifico: z.string().optional(),
+  servicioEspecifico: z.string().optional(), // requerido si categoria = 'B'
+  sectorEspecifico: z.string().optional(),   // requerido si categoria = 'C'
   esOrdinario: z.boolean().default(true),
-  fechaGasto: z.string().datetime(),
+  fechaGasto: z.string().datetime(),  // no futura
   periodo: z.string().regex(/^\d{4}-\d{2}$/),
   comprobanteUrl: z.string().url().optional()
 });
 
-// POST /api/gastos - Crear gasto
-router.post('/',
-  authenticate,
-  authorize('gasto', 'create'),
-  validate(gastoSchema),
-  async (req, res) => {
-    const gasto = await prisma.gasto.create({
-      data: {
-        ...req.body,
-        organizacionId: req.organizacionId,
-        edificioId: req.body.edificioId,
-        createdBy: req.user.id
-      }
-    });
-    res.status(201).json(gasto);
-  }
-);
+// POST /api/edificios/:edificioId/gastos — Crear gasto → 201
+//   Valida gastoSchema + validaciones cruzadas (proveedor visible para la org,
+//   rubro hoja activo y visible); 422 si falta proveedorId/rubroId.
 
-// GET /api/gastos - Listar gastos (con filtros)
-router.get('/',
-  authenticate,
-  authorize('gasto', 'read'),
-  async (req, res) => {
-    const { periodo, categoria, esOrdinario, page = 1, limit = 50 } = req.query;
+// GET /api/edificios/:edificioId/gastos — Listar gastos (paginado, orden fechaGasto desc)
+//   Filtros: ?periodo=&categoria=&esOrdinario=&proveedorId=&rubroId=&desde=&hasta=&page=&limit=
+//   Respuesta: { data: [...], pagination: { page, limit, total } }
 
-    const where = { organizacionId: req.organizacionId };
-    if (periodo) where.periodo = periodo;
-    if (categoria) where.categoria = categoria;
-    if (esOrdinario !== undefined) where.esOrdinario = esOrdinario === 'true';
+// GET /api/gastos/:id — Detalle (incluye liquidaciones asociadas) → 404 si no existe
 
-    const [gastos, total] = await Promise.all([
-      prisma.gasto.findMany({
-        where,
-        skip: (page - 1) * limit,
-        take: parseInt(limit),
-        orderBy: { fechaGasto: 'desc' },
-        include: {
-          createdByUser: { select: { nombre: true, apellido: true } }
-        }
-      }),
-      prisma.gasto.count({ where })
-    ]);
+// PUT /api/gastos/:id — Actualizar (solo si NO está en liquidación APROBADA/ENVIADA)
+//   Si está liquidado → 409 { error: 'LIQUIDACION_APROBADA' }
 
-    res.json({
-      data: gastos,
-      pagination: { page: parseInt(page), limit: parseInt(limit), total }
-    });
-  }
-);
-
-// GET /api/gastos/:id - Obtener gasto
-router.get('/:id',
-  authenticate,
-  authorize('gasto', 'read'),
-  async (req, res) => {
-    const gasto = await prisma.gasto.findFirst({
-      where: { id: req.params.id, organizacionId: req.organizacionId },
-      include: {
-        createdByUser: { select: { nombre: true, apellido: true } },
-        liquidaciones: { select: { id: true, periodo: true, estado: true } }
-      }
-    });
-
-    if (!gasto) return res.status(404).json({ error: 'Gasto no encontrado' });
-    res.json(gasto);
-  }
-);
-
-// PUT /api/gastos/:id - Actualizar gasto (solo si no está en liquidación aprobada)
-router.put('/:id',
-  authenticate,
-  authorize('gasto', 'update'),
-  async (req, res) => {
-    const gasto = await prisma.gasto.findFirst({
-      where: { id: req.params.id, organizacionId: req.organizacionId },
-      include: { liquidaciones: true }
-    });
-
-    if (!gasto) return res.status(404).json({ error: 'Gasto no encontrado' });
-
-    // No permitir modificar si está en liquidación aprobada
-    const tieneLiquidacionAprobada = gasto.liquidaciones.some(
-      l => l.estado === 'APROBADA' || l.estado === 'ENVIADA'
-    );
-
-    if (tieneLiquidacionAprobada) {
-      return res.status(400).json({
-        error: 'LIQUIDACION_APROBADA',
-        message: 'No se puede modificar un gasto que ya fue liquidado'
-      });
-    }
-
-    const actualizado = await prisma.gasto.update({
-      where: { id: req.params.id },
-      data: req.body
-    });
-
-    res.json(actualizado);
-  }
-);
-
-// DELETE /api/gastos/:id - Soft delete
-router.delete('/:id',
-  authenticate,
-  authorize('gasto', 'delete'),
-  async (req, res) => {
-    await prisma.gasto.update({
-      where: { id: req.params.id },
-      data: { deletedAt: new Date() }
-    });
-    res.status(204).send();
-  }
-);
-
-module.exports = router;
+// DELETE /api/gastos/:id — Soft delete (deletedAt) → 204
 ```
 
 ---
 
-## 3. Frontend: Pantallas
+## 3. Dashboard de Gastos
 
-### 3.1 Lista de Gastos
+El dashboard es la **entrada al módulo** (el tab `gastos` del detalle de edificio): un reporte interactivo construido de forma **incremental**, posterior al CRUD. Debajo de los componentes analíticos vive el listado de gastos (§4.1), alimentado por los mismos filtros.
+
+### 3.1 KPIs
+
+- **Total del período** (suma de gastos del filtro activo).
+- **Ordinarias vs extraordinarias**.
+- **Variación % vs período anterior comparable** de igual longitud (mes previo, o rango equivalente corrido). Si no hay datos previos → `null` y la UI lo oculta.
+- **Gasto por UF** (total / UF del edificio).
+- **Cantidad de gastos**.
+
+### 3.2 Filtros (todo reactivo)
+
+- **Selector de edificio.** La opción **"Todos los edificios"** (consolidado a nivel organización) está disponible **solo en plan Business+** (ver [[PRD-04-08 Dashboard Administrador]]).
+- **Selector de período:** últimos 12 meses / fecha desde-hasta / todo el período.
+- Cada cambio de filtro actualiza KPIs, charts y el listado sin recargar.
+
+### 3.3 Componentes
+
+- **Top 10 proveedores** por monto.
+- **Distribución por rubro** con drill-down a subrubros.
+- **Distribución por categoría** A/B/C.
+- **Evolución mensual** del gasto.
+- **Listado de gastos** (§4.1) debajo, compartiendo los filtros.
+
+### 3.4 Endpoints
+
+```
+GET /api/edificios/:edificioId/gastos/dashboard
+GET /api/organizaciones/:organizacionId/gastos/dashboard   → consolidado; 403 PLAN_INSUFICIENTE si plan < business
+```
+
+Query: `?periodo=YYYY-MM` | `?desde=&hasta=` | `?todo=1`.
+
+Las agregaciones se calculan **server-side con Prisma `groupBy` + decimal.js** (cero floats). Respuesta única:
+
+```json
+{
+  "kpis": { "total": "...", "totalOrdinarias": "...", "totalExtraordinarias": "...",
+            "cantidadGastos": 42, "gastoPorUF": "...", "variacionVsPeriodoAnterior": "+12.4%" },
+  "topProveedores": [{ "proveedorId": "...", "razonSocial": "...", "total": "...", "cantidad": 5 }],
+  "porRubro": [{ "rubroId": "...", "nombre": "Limpieza", "total": "...", "porcentaje": "18.2" }],
+  "porCategoria": { "A": "...", "B": "...", "C": "..." },
+  "evolucionMensual": [{ "periodo": "2026-02", "total": "..." }]
+}
+```
+
+> **Fuera de scope:** exportación PDF/Excel y narrativa IA sobre este dashboard (eso es [[PRD-04-08 Dashboard Administrador]], Fase 2).
+
+---
+
+## 4. Frontend: Pantallas
+
+### 4.1 Lista de Gastos
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -252,7 +276,7 @@ module.exports = router;
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Formulario de Carga
+### 4.2 Formulario de Carga
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -290,7 +314,7 @@ module.exports = router;
 
 ---
 
-## 4. Integración con Agente Contable
+## 5. Integración con Agente Contable
 
 ```javascript
 // Al cargar un gasto, el Agente Contable puede:
@@ -310,19 +334,25 @@ const valido = LiquidacionEngine.validarGasto(gasto);
 
 ---
 
-## 5. Decisiones de Diseño
+## 6. Decisiones de Diseño
 
 | Decisión | Contexto | Justificación |
 |----------|----------|---------------|
-| **No modificar gastos liquidados** | Integridad | Una vez aprobada la liquidación, los gastos son "congelados" para auditoría |
+| **No modificar gastos liquidados** | Integridad | Una vez aprobada la liquidación, los gastos son "congelados" para auditoría (rechazo 409 `LIQUIDACION_APROBADA`) |
 | **Soft delete** | Conservación | Ley 941 exige conservar registros. `deletedAt` en vez de DELETE |
 | **Periodo como String "YYYY-MM"** | Sorting | Fácil de ordenar, agrupar, filtrar. Compatible con SQL |
 | **Comprobante URL** | Storage | MinIO/S3 para archivos. URL referenciada en DB |
 | **Categoría obligatoria** | Liquidación | Sin categoría no se puede calcular distribución |
 | **Sugerencia IA en formulario** | UX | Reduce errores de categorización. Admin siempre confirma |
+| **Proveedor obligatorio** | Trazabilidad | Ningún gasto se carga sin proveedor asociado: habilita trazabilidad de pagos y el top-10 del dashboard |
+| **Rubro obligatorio** | Análisis | Permite segmentar gastos para el dashboard; es distinto de la categoría A/B/C, que gobierna la distribución a UF |
+| **Árbol de rubros de 2 niveles fijos** | Simplicidad | Rubro → subrubro alcanza para expensas; simplifica la UI y las agregaciones |
+| **Proveedores híbridos** | Compartir datos | Globales de plataforma + propios por org: los consorcios comparten el directorio sin fricción; dedup por CUIT |
+| **Unique parcial en Liquidación** | Anular → regenerar | Índice único parcial SQL `WHERE estado != 'ANULADA'` (Prisma no soporta parciales → migration SQL manual): permite anular una liquidación y regenerar el mismo período |
 
 ---
 
 *Documento relacionado:* [[PRD-04-01 Gestión de Edificios]]  
 *Documento relacionado:* [[PRD-04-03 Liquidación de Expensas]]  
+*Documento relacionado:* [[PRD-04-08 Dashboard Administrador]]  
 *Documento relacionado:* [[PRD-03-03 Agente Contable]]
