@@ -489,8 +489,45 @@ req GET /api/organizaciones/me/usuarios "$ADMIN_TOKEN"
 check "ningún residente del seed aparece como staff de Org A" 0 \
   "$(json_eval "d.filter(m => ['propietario1@demo.com','propietario2@demo.com','propietario3@demo.com','inquilino@demo.com','multiconsorcio@demo.com','encargado@demo.com'].includes(m.email)).length" <<< "$BODY")"
 
+# --- 3.9 Acceso de lectura del residente (S4-12, #58) --------------------------
+# El residente puro no tiene organización activa: el backoffice le responde 403
+# y su contexto sale de sus vínculos (GET /api/me/unidades).
+echo "3.9 Slice S4-12 (acceso del residente)"
+
+req POST /api/auth/login '' '{"email":"inquilino@demo.com","password":"demo1234"}'
+check "login del residente puro → 200" 200 "$STATUS"
+check "no trae organización activa" "null" "$(json_eval 'JSON.stringify(d.user.organizacionId)' <<< "$BODY")"
+RESIDENTE_TOKEN=$(json_eval 'd.accessToken' <<< "$BODY")
+RESIDENTE_REFRESH=$(json_eval 'd.refreshToken' <<< "$BODY")
+
+req GET /api/edificios "$RESIDENTE_TOKEN"
+check "el backoffice le responde 403 → SIN_ORGANIZACION_ACTIVA" 403 "$STATUS"
+check "con el código del contrato" "SIN_ORGANIZACION_ACTIVA" "$(json_eval 'd.error.code' <<< "$BODY")"
+
+req GET /api/me/unidades "$RESIDENTE_TOKEN"
+check "GET /api/me/unidades → 200" 200 "$STATUS"
+check "ve su única UF vigente" 1 "$(json_eval 'd.length' <<< "$BODY")"
+check "con el edificio donde es inquilino" "Torre Palermo" "$(json_eval 'd[0].edificio.nombre' <<< "$BODY")"
+check "y la administración que lo administra" "Administración Demo S.A." \
+  "$(json_eval 'd[0].organizacion.nombre' <<< "$BODY")"
+check "el vínculo dice inquilino, no propietario" "true false" \
+  "$(json_eval 'd[0].esInquilino + " " + d[0].esPropietario' <<< "$BODY")"
+
+req GET /api/me/unidades
+check "sin token → 401" 401 "$STATUS"
+
+# Multi-consorcio: el endpoint agrega por usuarioId y cruza organizaciones
+req POST /api/auth/login '' '{"email":"multiconsorcio@demo.com","password":"demo1234"}'
+MULTI58_TOKEN=$(json_eval 'd.accessToken' <<< "$BODY")
+MULTI58_REFRESH=$(json_eval 'd.refreshToken' <<< "$BODY")
+req GET /api/me/unidades "$MULTI58_TOKEN"
+check "el residente multi-consorcio ve sus 2 UFs" 2 "$(json_eval 'd.length' <<< "$BODY")"
+check "de 2 organizaciones distintas" 2 \
+  "$(json_eval 'new Set(d.map(v => v.organizacion.id)).size' <<< "$BODY")"
+
 # Limpieza: se cierran las sesiones abiertas en esta sección
-for r in "$GESTOR2_REFRESH" "$ORGB_REFRESH" "$MULTI_REFRESH" "${MULTIORG_REFRESH:-}"; do
+for r in "$GESTOR2_REFRESH" "$ORGB_REFRESH" "$MULTI_REFRESH" "${MULTIORG_REFRESH:-}" \
+         "${RESIDENTE_REFRESH:-}" "${MULTI58_REFRESH:-}"; do
   [ -n "$r" ] && req POST /api/auth/logout '' "{\"refreshToken\":\"$r\"}"
 done
 

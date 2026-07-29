@@ -8,7 +8,7 @@ Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas 
 
 - **S1 cerrado** (2026-07-28): stack + auth JWT + Cerbos + edificios read + portal shell. Ver `docs/sprints/S1-fundacion.md`.
 - **S2 cerrado** (2026-07-28): edificios y unidades (CRUD + invariante de coeficientes, alta bulk con feedback inline, E2E + smoke). Ver `docs/sprints/S2-edificios-unidades.md`. Refinado en #57 (2026-07-29): **la invariante de coeficientes es informativa**, no bloquea la escritura de unidades (ver "Invariante de coeficientes" abajo).
-- **S4 cerrado** (2026-07-29): usuarios e identidad global (alta de staff por backoffice, residentes por invitación, switch de organización, seed multi-caso) + hardening S4-11 de la aceptación de invitaciones y del contexto de acceso. Ver `docs/sprints/S4-usuarios-identidad.md` y los reportes `S4-review.md` / `S4-qa.md` / `S4-security.md`.
+- **S4 cerrado** (2026-07-29): usuarios e identidad global (alta de staff por backoffice, residentes por invitación, switch de organización, seed multi-caso) + hardening S4-11 de la aceptación de invitaciones y del contexto de acceso + S4-12 (#58): acceso de **lectura** del residente a su edificio/unidad (`GET /api/me/unidades`, ver "Acceso del residente" abajo). Ver `docs/sprints/S4-usuarios-identidad.md` y los reportes `S4-review.md` / `S4-qa.md` / `S4-security.md`.
 - **S3 listo para arrancar**: gastos + motor contable (liquidación, recibos PDF/QR Ley 941). Backlog: `docs/sprints/S3-gastos-liquidacion.md`. Issues en GitHub con milestone "S3".
 - Roadmap completo (S1→S6, slices verticales): `docs/ROADMAP.md`.
 
@@ -28,6 +28,12 @@ Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas 
 - **Motor contable determinístico:** montos SIEMPRE con decimal.js en el backend. Los LLMs interpretan/explican, jamás calculan.
 - **Invariante de coeficientes (PRD-04-01 §1.3, revisada en #57):** Σcoeficientes de un edificio = 1.000000 (tolerancia 0.000001). **No bloquea la carga de unidades**: el bulk, el PATCH y el DELETE guardan igual y devuelven `coeficientes: { suma, delta, cuadra }` (informativo, 6 decimales) — la UI lo muestra como alerta warning, nunca como error. El **gate duro es la liquidación (S3)**: antes de emitir expensas hay que llamar a `validarParaLiquidacion` (`backend/src/services/coeficientes.js`) y rechazar con `422 COEFICIENTES_NO_CUADRAN` si `ok === false`.
 - **Auth:** JWT access 15 min (claims `sub, email, org_id, roles, edificios_asignados`) + refresh opaco en Redis 7 días con rotación. Autorización: Cerbos PDP (`cerbos/policies/`), fail-closed.
+
+## Acceso del residente (S4-12, #58)
+
+El backoffice entero pasa por el middleware `tenant`, que responde `403 SIN_ORGANIZACION_ACTIVA` si el JWT no trae `org_id`. Un **residente puro no lo trae por diseño** (PRD-04-11 §5.5), así que ningún endpoint de backoffice le sirve: su contexto sale de `GET /api/me/unidades`, scopeado por `req.user.id` (sin `tenant` ni Cerbos: el recurso *es* el usuario del token) y agregando sus vínculos vigentes de todas las organizaciones. Decisión y contrato en PRD-04-11 §5.7.
+
+En el frontend, `esResidentePuro(user)` (`src/lib/acceso.js`) selecciona el shell: sidebar "Mis unidades", selector de edificio alimentado por los vínculos y `RequireStaff` redirigiendo las rutas de backoffice a `/mis-unidades`. **Si agregás una ruta de staff, colgala del guard `RequireStaff`** o el residente vuelve a caer en una pantalla vacía. Es solo lectura: el portal completo es S5 (PRD-04-05).
 
 ## Flujo de trabajo con tareas
 

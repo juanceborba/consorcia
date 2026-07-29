@@ -110,6 +110,14 @@ export default function ResidentesDrawer({ unidad, isOpen, onClose }) {
     queryFn: () => api.get(`/api/unidades/${unidadId}/residentes`),
     // Sin unidad no hay panel abierto; evita una request con `undefined`.
     enabled: isOpen && Boolean(unidadId),
+    // #58 (BUG 1): "Todavía no activó su cuenta" sale de `cuentaActivada`, que
+    // el residente cambia desde OTRA sesión al aceptar su invitación. Con el
+    // staleTime global de 5 min, reabrir el panel dentro de esa ventana servía
+    // el cache y la persona seguía figurando como no activada aunque ya lo
+    // estuviera. Este panel muestra estado que cambia fuera de esta pestaña:
+    // cada apertura tiene que releer.
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   const {

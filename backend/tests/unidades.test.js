@@ -382,7 +382,12 @@ describe('unidades (S2)', () => {
       auth(gestor)
     );
     assert.equal(paginado.status, 200);
-    assert.equal(paginado.data.pagination.total, 13);
+    // >= y no ==: la DB de desarrollo acumula UFs cargadas a mano entre
+    // reseeds (know-how bug/tests-conteos-absolutos-flaky).
+    assert.ok(
+      paginado.data.pagination.total >= 13,
+      `Torre Palermo debería tener al menos las 13 UFs del seed, tiene ${paginado.data.pagination.total}`
+    );
 
     const uf = paginado.data.data[0];
     const patch = await apiFetch(baseUrl, `/api/unidades/${uf.id}`, {

@@ -155,9 +155,14 @@ test('vincular residente, activar por invitación y desvincular', async ({
     await contextoInvitado.close();
   });
 
-  await test.step('el backoffice muestra la cuenta ya activada', async () => {
-    // El panel sigue abierto en la pestaña del admin: se refresca el vínculo.
-    await page.reload();
+  await test.step('el backoffice muestra la cuenta ya activada SIN recargar (#58)', async () => {
+    // Regresión de #58 (BUG 1): el admin no recarga la página, solo cierra y
+    // reabre el panel. `cuentaActivada` cambió en OTRA sesión, así que con el
+    // staleTime global de 5 min el panel servía el cache y la persona seguía
+    // figurando como no activada. La query del panel es staleTime 0.
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+
     await page
       .getByRole('button', { name: /^Residentes de la unidad / })
       .first()
