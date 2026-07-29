@@ -23,7 +23,7 @@ outcomes:
 
 ## 1. Principios de Estado
 
-> **Estado de adopción (2026-07-28):** S1 se implementó con hooks livianos de fetch (`useEdificios`) y Zustand sin `immer`. **TanStack Query se adopta en S2** (cuando aparecen mutations y CRUD real); los stores simples no necesitan `immer` — se evalúa caso a caso, no es obligatorio.
+> **Estado de adopción (2026-07-28):** S1 se implementó con hooks livianos de fetch (`useEdificios`) y Zustand sin `immer`. **TanStack Query adoptado en S2-04:** `QueryClient` según §2.1 en `frontend/src/lib/query-client.js`, provider + devtools (solo dev) en `src/main.jsx`, keys en `src/lib/query-keys.js` (S2 incluye `organizaciones`, `edificios` y placeholder de `gastos`; el resto de dominios se agrega con sus módulos). `useEdificios` y `organizaciones/me` migrados a `useQuery`; `auth.store` limpia el cache con `queryClient.clear()` en logout. Los stores simples no necesitan `immer` — se evalúa caso a caso, no es obligatorio.
 
 ### 1.1 Reglas de oro
 
@@ -109,6 +109,10 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 // Convencion: [dominio, entidad, accion, params...]
 
 export const queryKeys = {
+  organizaciones: {
+    all: ['organizaciones'] as const,
+    me: () => [...queryKeys.organizaciones.all, 'me'] as const,
+  },
   edificios: {
     all: ['edificios'] as const,
     lists: (filters?: Record<string, unknown>) => 

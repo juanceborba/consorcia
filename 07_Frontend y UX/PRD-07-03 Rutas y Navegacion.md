@@ -30,7 +30,7 @@ outcomes:
 | **Cerbos SDK** | latest | Verificacion de permisos en rutas |
 | **Zustand** | latest | Estado de autenticacion y permisos |
 
-> **Nota sobre React Router v7:** Combina React Router v6 + Remix. Soporta modo declarativo (SPA tradicional) y modo data (loaders/actions). ConsorcIA usa modo declarativo para compatibilidad con Vite SPA. Ver documentacion oficial de React Router v7 para nested routes y data loaders.
+> **Nota sobre React Router v7:** Combina React Router v6 + Remix. Soporta modo declarativo (SPA tradicional) y modo data (loaders/actions). **Implementado (S2-06):** ConsorcIA usa **data router** (`createBrowserRouter` + `RouterProvider` en `frontend/src/main.jsx`) porque la confirmación de salida con cambios sin guardar (PRD-07-02 §6.1) requiere `useBlocker`, que solo existe en data routers. No se usan loaders/actions: el data fetching sigue siendo TanStack Query (PRD-07-04). Ver documentacion oficial de React Router v7 para nested routes y data loaders.
 
 ---
 
@@ -53,7 +53,7 @@ outcomes:
 │   ├── /edificios            (AdminLayout)    → EdificiosListPage
 │   │   ├── /nuevo            (AdminLayout)    → EdificioCreatePage
 │   │   └── /:id              (AdminLayout)    → EdificioDetailPage
-│   │       ├── /             (AdminLayout)    → EdificioOverviewTab
+│   │       ├── /overview     (AdminLayout)    → EdificioOverviewTab
 │   │       ├── /unidades     (AdminLayout)    → EdificioUnidadesTab
 │   │       ├── /usuarios     (AdminLayout)    → EdificioUsuariosTab
 │   │       └── /configuracion (AdminLayout)    → EdificioConfigTab
@@ -118,6 +118,8 @@ outcomes:
 ```
 
 ### 2.2 Convenciones de URL
+
+> **Implementado (S2-07):** el detalle de edificio usa tabs como rutas hijas (`/edificios/:id/overview|unidades|configuracion`); `/edificios/:id` a secas **redirige a `/unidades`** (tab default, ver backlog S2). El tab `usuarios` aún no existe (llega con gestión de usuarios del edificio). El formulario de alta (S2-06) vive en `/edificios/nuevo` y redirige al detalle del edificio creado.
 
 | Regla | Ejemplo | Descripcion |
 |-------|---------|-------------|
@@ -810,7 +812,7 @@ export function useFeatureFlag(featureId: string): boolean {
 
 | Decision | Eleccion | Justificacion |
 |----------|----------|---------------|
-| **React Router v7 (declarativo)** | Modo declarativo | Data mode requiere servidor. ConsorcIA es SPA con Vite. |
+| **React Router v7 (data router)** | `createBrowserRouter` | Implementado en S2-06: `useBlocker` (confirmar salida con cambios sin guardar) solo funciona en data routers. El data fetching sigue con TanStack Query, no con loaders/actions. |
 | **Roles canónicos en guards** | Set único de 8 roles | Nivel organización: `org_admin`, `gestor` (acceso al área admin). Nivel edificio: `propietario`, `inquilino`, `encargado`, `consejo`, `proveedor` (portal). `superadmin` es staff ConsorcIA. Ver [[PRD-05-04 Cerbos RBAC]] §2. |
 | **Lazy loading por modulo** | Si | Reduce bundle inicial. Admin no carga portal y viceversa. |
 | **Cerbos en frontend** | Solo verificacion UI | El backend SIEMPRE valida. Cerbos en frontend es UX, no seguridad. |
