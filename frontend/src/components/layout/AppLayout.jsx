@@ -9,6 +9,7 @@ import { SIN_ROLES, useAuthStore } from '@/stores/auth.store';
 import { useEdificioStore } from '@/stores/edificio.store';
 import { useEdificios } from '@/hooks/useEdificios';
 import { useOrganizacion } from '@/hooks/useOrganizacion';
+import AyudaDrawer from '@/components/ayuda/AyudaDrawer';
 import Breadcrumbs from '@/components/layout/Breadcrumbs';
 import OrganizacionSelector from '@/components/layout/OrganizacionSelector';
 import SinAccesoOrganizacion from '@/components/layout/SinAccesoOrganizacion';
@@ -217,6 +218,11 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Ayuda contextual: una sola instancia para toda la app autenticada.
+          Vive fuera de la columna principal (portal propio) para poder abrirse
+          encima de cualquier Dialog de dominio sin cerrarlo. */}
+      <AyudaDrawer />
     </div>
   );
 }

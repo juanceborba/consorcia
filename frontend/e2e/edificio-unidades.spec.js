@@ -1,12 +1,20 @@
 // frontend/e2e/edificio-unidades.spec.js — E2E del slice S2 en browser real (S2-12)
-// Flujo del DoD del sprint, con la UX de #57 (invariante informativa): login
-// admin → "Nuevo edificio" → alta → redirect al detalle → breadcrumbs (Inicio /
-// Edificios / {nombre} / Unidades) → tab unidades → "+ Agregar" → modo bulk con
-// coeficientes que suman 0.9: el feedback dice "falta 0.100000" pero Guardar
-// sigue HABILITADO → se guarda igual → la tabla muestra las unidades, la fila
-// TOTAL en warning y el Alert "Faltan 0.100000…" → se completa la unidad que
-// falta desde el modo individual, con el coeficiente SUGERIDO a partir de los m²
-// (m²/totalM2) → la fila TOTAL cierra en 1.000000 verde y el Alert desaparece.
+// Flujo del DoD del sprint, con la UX de #57 (invariante informativa + flujos
+// de alta separados): login admin → "Nuevo edificio" → alta → redirect al
+// detalle → breadcrumbs (Inicio / Edificios / {nombre} / Unidades) → tab
+// unidades → "Carga rápida" (dialog bulk propio, sin tabs) con coeficientes
+// que suman 0.9: el feedback dice "falta 0.100000" pero Guardar sigue
+// HABILITADO → se guarda igual → la tabla muestra las unidades, la fila TOTAL
+// en warning y el Alert "Faltan 0.100000…" → se completa la unidad que falta
+// desde "Agregar unidad" (dialog individual), con el coeficiente SUGERIDO a
+// partir de los m² (m²/totalM2) → la fila TOTAL cierra en 1.000000 verde y el
+// Alert desaparece.
+// Segundo caso (#57): el dialog individual tiene el tab "Categorías de gastos"
+// con las 3 explicaciones → "Más información" abre el drawer de ayuda ENCIMA
+// del modal (breadcrumb Edificios › Unidades › Categorías de gastos) → se
+// cierra y el modal sigue intacto → se guarda una UF con categoría B marcada
+// desde el otro tab (RHF conserva los valores) → badge "B: ascensor" en el
+// listado.
 // Cleanup: baja del edificio desde el tab Configuración (ConfirmDialog con
 // requireText) + barrido por API en afterEach por si el test falla a mitad.
 // Requiere el stack levantado con el seed (make up && make db-seed).
@@ -15,14 +23,59 @@ import { expect, test } from '@playwright/test';
 
 const API_URL = process.env.BACKEND_URL ?? 'http://localhost:3000';
 const NOMBRE = `E2E ${Date.now()}`;
+const NOMBRE_AYUDA = `E2E Ayuda ${Date.now()}`;
+
+// Login con el admin del seed → cae en el listado de edificios.
+async function login(page) {
+  await page.goto('/login');
+  await page.locator('#email').fill('admin@demo.com');
+  await page.locator('#password').fill('demo1234');
+  await page.getByRole('button', { name: 'Ingresar' }).click();
+  await expect(page).toHaveURL(/\/edificios$/);
+}
+
+// Alta de edificio de 300 m² desde "Nuevo edificio" → queda en el detalle,
+// tab unidades (default).
+async function crearEdificio(page, nombre) {
+  await page.goto('/edificios');
+  await page.getByRole('link', { name: 'Nuevo edificio' }).click();
+  await expect(page).toHaveURL(/\/edificios\/nuevo$/);
+
+  await page.locator('#nombre').fill(nombre);
+  await page.locator('#direccion').fill('Av. E2E 1234');
+  await page.locator('#codigoPostal').fill('C1425BGW');
+  await page.locator('#totalM2').fill('300');
+  // Blur del último campo: dispara la validación (mode onBlur) y habilita
+  // el submit solo cuando el form queda válido.
+  await page.locator('#totalM2').press('Tab');
+  const crear = page.getByRole('button', { name: 'Crear edificio' });
+  await expect(crear).toBeEnabled();
+  await crear.click();
+  await expect(page).toHaveURL(/\/edificios\/[0-9a-f-]{36}\/unidades$/);
+}
+
+// Baja del edificio desde el tab Configuración (ConfirmDialog con requireText).
+async function eliminarEdificio(page, nombre) {
+  await page.getByRole('tab', { name: 'Configuración' }).click();
+  await expect(page).toHaveURL(/\/configuracion$/);
+  await page.getByRole('button', { name: 'Eliminar edificio' }).click();
+
+  const confirm = page.getByRole('alertdialog');
+  await expect(confirm).toBeVisible();
+  await confirm.locator('#confirm-dialog-require-text').fill(nombre);
+  await confirm.getByRole('button', { name: 'Eliminar edificio' }).click();
+
+  await expect(page).toHaveURL(/\/edificios$/);
+  await expect(page.getByRole('link', { name: nombre })).toHaveCount(0);
+}
 
 // Barrido de seguridad: borra (soft delete) cualquier edificio de prueba que
 // haya quedado activo, así el spec es re-ejecutable y no deja basura.
 test.afterEach(async ({ request }) => {
-  const login = await request.post(`${API_URL}/api/auth/login`, {
+  const loginRes = await request.post(`${API_URL}/api/auth/login`, {
     data: { email: 'admin@demo.com', password: 'demo1234' },
   });
-  const { accessToken } = await login.json();
+  const { accessToken } = await loginRes.json();
   const headers = { Authorization: `Bearer ${accessToken}` };
   const lista = await request.get(`${API_URL}/api/edificios`, { headers });
   for (const edificio of await lista.json()) {
@@ -34,31 +87,11 @@ test.afterEach(async ({ request }) => {
 
 test('crear edificio y agregar unidades (bulk con invariante)', async ({ page }) => {
   await test.step('login con admin@demo.com', async () => {
-    await page.goto('/login');
-    await page.locator('#email').fill('admin@demo.com');
-    await page.locator('#password').fill('demo1234');
-    await page.getByRole('button', { name: 'Ingresar' }).click();
-    // Sin ruta origen guardada, RequireAuth cae en el listado de edificios
-    await expect(page).toHaveURL(/\/edificios$/);
+    await login(page);
   });
 
   await test.step('alta de edificio desde "Nuevo edificio"', async () => {
-    await page.goto('/edificios');
-    await page.getByRole('link', { name: 'Nuevo edificio' }).click();
-    await expect(page).toHaveURL(/\/edificios\/nuevo$/);
-
-    await page.locator('#nombre').fill(NOMBRE);
-    await page.locator('#direccion').fill('Av. E2E 1234');
-    await page.locator('#codigoPostal').fill('C1425BGW');
-    await page.locator('#totalM2').fill('300');
-    // Blur del último campo: dispara la validación (mode onBlur) y habilita
-    // el submit solo cuando el form queda válido.
-    await page.locator('#totalM2').press('Tab');
-    const crear = page.getByRole('button', { name: 'Crear edificio' });
-    await expect(crear).toBeEnabled();
-    await crear.click();
-    // Redirige al detalle, tab unidades (default)
-    await expect(page).toHaveURL(/\/edificios\/[0-9a-f-]{36}\/unidades$/);
+    await crearEdificio(page, NOMBRE);
   });
 
   await test.step('breadcrumbs: Inicio / Edificios / {nombre} / Unidades', async () => {
@@ -70,11 +103,11 @@ test('crear edificio y agregar unidades (bulk con invariante)', async ({ page })
   });
 
   await test.step('bulk que suma 0.9: feedback de delta sin bloquear Guardar', async () => {
-    await page.getByRole('button', { name: 'Agregar', exact: true }).click();
+    // Desde #57 la carga rápida es un dialog propio, sin tabs de modo
+    await page.getByRole('button', { name: 'Carga rápida', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
-    await dialog.getByRole('tab', { name: 'Carga rápida (varias)' }).click();
     // 3 filas por defecto + 2 más = 5 unidades. Se agregan con Enter sobre el
     // botón (no click): cada fila nueva desplaza el botón una fila hacia
     // abajo y el click por coordenadas puede caer donde el botón ya no está.
@@ -129,11 +162,10 @@ test('crear edificio y agregar unidades (bulk con invariante)', async ({ page })
   });
 
   await test.step('#57: alta individual con coeficiente sugerido por m² cierra en 1.000000', async () => {
-    await page.getByRole('button', { name: 'Agregar', exact: true }).click();
-    const dialog = page.getByRole('dialog');
+    // El alta individual es otro dialog: abre directo en "Datos de la unidad"
+    await page.getByRole('button', { name: 'Agregar unidad' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Agregar unidad' });
     await expect(dialog).toBeVisible();
-    // El modal recuerda el modo del uso anterior (bulk): volver a "Una unidad"
-    await dialog.getByRole('tab', { name: 'Una unidad' }).click();
 
     await dialog.locator('#unidad-numero').fill('3C');
     // El edificio tiene 300 m² totales: 30 m² → 30/300 = 0.100000 sugerido
@@ -156,16 +188,75 @@ test('crear edificio y agregar unidades (bulk con invariante)', async ({ page })
   });
 
   await test.step('cleanup: baja del edificio con ConfirmDialog (requireText)', async () => {
-    await page.getByRole('tab', { name: 'Configuración' }).click();
-    await expect(page).toHaveURL(/\/configuracion$/);
-    await page.getByRole('button', { name: 'Eliminar edificio' }).click();
+    await eliminarEdificio(page, NOMBRE);
+  });
+});
 
-    const confirm = page.getByRole('alertdialog');
-    await expect(confirm).toBeVisible();
-    await confirm.locator('#confirm-dialog-require-text').fill(NOMBRE);
-    await confirm.getByRole('button', { name: 'Eliminar edificio' }).click();
+test('tab Categorías de gastos con ayuda contextual y guardado con categoría B', async ({ page }) => {
+  await test.step('login y alta de edificio', async () => {
+    await login(page);
+    await crearEdificio(page, NOMBRE_AYUDA);
+  });
 
-    await expect(page).toHaveURL(/\/edificios$/);
-    await expect(page.getByRole('link', { name: NOMBRE })).toHaveCount(0);
+  await test.step('el tab Categorías muestra las 3 explicaciones y marca B', async () => {
+    await page.getByRole('button', { name: 'Agregar unidad' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Agregar unidad' });
+    await expect(dialog).toBeVisible();
+
+    await dialog.getByRole('tab', { name: 'Categorías de gastos' }).click();
+    await expect(dialog).toContainText('A — Gastos generales');
+    await expect(dialog).toContainText('B — Servicios específicos');
+    await expect(dialog).toContainText('C — Sectores');
+
+    // Marca la categoría B acá: después guarda desde el otro tab (RHF
+    // conserva los valores del tab desmontado)
+    await dialog.getByRole('checkbox', { name: 'Ascensor' }).check();
+  });
+
+  await test.step('"Más información" abre el drawer de ayuda ENCIMA del modal', async () => {
+    const dialog = page.getByRole('dialog', { name: 'Agregar unidad' });
+    await dialog.getByRole('button', { name: 'Más información' }).click();
+
+    // El drawer también es un dialog (Base UI): se apila encima del modal
+    const drawer = page.getByRole('dialog', { name: 'Categorías de gastos' });
+    await expect(drawer).toBeVisible();
+    await expect(drawer).toContainText(
+      'Edificios › Unidades › Categorías de gastos',
+    );
+    await expect(drawer).toContainText('Cómo se reparten los gastos al liquidar');
+
+    // Interactuar con el drawer: scrollear su contenido con la rueda no hace
+    // falta — alcanza con leerlo y cerrarlo con la X
+    await drawer.getByRole('button', { name: 'Cerrar' }).click();
+    await expect(drawer).not.toBeVisible();
+
+    // El modal del alta sigue abierto e intacto
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByRole('checkbox', { name: 'Ascensor' }),
+    ).toBeChecked();
+  });
+
+  await test.step('guarda desde el tab Datos y el listado muestra el badge B', async () => {
+    const dialog = page.getByRole('dialog', { name: 'Agregar unidad' });
+    await dialog.getByRole('tab', { name: 'Datos de la unidad' }).click();
+
+    await dialog.locator('#unidad-numero').fill('PB');
+    // 100 m² de 300 totales → coeficiente sugerido 0.333333
+    await dialog.locator('#unidad-m2').fill('100');
+    await expect(dialog.locator('#unidad-coeficiente')).toHaveValue('0.333333');
+
+    const guardar = dialog.getByRole('button', { name: 'Guardar unidad' });
+    await expect(guardar).toBeEnabled();
+    await guardar.click();
+    await expect(dialog).not.toBeVisible();
+
+    // La categoría B marcada en el otro tab quedó guardada
+    await expect(page.getByRole('cell', { name: 'PB', exact: true })).toBeVisible();
+    await expect(page.getByText('B: ascensor')).toBeVisible();
+  });
+
+  await test.step('cleanup: baja del edificio con ConfirmDialog (requireText)', async () => {
+    await eliminarEdificio(page, NOMBRE_AYUDA);
   });
 });
