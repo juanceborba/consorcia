@@ -37,4 +37,5 @@
 
 - [S1 — Fundación visible](sprints/S1-fundacion.md) ✅ (cerrado 2026-07-28)
 - [S2 — Edificios y unidades](sprints/S2-edificios-unidades.md) ✅ (cerrado 2026-07-28)
-- S3 a S6: se detallan al cerrar el sprint anterior (las specs ya están en los PRDs).
+- [S3 — Gastos + motor contable](sprints/S3-gastos-liquidacion.md) (backlog listo 2026-07-28)
+- S4 a S6: se detallan al cerrar el sprint anterior (las specs ya están en los PRDs).

@@ -8,6 +8,7 @@ Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas 
 
 - **S1 cerrado** (2026-07-28): stack + auth JWT + Cerbos + edificios read + portal shell. Ver `docs/sprints/S1-fundacion.md`.
 - **S2 cerrado** (2026-07-28): edificios y unidades (CRUD + invariante de coeficientes, alta bulk con feedback inline, E2E + smoke). Ver `docs/sprints/S2-edificios-unidades.md`.
+- **S3 listo para arrancar**: gastos + motor contable (liquidación, recibos PDF/QR Ley 941). Backlog: `docs/sprints/S3-gastos-liquidacion.md`. Issues en GitHub con milestone "S3".
 - Roadmap completo (S1→S6, slices verticales): `docs/ROADMAP.md`.
 
 ## Reglas duras (romperlas rompe el entorno)
