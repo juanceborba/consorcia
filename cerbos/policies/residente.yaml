@@ -1,0 +1,47 @@
+# cerbos/policies/residente.yaml — Recurso `residente` (S4-04, Workflow B)
+# Spec: PRD-04-11 §5 / §6 · PRD-05-04 Cerbos RBAC §3.1 (estructura canónica).
+#
+# `residente` = el vínculo persona↔UF (`UnidadUsuario`). Recurso propio y no
+# reuso de `unidad.yaml` porque son permisos distintos que van a divergir: el
+# portal (PRD-04-05, S5) le dará al propietario/inquilino lectura de SU vínculo
+# sin darle nada sobre la unidad, y administrar la titularidad no es lo mismo
+# que editar los metros o el coeficiente de la UF.
+#
+# Scope doble, idéntico a unidad.yaml: organizacion_id del recurso == del
+# principal, y para gestores edificio_id ∈ principal.attr.edificios_asignados.
+#   superadmin global · org_admin CRUD en su organización ·
+#   gestor CRUD solo en los edificios que tiene asignados
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: "default"
+  resource: "residente"
+  rules:
+    # Superadmin puede todo
+    - actions: ['*']
+      effect: EFFECT_ALLOW
+      roles:
+        - superadmin
+
+    # Org admin administra los residentes de toda su organización
+    - actions: ['read', 'create', 'update', 'delete']
+      effect: EFFECT_ALLOW
+      roles:
+        - org_admin
+      condition:
+        match:
+          expr: request.resource.attr.organizacion_id == request.principal.attr.organizacion_id
+
+    # Gestor administra residentes solo en sus edificios asignados
+    - actions: ['read', 'create', 'update', 'delete']
+      effect: EFFECT_ALLOW
+      roles:
+        - gestor
+      condition:
+        match:
+          all:
+            of:
+              - expr: request.resource.attr.organizacion_id == request.principal.attr.organizacion_id
+              - expr: request.resource.attr.edificio_id in request.principal.attr.edificios_asignados
+# Sin regla DENY global: el default cuando ninguna regla matchea ya es DENY
+# (propietario e inquilino todavía no tienen permisos acá — llegan con el
+# portal del residente, PRD-04-05).
