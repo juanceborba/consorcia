@@ -74,6 +74,15 @@ Validación: Σ coeficientes = 1.000000 (tolerancia: 0.000001)
 | **B** | Servicios específicos | Solo quienes lo usan | Ascensor, calefacción, agua caliente |
 | **C** | Sectores específicos | Solo quienes pertenecen | Pileta, torre A, sector comercial |
 
+> **UX del alta (refinamiento post-#57):** en el alta individual de unidad las
+> categorías se eligen en un tab propio ("Categorías de gastos") con una
+> explicación en lenguaje simple de cada una (qué es, ejemplos y cómo afecta
+> la liquidación: A → reparte entre todas las UF por coeficiente; B → solo UF
+> con ese servicio; C → solo UF del sector) y un "Más información" que abre la
+> ayuda contextual (PRD-07-02 §6.5, topic `edificios/unidades/categorias-gastos`).
+> La carga rápida (bulk) vive en un dialog separado y sigue sin categorías
+> (aplican los defaults del backend: A=true, B=[], C=null).
+
 ---
 
 ## 2. API Endpoints

@@ -391,9 +391,12 @@ interface ModalProps {
 > ConfirmDialog de §4.8). Contenido scrolleable (`max-h` con `overflow-y`)
 > para formularios largos; cierra con Escape y con la X — el cierre con
 > cambios sin guardar lo confirma el formulario consumidor (§6.1.8), no el
-> componente. Primer uso: modal de alta de unidades del tab Unidades
-> (`UnidadAltaDialog`, form individual + bulk con feedback de la invariante
-> de coeficientes calculado con decimal.js en cliente).
+> componente. Primer uso: alta de unidades del tab Unidades — desde el
+> refinamiento post-#57 son **dos dialogs separados** con botón propio en el
+> listado: `UnidadAltaDialog` (alta individual, tabs "Datos de la unidad" /
+> "Categorías de gastos" sobre el mismo form) y `UnidadBulkDialog` (carga
+> rápida, grilla de N filas). Ambos con feedback de la invariante de
+> coeficientes calculado con decimal.js en cliente.
 
 ### 3.7 Badge `<Badge />`
 
@@ -779,6 +782,37 @@ ESTADOS DE CARGA:
 | Vacío         | Empty state ilustrado         | —          |
 | Error         | Error state con retry         | —          |
 ```
+
+### 6.5 Ayuda contextual (FAQ embebido)
+
+Patrón para explicar conceptos de dominio en el momento en que el usuario los
+necesita (implementado en el refinamiento post-#57 del alta de unidades; es el
+patrón de referencia para todos los módulos).
+
+**Piezas:**
+
+| Pieza | Ubicación | Rol |
+|-------|-----------|-----|
+| Registro de topics | `frontend/src/lib/ayuda.js` | Mapa `AYUDA_TOPICS` con el contenido, keyed por ID de topic (path con slash, estable: es el contrato). Cada topic: `ruta` (breadcrumb), `titulo`, `secciones: [{ titulo, cuerpo, items? }]`. |
+| Store global | `frontend/src/stores/ayuda.store.js` | Zustand efímero: `{ topic, abrirAyuda, cerrarAyuda }`. |
+| `<AyudaDrawer />` | `frontend/src/components/ayuda/` | Única instancia montada en `AppLayout` (Drawer §-lateral sobre Base UI). Resuelve el topic del store, muestra breadcrumb con › + secciones; topic inexistente → fallback, nunca rompe. Se apila sobre modales sin conflicto (portal propio). |
+| `<AyudaLink />` | `frontend/src/components/ayuda/` | Trigger: `<AyudaLink topic="modulo/pantalla/tema" />` (botón link con ícono, `type="button"` para vivir dentro de forms). |
+
+**Reglas de uso:**
+
+1. El concepto se explica **inline primero** (texto corto junto al control);
+   el drawer es la profundización ("Más información"), no el único lugar.
+2. El ID del topic es un path estable (`edificios/unidades/categorias-gastos`)
+   → una vez publicado no se renombra.
+3. Agregar ayuda a un módulo = una entrada en el registro + un `AyudaLink`.
+   Nada más.
+4. El contenido vive estático en el frontend (copy es-AR, sin i18n ni CMS).
+
+**Camino de evolución a FAQ completo** (aditivo, sin refactor de consumidores):
+hub `/ayuda` navegable, búsqueda cliente, deep links por topic y contenido en
+Markdown + frontmatter (`import.meta.glob`). Como los consumidores dependen del
+ID de topic y del registro (no del almacenamiento), migrar cambia solo los
+internals de `ayuda.js`.
 
 ---
 
