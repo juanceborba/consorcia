@@ -87,6 +87,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check de ayuda contextual (gate)
+        # Consistencia del registro de topics de ayuda contra las pantallas
+        # (scripts/check-ayuda.mjs): referencias a topics inexistentes,
+        # relacionados rotos y pantallas que perdieron su acceso a ayuda.
+        # Node plano, sin dependencias — no hace falta npm install.
+        run: docker run --rm -v ${{ github.workspace }}/frontend:/app -w /app node:20-alpine node scripts/check-ayuda.mjs
+
       - name: Build (gate)
         # Corre dentro de node:20-alpine (misma plataforma que el contenedor
         # de desarrollo). El lockfile commiteado tiene las entradas de

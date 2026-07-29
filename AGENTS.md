@@ -46,6 +46,14 @@ En el frontend, `esResidentePuro(user)` (`src/lib/acceso.js`) selecciona el shel
 
 Si el código diverge de un PRD (puertos, endpoints, schema, roles), **actualizá el PRD del vault en la misma tarea** — el PRD refleja lo que existe, no el diseño original. Convenciones del vault en `../../vault/AGENTS.md`. Errores del contrato API: `{ error: { code, message } }`.
 
+## Regla de frescura de la ayuda contextual
+
+La ayuda contextual (PRD-07-02 §6.5) es parte de la funcionalidad, no un anexo. **Criterio de aprobación previo a commitear:**
+
+1. Si la tarea cambia funcionalidad cubierta por un topic de ayuda, **el topic se actualiza en la misma tarea**. Si el cambio tiene profundidad en temas que abordan otros topics, se revisan y actualizan los relacionados.
+2. Si la tarea agrega una pantalla o un concepto nuevo de dominio, se evalúa su acceso a ayuda (ícono junto al título, §6.5) — y si corresponde, su topic con sus `pantallas` declaradas.
+3. **Gate automatizado bloqueante:** `npm run check:ayuda` (en `frontend/`, corre también en CI) falla si una pantalla referencia un topic inexistente, si un `relacionados` queda roto, o si una pantalla declarada pierde su acceso a ayuda. El contenido en sí (nivel 1 y 2) lo garantiza la revisión humana/del agente; el gate garantiza la consistencia estructural.
+
 ## Credenciales demo (seed)
 
 Password de **todos** los usuarios activados: `demo1234`. Reseed idempotente: `make db-seed` (o `docker exec consorcIA-backend node prisma/seed.js`). El seed borra y recrea las dos organizaciones demo por CUIT, limpia el residuo de los specs E2E (`e2e-staff-*`, `e2e-residente-*`) y desactiva las membresías de los usuarios demo en organizaciones ajenas al seed. **Nunca** hace `prisma migrate reset`.
