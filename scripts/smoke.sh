@@ -42,7 +42,7 @@ req() {
   BODY=$(sed '$d' <<< "$resp")
 }
 
-echo "Smoke ConsorcIA (S1-14 + S2-12 + S4-02) contra $BASE_URL"
+echo "Smoke ConsorcIA (S1-14 + S2-12 + S4-02/03/04/05) contra $BASE_URL"
 echo
 
 # --- 1. Health ----------------------------------------------------------------
@@ -83,6 +83,7 @@ check "el edificio del gestor es Torre Palermo" "Torre Palermo" "$(json_eval 'd[
 
 req GET "/api/edificios/$EDIFICIO_ID" "$ADMIN_TOKEN"
 check "GET /api/edificios/:id → 200" 200 "$STATUS"
+UNIDAD_ID=$(json_eval 'd.unidades.length ? d.unidades[0].id : ""' <<< "$BODY")
 UNIDADES=$(json_eval 'd.unidades.length' <<< "$BODY")
 if [ "$UNIDADES" -gt 0 ] 2>/dev/null; then
   ok "detalle de $EDIFICIO_NOMBRE con $UNIDADES unidades"
@@ -201,6 +202,102 @@ else
       })();
     " >/dev/null 2>&1 || true
   fi
+fi
+
+# --- 3.7 Slice S4 (staff, residentes, cambio de organización) -------------------
+# Recorre los tres endpoints nuevos con la API real (sin insertar en la DB):
+# invitar staff → 409 de la segunda pendiente → activar → cambiar de org →
+# vincular residente → desvincular. Todo lo creado se borra al final.
+echo "3.7 Slice S4 (staff + residentes + cambio de org)"
+S4B_EMAIL="smoke-staff-$(date +%s)@test.dev"
+S4B_REFRESH=""
+
+req POST /api/organizaciones/me/usuarios "$ADMIN_TOKEN" \
+  "{\"email\":\"$S4B_EMAIL\",\"nombre\":\"Smoke\",\"apellido\":\"Staff\",\"rol\":\"GESTOR\",\"edificioIds\":[\"$EDIFICIO_ID\"]}"
+check "POST /api/organizaciones/me/usuarios → 201" 201 "$STATUS"
+S4B_URL=$(json_eval 'd.invitacionUrl' <<< "$BODY")
+S4B_TOKEN_INV="${S4B_URL##*/}"
+check "el alta devuelve el link de invitación" 1 "$(json_eval 'd.invitacionUrl.includes("/invitacion/") ? 1 : 0' <<< "$BODY")"
+check "el email no se envía en el MVP" false "$(json_eval 'd.emailEnviado' <<< "$BODY")"
+
+req GET /api/organizaciones/me/usuarios "$ADMIN_TOKEN"
+check "GET /api/organizaciones/me/usuarios → 200" 200 "$STATUS"
+check "el invitado aparece sin activar" false \
+  "$(json_eval "String((d.find(m => m.email === '$S4B_EMAIL') || {}).cuentaActivada)" <<< "$BODY")"
+
+req GET /api/organizaciones/me/usuarios "$GESTOR_TOKEN"
+check "el gestor no ve el staff → 403" 403 "$STATUS"
+
+req POST /api/organizaciones/me/usuarios "$ADMIN_TOKEN" \
+  "{\"email\":\"$S4B_EMAIL\",\"nombre\":\"Smoke\",\"rol\":\"GESTOR\"}"
+check "segunda invitación pendiente → 409" 409 "$STATUS"
+check "código INVITACION_PENDIENTE" "INVITACION_PENDIENTE" "$(json_eval 'd.error.code' <<< "$BODY")"
+
+req POST "/api/invitaciones/$S4B_TOKEN_INV/aceptar" '' '{"password":"smokestaff1234"}'
+check "el invitado activa su cuenta → 200" 200 "$STATUS"
+check "entra como gestor de la org" "gestor" "$(json_eval 'd.user.roles[0]' <<< "$BODY")"
+S4B_TOKEN=$(json_eval 'd.accessToken' <<< "$BODY")
+S4B_REFRESH=$(json_eval 'd.refreshToken' <<< "$BODY")
+S4B_ORG=$(json_eval 'd.user.organizacionId' <<< "$BODY")
+
+# Cambio de organización: a la propia es una re-emisión válida; a una ajena, 403
+req POST /api/auth/cambiar-organizacion "$S4B_TOKEN" \
+  "{\"organizacionId\":\"$S4B_ORG\",\"refreshToken\":\"$S4B_REFRESH\"}"
+check "POST /api/auth/cambiar-organizacion → 200" 200 "$STATUS"
+check "la sesión queda en la org elegida" "$S4B_ORG" "$(json_eval 'd.user.organizacionId' <<< "$BODY")"
+S4B_REFRESH=$(json_eval 'd.refreshToken' <<< "$BODY")
+
+req POST /api/auth/cambiar-organizacion "$S4B_TOKEN" \
+  '{"organizacionId":"00000000-0000-0000-0000-000000000000"}'
+check "cambiar a una org ajena → 403" 403 "$STATUS"
+check "código SIN_MEMBRESIA" "SIN_MEMBRESIA" "$(json_eval 'd.error.code' <<< "$BODY")"
+
+# Residentes de una UF
+S4B_RESIDENTE="smoke-residente-$(date +%s)@test.dev"
+if [ -z "$UNIDAD_ID" ]; then
+  fail "sin unidades en $EDIFICIO_NOMBRE: se saltean los chequeos de residentes"
+else
+  req POST "/api/unidades/$UNIDAD_ID/residentes" "$ADMIN_TOKEN" \
+    "{\"email\":\"$S4B_RESIDENTE\",\"nombre\":\"Smoke\",\"apellido\":\"Residente\",\"esPropietario\":true}"
+  check "POST /api/unidades/:id/residentes → 201" 201 "$STATUS"
+  S4B_VINCULO=$(json_eval 'd.vinculo.id' <<< "$BODY")
+  check "el vínculo queda vigente" true "$(json_eval 'd.vinculo.vigente' <<< "$BODY")"
+
+  req POST "/api/unidades/$UNIDAD_ID/residentes" "$ADMIN_TOKEN" \
+    "{\"email\":\"$S4B_RESIDENTE\",\"nombre\":\"Smoke\",\"esInquilino\":true}"
+  check "vínculo vigente duplicado → 409" 409 "$STATUS"
+  check "código VINCULO_DUPLICADO" "VINCULO_DUPLICADO" "$(json_eval 'd.error.code' <<< "$BODY")"
+
+  req GET "/api/unidades/$UNIDAD_ID/residentes" "$ADMIN_TOKEN"
+  check "GET /api/unidades/:id/residentes → 200" 200 "$STATUS"
+  check "el residente figura en la UF" 1 \
+    "$(json_eval "d.filter(v => v.usuario.email === '$S4B_RESIDENTE').length" <<< "$BODY")"
+
+  req DELETE "/api/unidades/$UNIDAD_ID/residentes/$S4B_VINCULO" "$ADMIN_TOKEN"
+  check "DELETE residente (baja temporal) → 200" 200 "$STATUS"
+  check "el vínculo queda no vigente con fechaFin" false "$(json_eval 'd.vigente' <<< "$BODY")"
+fi
+
+# Limpieza: se cierra la sesión y se borran las personas creadas
+[ -n "$S4B_REFRESH" ] && req POST /api/auth/logout '' "{\"refreshToken\":\"$S4B_REFRESH\"}"
+if command -v docker >/dev/null 2>&1; then
+  docker exec consorcIA-backend node -e "
+    const { PrismaClient } = require('@prisma/client');
+    const p = new PrismaClient();
+    (async () => {
+      const emails = ['$S4B_EMAIL', '$S4B_RESIDENTE'];
+      await p.invitacion.deleteMany({ where: { email: { in: emails } } });
+      const us = await p.usuario.findMany({ where: { email: { in: emails } } });
+      const ids = us.map(u => u.id);
+      await p.unidadUsuario.deleteMany({ where: { usuarioId: { in: ids } } });
+      await p.gestorEdificio.deleteMany({ where: { usuarioId: { in: ids } } });
+      await p.organizacionUsuario.deleteMany({ where: { usuarioId: { in: ids } } });
+      await p.usuario.deleteMany({ where: { id: { in: ids } } });
+      await p.\$disconnect();
+    })();
+  " >/dev/null 2>&1 || fail "no se pudo limpiar el staff/residente de prueba"
+else
+  fail "docker no disponible: quedan sin borrar $S4B_EMAIL y $S4B_RESIDENTE"
 fi
 
 # --- Limpieza de seguridad -----------------------------------------------------
