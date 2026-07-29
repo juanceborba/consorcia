@@ -187,6 +187,9 @@ services:
       - OCR_SERVICE_URL=http://ocr-service:8000
       - EMBEDDINGS_SERVICE_URL=http://embeddings-service:8001
       - JWT_SECRET=${JWT_SECRET:-consorcia_jwt_secret_dev_2026}
+      # Base pública de la SPA: el backend la usa para armar los links de
+      # invitación (`/invitacion/:token`, PRD-04-11 §4.4)
+      - APP_BASE_URL=${APP_BASE_URL:-http://localhost:5173}
       - AGENTMAIL_API_KEY=${AGENTMAIL_API_KEY:-}
       - CHEAPERINFERENCE_API_KEY=${CHEAPERINFERENCE_API_KEY:-}
       - NEMOTRON_API_KEY=${NEMOTRON_API_KEY:-}

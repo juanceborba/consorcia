@@ -5,6 +5,12 @@
 export const config = {
   port: process.env.PORT || 3000,
 
+  // Base pública de la SPA: se usa para armar los links que el backend genera
+  // pero consume el frontend (p. ej. `/invitacion/:token`, PRD-04-11 §4.4).
+  app: {
+    baseUrl: (process.env.APP_BASE_URL || 'http://localhost:5173').replace(/\/+$/, ''),
+  },
+
   jwt: {
     secret: process.env.JWT_SECRET,
     // Access token de corta vida (PRD-08-05 §1.1)

@@ -1,0 +1,32 @@
+# cerbos/policies/staff.yaml — Recurso `staff` (S4-03, Workflow A)
+# Spec: PRD-04-11 §3 / §4 · PRD-05-04 Cerbos RBAC §3.1 (estructura canónica).
+#
+# `staff` = las membresías de una organización (`OrganizacionUsuario` +
+# `GestorEdificio`). El recurso es la organización misma, porque el alta y la
+# edición de personal se administran a nivel tenant: attr `id` /
+# `organizacion_id` son el `organizacionId` del JWT.
+#
+#   superadmin global · org_admin CRUD del staff de SU organización ·
+#   gestor NADA (PRD-04-11 §3: "no crea edificios ni usuarios"), ni lectura:
+#   la nómina de la administración no es parte de su operación por edificio.
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: "default"
+  resource: "staff"
+  rules:
+    # Superadmin (staff ConsorcIA) puede todo
+    - actions: ['*']
+      effect: EFFECT_ALLOW
+      roles:
+        - superadmin
+
+    # Org admin administra el staff de su propia organización
+    - actions: ['read', 'create', 'update', 'delete']
+      effect: EFFECT_ALLOW
+      roles:
+        - org_admin
+      condition:
+        match:
+          expr: request.resource.attr.organizacion_id == request.principal.attr.organizacion_id
+# Sin regla DENY global: el default cuando ninguna regla matchea ya es DENY
+# (gestor, propietario, inquilino y cualquier rol futuro quedan afuera).
