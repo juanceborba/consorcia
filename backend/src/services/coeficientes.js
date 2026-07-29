@@ -4,10 +4,17 @@
 //
 // Cambio de UX (#57): la invariante ya NO bloquea la escritura de unidades.
 // El alta bulk, el PATCH y el DELETE guardan igual y devuelven el estado de la
-// suma de forma INFORMATIVA (`estadoCoeficientes`), para que la UI muestre la
-// alerta "faltan/sobran X" en vez de un 422. El gate DURO se movió a la
-// liquidación (S3): `validarParaLiquidacion` es la función que ese módulo debe
-// llamar antes de emitir expensas — un edificio con Σ≠1 no liquida.
+// suma de forma INFORMATIVA (`estadoCoeficientes`, con tolerancia), para que
+// la UI muestre la alerta "faltan/sobran X" en vez de un 422. Motivo: durante
+// el data entry los porcentajes reales no están definidos hasta terminar de
+// cargar el 100% del edificio, y bloquear la carga no aportaba nada.
+//
+// El gate DURO se movió a la liquidación (S3): `validarParaLiquidacion` es la
+// función que ese módulo debe llamar antes de emitir expensas. Decisión de
+// producto (2026-07-29): en ese momento la suma debe ser EXACTA = 1.000000,
+// sin tolerancia — los porcentajes de reparto deben sumar el 100% del gasto
+// al centavo. La tolerancia de ±0.000001 queda solo para el estado
+// informativo de la UI (`cuadra`).
 //
 // Los montos y coeficientes se calculan SIEMPRE con decimal.js (motor
 // determinístico, PRD-02-05) y se serializan como strings de 6 decimales.
@@ -40,14 +47,17 @@ export function estadoCoeficientes(suma) {
 }
 
 // Gate duro de la liquidación (S3): un edificio cuyos coeficientes no cierran
-// en 1.000000 no puede liquidar (los porcentajes de reparto no sumarían el
-// 100% del gasto). Recibe los coeficientes de TODAS las unidades del edificio
-// y devuelve `{ ok }` + el estado; el llamador decide el código de error
-// (`COEFICIENTES_NO_CUADRAN`, 422) con `mensajeCoeficientes` para el detalle.
+// EXACTOS en 1.000000 no puede liquidar (los porcentajes de reparto no
+// sumarían el 100% del gasto). A diferencia del estado informativo, acá no
+// hay tolerancia: `ok` exige igualdad exacta. Recibe los coeficientes de
+// TODAS las unidades del edificio y devuelve `{ ok }` + el estado (el campo
+// `cuadra` sigue siendo el veredicto informativo con tolerancia); el llamador
+// decide el código de error (`COEFICIENTES_NO_CUADRAN`, 422) con
+// `mensajeCoeficientes` para el detalle.
 export function validarParaLiquidacion(valores) {
   const suma = sumarCoeficientes(valores);
   const estado = estadoCoeficientes(suma);
-  return { ok: estado.cuadra, ...estado };
+  return { ok: suma.eq(OBJETIVO), ...estado };
 }
 
 // Mensaje humano de la invariante (usado por el 422 del gate de liquidación y

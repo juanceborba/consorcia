@@ -62,6 +62,16 @@ describe('coeficientes (servicio)', () => {
     assert.equal(r.delta, '0.550000');
   });
 
+  // Decisión 2026-07-29: el gate de liquidación es EXACTO (sin tolerancia),
+  // aunque el estado informativo de la UI siga usando ±0.000001.
+  it('validarParaLiquidacion es exacta: dentro de la tolerancia informativa NO alcanza', () => {
+    for (const valores of [['0.999999'], ['1.000001']]) {
+      const r = validarParaLiquidacion(valores);
+      assert.equal(r.ok, false);
+      assert.equal(r.cuadra, true); // la UI lo muestra como "cuadrado"
+    }
+  });
+
   it('el body de error del gate mantiene el contrato { error: { code, message } }', () => {
     const body = errorCoeficientes(sumarCoeficientes(['0.880000']));
     assert.equal(body.error.code, 'COEFICIENTES_NO_CUADRAN');
