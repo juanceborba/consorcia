@@ -188,11 +188,17 @@ const gastoSchema = z.object({
 //   rubro hoja activo y visible); 422 si falta proveedorId/rubroId.
 
 // GET /api/edificios/:edificioId/gastos — Listar gastos (paginado, orden fechaGasto desc)
-//   Filtros: ?periodo=&categoria=&esOrdinario=&proveedorId=&rubroId=&desde=&hasta=&page=&limit=
+//   Filtros: ?periodo=&categoria=&esOrdinario=&proveedorId=&rubroId=&createdBy=
+//            &desde=&hasta=&q=&page=&limit=
 //   Respuesta: { data: [...], pagination: { page, limit, total, totalPages },
-//                totales: { cantidad, monto } }  ← totales del filtro completo (S3-02)
+//                totales: { cantidad, monto,
+//                           ordinarios:      { cantidad, monto },
+//                           extraordinarios: { cantidad, monto } } }
+//                ← todo del filtro completo, no de la página (S3-02 / S3-08b)
 //   Cada fila trae `editable` (false si el gasto está en una liquidación
 //   APROBADA/ENVIADA/COBRADA): la UI apaga sus acciones sin pedir el detalle (S3-08).
+//   Cada fila trae `creadoPor: { id, nombre, apellido } | null` — resuelto en una
+//   query por página, porque `createdBy` es un String sin relación Prisma (S3-08b).
 
 // GET /api/gastos/:id — Detalle (incluye liquidaciones asociadas) → 404 si no existe
 
@@ -280,6 +286,15 @@ Las agregaciones se calculan **server-side con Prisma `groupBy` + decimal.js** (
 > |---|---|---|---|
 > | `components/gastos/GastoFormDialog.jsx` | — | idem | Alta y edición en un solo diálogo (POST `/api/edificios/:id/gastos` vs PUT `/api/gastos/:id`), RHF + Zod con el espejo del schema del backend en `lib/gasto-schema.js`. `ProveedorSelect` y `RubroSelect` entran por `Controller`. El `422 PROVEEDOR_INVALIDO` / `RUBRO_INVALIDO` se muestra **inline en su selector**, y el `VALIDACION_FALLIDA` se rutea al campo cuando el mensaje del backend viene prefijado (`"monto: …"`) |
 > | `pages/edificio/EdificioGastosTab.jsx` | `RequireStaff` | idem | El tab de S3-07 suma botón "Nuevo gasto", acciones de fila (editar / eliminar con `ConfirmDialog`) y el acceso a ayuda del topic `gastos/carga`. Solo para org_admin: `gasto.yaml` le da al gestor únicamente `read` |
+>
+> **Mejoras del listado (S3-08b), sobre el mockup de §4.1:**
+>
+> - **Columnas:** concepto · proveedor · monto · categoría · tipo · **fecha (dd-mm)** · **cargado por** · período. La fecha se muestra sin año (el filtro de período ya lo fija) con la fecha completa en el `title`; "cargado por" abrevia el nombre ("María R.") con el completo en el `title`.
+> - **Un filtro por columna, en la cabecera de su columna**, no en una barra suelta: concepto (`?q=` con debounce de 300 ms), proveedor (reusa el combobox `ProveedorSelect`, sin alta inline), categoría, tipo, rango de fecha (`?desde=&hasta=`), cargado por (`?createdBy=`) y período. Todos siguen viviendo en la URL (decisión 2 del archivo). La columna monto queda sin filtro a propósito: el endpoint no lo tiene. Con filtros que no matchean, la tabla conserva su cabecera —que ES el filtro— y el vacío se explica en una fila, en vez de esconder los controles que hay que corregir.
+> - **Totalizador arriba de la lista, segmentado en total / ordinarios / extraordinarios** (`totales` del backend sobre el mismo filtro, así que siempre reconcilian). La distinción es del dominio: ordinarias y extraordinarias se liquidan y se leen por separado ([[PRD-04-03 Liquidación de Expensas]]). Es el antecesor de los KPI cards de S3-16, que reemplazan este bloque cuando el tab pase a dashboard.
+> - **El filtro "Cargado por" solo lo ve el org_admin** (su combo sale de `/api/organizaciones/me/usuarios`, que al gestor le responde 403); la **columna** la ve todo el staff.
+> - **La columna de acciones queda fija al borde derecho** (`sticky right-0`): con nueve columnas y la fila de filtros, la tabla scrollea horizontalmente en pantallas de ~1280 px y el menú de la fila era lo primero que quedaba fuera de vista.
+> - **Fix de S3-14 encontrado acá:** `RubroSelect` deshacía la cascada cuando el `rubroId` llegaba precargado (rubro habitual del proveedor o edición de un gasto) — elegir un rubro con subrubros emitía `''` y el efecto de sincronización reseteaba el primer select. Ahora ignora los cambios que emitió el propio control.
 >
 > Divergencias con este PRD, decididas en S3-08:
 >
