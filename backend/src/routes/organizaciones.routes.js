@@ -3,6 +3,8 @@
 //   GET   /api/organizaciones/me  → { id, nombre, cuit, plan, matriculaRPA }
 //   PATCH /api/organizaciones/me  → actualiza nombre/matriculaRPA (solo org_admin)
 //
+// El staff de la organización (`/me/usuarios`, S4-03) vive en staff.routes.js.
+//
 // La organización se resuelve SIEMPRE desde el JWT (tenant.middleware); el
 // permiso read/update lo decide Cerbos (PRD-05-04 §3.2: org_admin full,
 // gestor solo lectura).
@@ -14,8 +16,13 @@ import { requireAuth } from '../middleware/auth.middleware.js';
 import { tenant } from '../middleware/tenant.middleware.js';
 import { autorizar } from '../middleware/rbac.middleware.js';
 import { validarBody } from '../middleware/validation.middleware.js';
+import staffRoutes from './staff.routes.js';
 
 const router = Router();
+
+// Staff de la organización (S4-03). Va antes de las rutas `/me` para que el
+// prefijo más específico gane.
+router.use('/me/usuarios', staffRoutes);
 
 // Recurso Cerbos: la organización del propio usuario
 const organizacionPropia = (req) => ({

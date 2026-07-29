@@ -11,7 +11,7 @@
   - _Depende de: nada (S3 no toca auth). **Ojo:** es breaking para tests S1/S2 — ajustarlos._
 - [x] **S4-02 Modelo Invitación + endpoints.** Modelo `Invitacion` (PRD-04-11 §2.3) + migración. `GET /api/invitaciones/:token` (público, email enmascarado) y `POST /api/invitaciones/:token/aceptar` (define password, activa, loguea). 410 `INVITACION_INVALIDA`, un solo uso, expira 7 días.
   - _Depende de: S4-01._
-- [ ] **S4-03 Endpoints staff (Workflow A).** `GET/POST /api/organizaciones/me/usuarios`, `PATCH /api/organizaciones/me/usuarios/:id` (rol, edificios de gestor, activar/desactivar). Alta por email: usuario nuevo → crea Usuario + membresía + invitación; existente → solo membresía + invitación. Respuesta incluye `invitacionUrl` (MVP sin envío de email — link para copiar; el envío queda encapsulado para AgentMail post-beta). Guard: no desactivar al último org_admin (422 `ULTIMO_ORG_ADMIN`).
+- [x] **S4-03 Endpoints staff (Workflow A).** `GET/POST /api/organizaciones/me/usuarios`, `PATCH /api/organizaciones/me/usuarios/:id` (rol, edificios de gestor, activar/desactivar). Alta por email: usuario nuevo → crea Usuario + membresía + invitación; existente → solo membresía + invitación. Respuesta incluye `invitacionUrl` (MVP sin envío de email — link para copiar; el envío queda encapsulado para AgentMail post-beta). Guard: no desactivar al último org_admin (422 `ULTIMO_ORG_ADMIN`).
   - _Depende de: S4-02._
 - [ ] **S4-04 Endpoints residentes (Workflow B).** `GET/POST /api/unidades/:id/residentes`, `DELETE /api/unidades/:id/residentes/:vinculoId` (fechaFin, no borrado físico). Mismo patrón email-nuevo/existente; 409 `VINCULO_DUPLICADO`. Cerbos: org_admin y gestor asignado.
   - _Depende de: S4-02._

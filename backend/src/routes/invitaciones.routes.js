@@ -22,13 +22,13 @@ import { emitirSesion, normalizarEmail } from '../services/auth.service.js';
 
 const router = Router();
 
-// Días de validez del link (PRD-04-11 §2.3). Exportado para que los endpoints
-// de alta (S4-03/04) y los tests usen la misma fuente.
-export const DIAS_VALIDEZ_INVITACION = 7;
-
-export function calcularExpiracion(desde = new Date()) {
-  return new Date(desde.getTime() + DIAS_VALIDEZ_INVITACION * 24 * 60 * 60 * 1000);
-}
+// La validez del link y el armado de la URL viven en el service compartido con
+// los endpoints de alta (S4-03/04). Se re-exportan por compatibilidad con los
+// importadores que ya apuntaban a esta ruta.
+export {
+  DIAS_VALIDEZ_INVITACION,
+  calcularExpiracion,
+} from '../services/invitaciones.service.js';
 
 // ---------------------------------------------------------------------------
 // Schemas Zod
