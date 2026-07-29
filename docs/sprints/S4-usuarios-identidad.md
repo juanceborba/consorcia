@@ -17,7 +17,7 @@
   - _Depende de: S4-02._
 - [x] **S4-05 Cambio de organización activa.** `POST /api/auth/cambiar-organizacion` — valida membresía activa (403 `SIN_MEMBRESIA`) y re-emite JWT + refresh con la org elegida.
   - _Depende de: S4-01._
-- [ ] **S4-06 Tests de API del slice.** Register con email existente → 422; invitar staff nuevo y existente; aceptar invitación (feliz, token inválido, segundo uso → 410); residente multi-org (mismo email en 2 orgs, un solo Usuario en DB); switch de org; gestor invita en edificio no asignado → 403; org B no lista staff de org A. Limpiar datos creados.
+- [x] **S4-06 Tests de API del slice.** Register con email existente → 422; invitar staff nuevo y existente; aceptar invitación (feliz, token inválido, segundo uso → 410); residente multi-org (mismo email en 2 orgs, un solo Usuario en DB); switch de org; gestor invita en edificio no asignado → 403; org B no lista staff de org A. Limpiar datos creados.
   - _Depende de: S4-03, S4-04, S4-05._
 
 ## Frontend
