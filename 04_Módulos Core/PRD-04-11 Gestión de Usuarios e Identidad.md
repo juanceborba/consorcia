@@ -145,7 +145,7 @@ Gestión posterior (misma pantalla): listar staff, cambiar rol, editar edificios
 | `GET /api/invitaciones/:token` | público | Datos de la invitación (email enmascarado, org, tipo) para la pantalla de aceptación |
 | `POST /api/invitaciones/:token/aceptar` | público | Define password, activa cuenta, loguea → 200 { accessToken, refreshToken, user } |
 
-Errores del contrato `{ error: { code, message } }`. Códigos nuevos: `EMAIL_YA_REGISTRADO` (422), `INVITACION_INVALIDA` (410, expirada/usada/inexistente), `INVITACION_PENDIENTE` (409, ya hay una pendiente — sugiere reenviar), `VINCULO_DUPLICADO` (409, esa persona ya está en esa UF), `SIN_MEMBRESIA` (403, cambiar-organizacion a org ajena o membresía desactivada), `SIN_ORGANIZACION_ACTIVA` (403, sesión sin org activa — residente puro contra el backoffice), `INVITACION_INCONSISTENTE` (422, el payload de la invitación no valida o su unidad ya no existe: hay que reenviarla).
+Errores del contrato `{ error: { code, message } }`. Códigos nuevos: `EMAIL_YA_REGISTRADO` (422), `INVITACION_INVALIDA` (410, expirada/usada/inexistente), `INVITACION_PENDIENTE` (409, ya hay una pendiente — sugiere reenviar), `VINCULO_DUPLICADO` (409, esa persona ya está en esa UF), `SIN_MEMBRESIA` (403, cambiar-organizacion a org ajena o membresía desactivada), `SIN_ORGANIZACION_ACTIVA` (403, sesión sin org activa — residente puro contra el backoffice), `INVITACION_INCONSISTENTE` (422, el payload de la invitación no valida o su unidad ya no existe: hay que reenviarla), `EDIFICIO_INVALIDO` (422, alguno de los `edificioIds` no existe, está dado de baja o es de otra organización), `ULTIMO_ORG_ADMIN` (422, ver §9), `USUARIO_NO_ENCONTRADO` (404, el `:id` del PATCH no es miembro de la organización del JWT).
 
 **Implementado en S4-02** (`src/routes/invitaciones.routes.js`):
 
@@ -155,6 +155,16 @@ Errores del contrato `{ error: { code, message } }`. Códigos nuevos: `EMAIL_YA_
 - **La password solo se define si el Usuario no tenía**: a una persona ya activada la invitación le suma vínculos sin resetear sus credenciales (§4.3 "mismo login, sin password nuevo"). Quien tenga el link de una persona ya registrada no puede tomarle la cuenta.
 - Un residente puro sale de `aceptar` con `org_id: null` y roles derivados de sus `UnidadUsuario` vigentes (§5.5); el backoffice le responde 403 `SIN_ORGANIZACION_ACTIVA`.
 - `usuarios.password_hash` pasa a nullable para admitir cuentas creadas por backoffice sin activar; el login las rechaza con el mismo 401 `CREDENCIALES_INVALIDAS` (sin oráculo).
+
+**Implementado en S4-03** (`src/routes/staff.routes.js`, montado en `/api/organizaciones/me/usuarios`):
+
+- El `:id` del PATCH es el **`usuarioId`** (identidad global), no el id de la membresía: es lo que la UI tiene a mano y lo que identifica a la persona. La membresía se resuelve por `(organizacionId del JWT, usuarioId)`, así que un usuario de otra organización responde 404 `USUARIO_NO_ENCONTRADO` sin filtrar que exista.
+- El alta deja la **membresía activa de entrada** (§4.3): quien ya tenía cuenta entra sin esperar el link; para el Usuario recién creado (sin password) la invitación es lo que le da acceso. Aceptar la invitación es idempotente sobre esos vínculos.
+- **Orden de los conflictos:** la invitación pendiente manda sobre el vínculo. Un segundo POST al mismo email responde 409 `INVITACION_PENDIENTE`, y **`{ reenviar: true }` regenera token + expiración + payload de la misma fila** y devuelve **200** (no 201: no se creó un recurso). 409 `VINCULO_DUPLICADO` queda para el caso "ya es miembro activo y no hay invitación pendiente", o sea alguien ya onboardeado. Chequear el vínculo primero volvería `INVITACION_PENDIENTE` inalcanzable (la membresía nace activa) y dejaría al admin sin forma de reenviar el link a quien no entró todavía — que es el caso frecuente.
+- `edificioIds` solo aplica a `GESTOR` (un `ORG_ADMIN` con edificios → 422 `VALIDACION_FALLIDA`); un gestor **sin** edificios es válido (§9). El PATCH **reemplaza** el set (no acumula) y solo toca las asignaciones de edificios de esta organización: si la persona gestiona edificios de otra org con el mismo Usuario global, esos vínculos no se tocan. Promover a `ORG_ADMIN` limpia sus asignaciones por edificio (administra toda la org, no significan nada).
+- El guard `ULTIMO_ORG_ADMIN` cubre **desactivar y degradar**, y corre bajo `SELECT ... FOR UPDATE` de la fila de la organización: dos PATCH concurrentes degradando a los dos últimos admins no pueden dejar la org sin ninguno.
+- El envío está encapsulado en `src/services/notificaciones.service.js` (stub): la respuesta trae `invitacionUrl` + `emailEnviado: false` y sumar AgentMail no toca las rutas. La URL se arma con `APP_BASE_URL` (base pública de la SPA), nunca con la de la API.
+- Cerbos: recurso **`staff`** (`cerbos/policies/staff.yaml`), el recurso es la organización misma. Solo `superadmin` y `org_admin` de su propia org; el gestor no tiene ni lectura de la nómina (§3: "no crea edificios ni usuarios").
 
 ---
 
