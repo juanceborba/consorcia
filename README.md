@@ -22,19 +22,23 @@ make db-seed     # datos demo del seed (prisma/seed.js)
 
 ### Credenciales demo
 
-Password de todos los usuarios del seed: `demo1234`.
+Password de todos los usuarios activados del seed: `demo1234`. El seed cubre los 7 casos de PRD-04-11 §10 (dos organizaciones, staff, residente multi-consorcio, invitación pendiente); el detalle completo está en `AGENTS.md` → "Credenciales demo (seed)".
 
 | Usuario | Rol | Alcance |
 |---------|-----|---------|
-| `admin@demo.com` | `org_admin` | Los 2 edificios (Torre Palermo, Edificio San Martín) |
-| `gestor@demo.com` | `gestor` | Solo Torre Palermo |
+| `admin@demo.com` | `org_admin` | Org A: los 2 edificios (Torre Palermo, Edificio San Martín) |
+| `gestor@demo.com` | `gestor` | Org A: solo Torre Palermo |
+| `gestor2@demo.com` | `gestor` | Org A: ambos edificios |
+| `admin.sur@demo.com` | `org_admin` | Org B ("Administración Sur S.R.L."): Edificio Lomas |
+| `multiconsorcio@demo.com` | `propietario` | Una UF en Org A y otra en Org B, con **un solo login** |
+| `invitado@demo.com` | `gestor` | Invitación PENDIENTE: sin password hasta abrir `/invitacion/seed-invitacion-pendiente` |
 
-También hay 3 propietarios, 1 inquilino y 1 encargado (`propietario1..3@demo.com`, `inquilino@demo.com`, `encargado@demo.com`).
+También hay 3 propietarios más, 1 inquilino y 1 encargado (`propietario1..3@demo.com`, `propietario.sur@demo.com`, `inquilino@demo.com`, `encargado@demo.com`). Los residentes **no** tienen membresía de organización: solo vínculo a su unidad.
 
 ### Verificación (smoke y tests)
 
 ```bash
-make smoke   # smoke E2E con curl (31 chequeos, S1+S2): health → login → edificios → alta con unidades → refresh → logout
+make smoke   # smoke E2E con curl (86 chequeos, S1+S2+S4): health → login → edificios → alta con unidades → invitaciones/staff/residentes → casos del seed multi-caso → refresh → logout
 make test    # tests de API del backend (node --test, dentro del contenedor)
 ```
 

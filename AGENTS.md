@@ -8,6 +8,7 @@ Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas 
 
 - **S1 cerrado** (2026-07-28): stack + auth JWT + Cerbos + edificios read + portal shell. Ver `docs/sprints/S1-fundacion.md`.
 - **S2 cerrado** (2026-07-28): edificios y unidades (CRUD + invariante de coeficientes, alta bulk con feedback inline, E2E + smoke). Ver `docs/sprints/S2-edificios-unidades.md`.
+- **S4 cerrado** (2026-07-29): usuarios e identidad global (alta de staff por backoffice, residentes por invitación, switch de organización, seed multi-caso). Ver `docs/sprints/S4-usuarios-identidad.md`.
 - **S3 listo para arrancar**: gastos + motor contable (liquidación, recibos PDF/QR Ley 941). Backlog: `docs/sprints/S3-gastos-liquidacion.md`. Issues en GitHub con milestone "S3".
 - Roadmap completo (S1→S6, slices verticales): `docs/ROADMAP.md`.
 
@@ -15,14 +16,15 @@ Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas 
 
 1. **NUNCA `npm install` en el host (macOS).** `node_modules` es un volumen Docker anónimo. Instalaciones SIEMPRE dentro del contenedor: `docker exec consorcIA-backend npm install <pkg>` (o `consorcIA-frontend`).
 2. **NUNCA resetear la DB** (`prisma migrate reset`, `down-volumes`) sin confirmación explícita del usuario. El seed es re-ejecutable: `make db-seed`.
-3. **Stack dockerizado primero:** `make up` levanta todo; `make health` verifica; `make smoke` corre 18 chequeos end-to-end. Antes de commitear backend: `docker exec consorcIA-backend npm test` en verde.
+3. **Stack dockerizado primero:** `make up` levanta todo; `make health` verifica; `make smoke` corre 86 chequeos end-to-end. Antes de commitear backend: `docker exec consorcIA-backend npm test` en verde.
    - **Gate automático:** el workflow `.github/workflows/ci.yml` corre los tests del backend + build del frontend en cada push a main y cada PR. Si el CI falla, el trabajo no está terminado — arreglarlo es prioridad sobre cualquier tarea nueva.
 4. **Sin git push sin permiso del usuario.** Commits locales con mensajes en español estilo conventional commits (`feat(s2): ...`).
 
 ## Modelo de dominio canónico (no negociable)
 
 - **Jerarquía:** `Organización → Edificio → Unidad → Usuario`. La **organización es el tenant raíz**: toda query scopea `organizacion_id` (+ `edificio_id` como segundo nivel). **No existe `tenant_id`** (modelo viejo, eliminado).
-- **Roles (set único):** `superadmin`, `org_admin`, `gestor` (nivel organización) / `consejo`, `propietario`, `inquilino`, `encargado`, `proveedor` (nivel edificio).
+- **EXCEPCIÓN documentada — la identidad es global** (S4-01, PRD-04-11 §2): el `Usuario` **no cuelga de la organización**. Su email es único en todo el sistema (lowercase) y no tiene `organizacionId` ni `rol`; una persona = un login = N unidades en N consorcios de N administraciones. Lo que sí está scopeado son los **vínculos**: `OrganizacionUsuario` (staff, con `activo` para la baja lógica), `GestorEdificio` (edificios de un gestor, filtrados por org al leerlos) e `UnidadUsuario` (residente). Consecuencias que hay que respetar al escribir código: nunca buscar un usuario "dentro de" una organización, la org activa de la sesión sale de la membresía (no del usuario), un residente puro **no tiene org activa** (`organizacionId: null`) y borrar una organización no borra a sus personas.
+- **Roles (set único):** `superadmin`, `org_admin`, `gestor` (nivel organización) / `consejo`, `propietario`, `inquilino`, `encargado`, `proveedor` (nivel edificio). Los roles de organización viven en `OrganizacionUsuario.rol` (solo `ORG_ADMIN`/`GESTOR` son staff); los de residente se derivan de `UnidadUsuario` — un residente **nunca** lleva membresía de organización.
 - **Motor contable determinístico:** montos SIEMPRE con decimal.js en el backend. Los LLMs interpretan/explican, jamás calculan.
 - **Auth:** JWT access 15 min (claims `sub, email, org_id, roles, edificios_asignados`) + refresh opaco en Redis 7 días con rotación. Autorización: Cerbos PDP (`cerbos/policies/`), fail-closed.
 
@@ -39,7 +41,25 @@ Si el código diverge de un PRD (puertos, endpoints, schema, roles), **actualiz�
 
 ## Credenciales demo (seed)
 
-`admin@demo.com` / `demo1234` (org_admin, 2 edificios) · `gestor@demo.com` / `demo1234` (gestor, solo Torre Palermo).
+Password de **todos** los usuarios activados: `demo1234`. Reseed idempotente: `make db-seed` (o `docker exec consorcIA-backend node prisma/seed.js`). El seed borra y recrea las dos organizaciones demo por CUIT, limpia el residuo de los specs E2E (`e2e-staff-*`, `e2e-residente-*`) y desactiva las membresías de los usuarios demo en organizaciones ajenas al seed. **Nunca** hace `prisma migrate reset`.
+
+Cubre los 7 casos de PRD-04-11 §10:
+
+| # | Caso | Email | Vínculos |
+|---|------|-------|----------|
+| 1 | org_admin de Org A | `admin@demo.com` | staff ORG_ADMIN · ve los 2 edificios |
+| 1 | gestor limitado | `gestor@demo.com` | staff GESTOR · solo Torre Palermo |
+| 2 | staff adicional | `gestor2@demo.com` | staff GESTOR · Torre Palermo + Edificio San Martín |
+| 3 | org_admin de Org B | `admin.sur@demo.com` | staff ORG_ADMIN de "Administración Sur S.R.L." · Edificio Lomas |
+| 4 | residente multi-consorcio | `multiconsorcio@demo.com` | **un solo Usuario**: propietario de Torre Palermo 2A (Org A) y Lomas 1A (Org B) |
+| 5 | inquilino simple | `inquilino@demo.com` | inquilino de Torre Palermo 1A |
+| 6 | propietario multi-UF | `propietario2@demo.com` | propietario de Torre Palermo 3B **y** 4B |
+| 7 | invitación pendiente | `invitado@demo.com` | staff GESTOR (San Martín) **sin activar**: no tiene password, no puede loguear |
+
+Resto de residentes (solo `UnidadUsuario`, sin membresía staff): `propietario1@demo.com` (Torre Palermo PB), `propietario3@demo.com` (San Martín PB), `propietario.sur@demo.com` (Lomas PB). `encargado@demo.com` existe como identidad **sin vínculos** (el rol ENCARGADO es de scope edificio y todavía no tiene modelo; loguea pero Cerbos le niega todo).
+
+- **Organizaciones:** Org A "Administración Demo S.A." (CUIT `30-71234567-8`, 2 edificios / 20 UFs) · Org B "Administración Sur S.R.L." (CUIT `30-71234569-4`, 1 edificio / 5 UFs).
+- **Invitación pendiente (caso 7):** token fijo → `http://localhost:5173/invitacion/seed-invitacion-pendiente`. Aceptarla define la password de `invitado@demo.com` y la consume; el reseed la vuelve a dejar pendiente.
 
 ## Estructura
 

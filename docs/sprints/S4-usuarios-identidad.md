@@ -31,7 +31,8 @@
 
 ## Cierre
 
-- [ ] **S4-10 Seed multi-caso + smoke + docs.** Seed con los 7 casos de PRD-04-11 §10 (2 gestores, Org B con edificio+UFs, residente multi-consorcio, inquilino simple, propietario multi-UF, invitación pendiente) — credenciales documentadas en AGENTS.md. Extender `scripts/smoke.sh` (invitar staff + aceptar invitación + switch org). Actualizar AGENTS.md (identidad global como excepción al "todo cuelga de la organización"), PRD-07-03 (rutas nuevas) y checkboxes. `npm test` en verde (S1–S4).
+- [x] **S4-10 Seed multi-caso + smoke + docs.** Seed con los 7 casos de PRD-04-11 §10 (2 gestores, Org B con edificio+UFs, residente multi-consorcio, inquilino simple, propietario multi-UF, invitación pendiente) — credenciales documentadas en AGENTS.md. Extender `scripts/smoke.sh` (invitar staff + aceptar invitación + switch org). Actualizar AGENTS.md (identidad global como excepción al "todo cuelga de la organización"), PRD-07-03 (rutas nuevas) y checkboxes. `npm test` en verde (S1–S4).
+  - _Hecho: seed con 2 organizaciones (Org B "Administración Sur S.R.L." + Edificio Lomas), residentes SIN membresía staff, invitación pendiente con token fijo `seed-invitacion-pendiente`, limpieza del residuo E2E y desactivación de membresías ajenas → idempotente. Smoke §3.8 con 26 pasos nuevos (86 en total). AGENTS.md con la identidad global como excepción documentada + tabla de credenciales; README sincronizado._
   - _Depende de: S4-06, S4-08, S4-09._
 
 ## Dependencias entre tareas
@@ -53,3 +54,5 @@ S4-01 ──► S4-02 ──► S4-03 ──┬─► S4-06 ──────�
 - La misma persona (un email) es propietaria en Org A y Org B → **un solo Usuario** en la DB y un solo login que ve ambas UFs.
 - Staff con 2 membresías → selector de organización en el header cambia el contexto sin re-login.
 - Tests de aislamiento cross-org en verde; seed con los 7 casos documentado en AGENTS.md.
+
+**Sprint cerrado (2026-07-29).** Gates: `npm test` 75/75 · `npm run build` OK · `make smoke` 86/86 · Playwright 7/7.
