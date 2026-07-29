@@ -55,13 +55,11 @@ outcomes:
 │   │   └── /:id              (AdminLayout)    → EdificioDetailPage
 │   │       ├── /overview     (AdminLayout)    → EdificioOverviewTab
 │   │       ├── /unidades     (AdminLayout)    → EdificioUnidadesTab
+│   │       ├── /gastos       (AdminLayout)    → EdificioGastosTab
 │   │       ├── /usuarios     (AdminLayout)    → EdificioUsuariosTab
 │   │       └── /configuracion (AdminLayout)    → EdificioConfigTab
 │   │
-│   ├── /gastos               (AdminLayout)    → GastosListPage
-│   │   ├── /nuevo            (AdminLayout)    → GastoCreatePage
-│   │   └── /:id              (AdminLayout)    → GastoDetailPage
-│   │       └── /editar       (AdminLayout)    → GastoEditPage
+│   ├── /gastos               (AdminLayout)    → GastosListPage (consolidado, Business+)
 │   │
 │   ├── /liquidaciones        (AdminLayout)    → LiquidacionesListPage
 │   │   ├── /nuevo            (AdminLayout)    → LiquidacionCreatePage
@@ -121,6 +119,8 @@ outcomes:
 
 > **Implementado (S2-07):** el detalle de edificio usa tabs como rutas hijas (`/edificios/:id/overview|unidades|configuracion`); `/edificios/:id` a secas **redirige a `/unidades`** (tab default, ver backlog S2). El tab `usuarios` aún no existe (llega con gestión de usuarios del edificio). El formulario de alta (S2-06) vive en `/edificios/nuevo` y redirige al detalle del edificio creado.
 
+> **Gastos vive como tab del edificio (S3-07).** La lista de gastos es `/edificios/:id/gastos` (`EdificioGastosTab`), no la sección top-level `/gastos` que este documento planteaba con `/nuevo` y `/:id/editar`: [[PRD-04-02 Gestor de Gastos]] §3 define el módulo como "el tab `gastos` del detalle de edificio" y el endpoint está scopeado por edificio (`GET /api/edificios/:id/gastos`). El alta y la edición son modal/inline dentro del tab (S3-08), así que `/gastos/nuevo`, `/gastos/:id` y `/gastos/:id/editar` **no existen**. `/gastos` a nivel top-level queda reservado para la vista **consolidada** de la organización (todos los edificios), que es Business+ y llega con el dashboard de gastos (S3-16); hasta entonces la entrada `Gastos` del sidebar apunta al tab del edificio de trabajo del header y se deshabilita si no hay ninguno seleccionado. Los filtros de la lista van en query params, como fija §2.2 (`?periodo=2026-07&categoria=A&tipo=extraordinario&page=2`).
+
 > **Implementado (S4-07/08/09):** rutas del slice de usuarios e identidad ([[PRD-04-11 Gestión de Usuarios e Identidad]] §8).
 >
 > | Ruta | Guard | Página | Notas |
@@ -134,6 +134,15 @@ outcomes:
 > - El **selector de organización** vive en el header del `AppLayout` (`components/layout/OrganizacionSelector.jsx`), no en una ruta: cambia el contexto del tenant con `POST /api/auth/cambiar-organizacion` + `queryClient.clear()` + redirect a `/`. Solo se muestra con **más de una** membresía activa (`user.organizaciones`, que viene en el DTO de usuario de todas las respuestas de auth); un residente puro no lo ve nunca.
 > - `/configuracion` **no tiene página propia todavía** (las tabs perfil/edificio/notificaciones/planes de §2.1 llegan más adelante): `usuarios` es su primera ruta hija y el breadcrumb del segmento intermedio va sin href.
 > - "Usuarios" entra al sidebar como módulo de primer nivel (no anidado bajo Configuración) porque es la única entrada de configuración que existe; se reacomoda cuando lleguen las demás.
+> **Implementado (S3-14):** configuración de la organización que alimenta la carga de gastos ([[PRD-04-02 Gestor de Gastos]] §1.3/§1.4).
+>
+> | Ruta | Guard | Página | Notas |
+> |------|-------|--------|-------|
+> | `/configuracion/proveedores` | `RequireStaff` | `pages/configuracion/ProveedoresPage.jsx` | Directorio híbrido (globales de plataforma + propios de la org) |
+> | `/configuracion/rubros` | `RequireStaff` | `pages/configuracion/RubrosPage.jsx` | Árbol de 2 niveles: maestro de plataforma + overrides de visibilidad + propios |
+>
+> A diferencia de `/configuracion/usuarios`, estas dos **no** llevan `RequireRole org_admin`: las policies `proveedor.yaml` y `rubro.yaml` le dan **read** al gestor (lo necesita para cargar gastos), así que la pantalla le responde 200 y lo que se le oculta son las acciones de escritura. Entran al sidebar como módulos de primer nivel ("Proveedores", "Rubros"), por el mismo motivo que "Usuarios": todavía no existe una pantalla `/configuracion` con tabs que las agrupe.
+>
 > - Las páginas de residentes de una UF **no son rutas**: el panel "Residentes" es un `Drawer` que se abre desde la fila de la DataTable de unidades (PRD-04-11 §5: "desde la unidad → fila → Residentes"), sin URL propia.
 
 | Regla | Ejemplo | Descripcion |

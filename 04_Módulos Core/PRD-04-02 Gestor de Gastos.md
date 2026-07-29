@@ -255,6 +255,24 @@ Las agregaciones se calculan **server-side con Prisma `groupBy` + decimal.js** (
 
 ## 4. Frontend: Pantallas
 
+> **Implementado (S3-14):** administración del directorio de proveedores (§1.3) y del árbol de rubros (§1.4), más los dos selectores que el formulario de carga (§4.2) va a consumir en S3-08.
+>
+> | Ruta / componente | Guard | Archivo | Notas |
+> |---|---|---|---|
+> | `/configuracion/proveedores` | `RequireStaff` | `pages/configuracion/ProveedoresPage.jsx` | DataTable con badge **Global/Propio**, buscador `?q=` contra el backend (razón social y CUIT, debounce 300 ms), toggle "Mostrar desactivados", paginación de 25. Alta/edición en `ProveedorFormDialog.jsx` (reusado por el alta inline del selector). El `409 CUIT_DUPLICADO` y el `422 RUBRO_INVALIDO` se muestran **inline en su campo**, no en un toast |
+> | `/configuracion/rubros` | `RequireStaff` | `pages/configuracion/RubrosPage.jsx` | Árbol de 2 niveles (no DataTable: la jerarquía es el dato). Un solo control de visibilidad por fila con **dos endpoints detrás** — `PUT /:id/visibilidad` para el maestro, `PUT /:id { activo }` para los propios: para el usuario el efecto es el mismo ("aparece al cargar un gasto") y exponer la diferencia filtraría la implementación. Alta/edición en `RubroFormDialog.jsx` |
+> | `components/gastos/ProveedorSelect.jsx` | — | idem | Combobox con búsqueda **del servidor** (`filter={null}`: el `?q=` ya filtró por CUIT y volver a filtrar en el cliente esconde coincidencias) + **alta inline** que deja el proveedor nuevo seleccionado. Controlado por `value`/`onChange`, apto para `Controller` de RHF |
+> | `components/gastos/RubroSelect.jsx` | — | idem | Cascada rubro → subrubro con dos `<select>` nativos. Elegir un rubro **con** subrubros no fija el `rubroId` (el gasto apunta siempre a una hoja, §1.1); un rubro sin hijos lo fija directo y el segundo select no se muestra |
+> | `components/ui/combobox.jsx` | — | idem | Primer combobox de la app: wrapper de estilos sobre `Combobox` de Base UI |
+>
+> Divergencias con este PRD, decididas en S3-14:
+>
+> - **Rutas nuevas, no previstas en [[PRD-07-03 Rutas y Navegacion]] §2.1.** Proveedores y rubros son configuración de la **organización**, no de un edificio, así que no cuelgan del detalle de edificio. Entran al sidebar como módulos de primer nivel (mismo criterio que "Usuarios" en S4-07) y se reacomodan cuando exista una pantalla `/configuracion` con tabs.
+> - **No van detrás de `RequireRole org_admin`,** a diferencia de `/configuracion/usuarios`: las policies `proveedor.yaml` y `rubro.yaml` le dan **read** al gestor, que lo necesita para cargar gastos. El guard es `RequireStaff` y lo que se oculta al gestor son las acciones de escritura.
+> - **La baja se comunica como "dar de baja", no como "eliminar".** El backend decide: sin gastos borra, con gastos degrada a `activo=false` (Ley 941). El copy del `ConfirmDialog` lo anticipa y el toast dice qué pasó realmente, en vez de prometer un borrado que puede no ocurrir.
+> - **La ayuda contextual** (§6.5 de [[PRD-07-02 Diseño de Componentes]]) agrega los topics `gastos/proveedores` y `gastos/rubros`; el segundo insiste en la distinción rubro ≠ categoría A/B/C, que es el malentendido esperable del módulo.
+> - **Pendiente de S3-08:** los dos selectores existen y están tipados, pero ninguna pantalla los monta todavía — el formulario de carga de §4.2 es el que los consume, y su cobertura E2E va con esa tarea.
+
 ### 4.1 Lista de Gastos
 
 ```
