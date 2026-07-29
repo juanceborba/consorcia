@@ -81,8 +81,21 @@ async function limpiarDatosDemo() {
   await prisma.gestorEdificio.deleteMany({ where: { edificio: { organizacionId: orgId } } });
   await prisma.unidad.deleteMany({ where: { organizacionId: orgId } });
   await prisma.edificio.deleteMany({ where: { organizacionId: orgId } });
+  // Identidad global (S4-01): el Usuario no cuelga de la organización. Se
+  // borran solo los que quedarían sin ningún vínculo al eliminar la org demo
+  // (una persona con membresía en otra organización se conserva).
+  const miembros = await prisma.organizacionUsuario.findMany({
+    where: { organizacionId: orgId },
+    select: { usuarioId: true },
+  });
   await prisma.organizacionUsuario.deleteMany({ where: { organizacionId: orgId } });
-  await prisma.usuario.deleteMany({ where: { organizacionId: orgId } });
+  for (const { usuarioId } of miembros) {
+    const otrosVinculos = await prisma.organizacionUsuario.count({ where: { usuarioId } });
+    const otrasUnidades = await prisma.unidadUsuario.count({ where: { usuarioId } });
+    if (otrosVinculos === 0 && otrasUnidades === 0) {
+      await prisma.usuario.delete({ where: { id: usuarioId } });
+    }
+  }
   await prisma.organizacion.delete({ where: { id: orgId } });
   console.log('Datos demo anteriores eliminados.');
 }
@@ -161,9 +174,19 @@ async function main() {
   // Usuarios (misma password bcrypt para todos los demo)
   const passwordHash = bcrypt.hashSync(PASSWORD_DEMO, 10);
 
+  // Identidad global (S4-01): el Usuario no tiene organización ni rol; el rol
+  // vive en la membresía (`organizacion_usuarios`), que se crea acá mismo para
+  // que ningún usuario del seed quede sin contexto de acceso.
   async function crearUsuario({ email, nombre, apellido, telefono, rol }) {
     return prisma.usuario.create({
-      data: { organizacionId: org.id, email, passwordHash, nombre, apellido, telefono, rol },
+      data: {
+        email,
+        passwordHash,
+        nombre,
+        apellido,
+        telefono,
+        organizaciones: { create: { organizacionId: org.id, rol } },
+      },
     });
   }
 
@@ -194,14 +217,6 @@ async function main() {
   await crearUsuario({
     email: 'encargado@demo.com', nombre: 'José Luis', apellido: 'Pereyra',
     telefono: '+54 11 5555-0107', rol: 'ENCARGADO',
-  });
-
-  // Membresías de staff en la organización
-  await prisma.organizacionUsuario.createMany({
-    data: [
-      { organizacionId: org.id, usuarioId: admin.id, rol: 'ORG_ADMIN' },
-      { organizacionId: org.id, usuarioId: gestor.id, rol: 'GESTOR' },
-    ],
   });
 
   // El gestor solo tiene asignado Torre Palermo

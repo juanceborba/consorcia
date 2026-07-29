@@ -7,7 +7,7 @@
 
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { levantarApp, cerrarApp, apiFetch, login, prisma } from './helpers.js';
+import { levantarApp, cerrarApp, apiFetch, login, prisma, borrarOrgDePrueba } from './helpers.js';
 
 // Lote de 5 UFs cuyos coeficientes suman exactamente 1.000000
 const LOTE_OK = [
@@ -88,9 +88,7 @@ describe('unidades (S2)', () => {
     // Limpieza de datos creados por el test (baja física vía Prisma)
     await prisma.unidad.deleteMany({ where: { edificioId: { in: [edificioId, edificioVacioId] } } });
     await prisma.edificio.deleteMany({ where: { id: { in: [edificioId, edificioVacioId] } } });
-    await prisma.organizacionUsuario.deleteMany({ where: { organizacionId: orgBId } });
-    await prisma.usuario.deleteMany({ where: { organizacionId: orgBId } });
-    await prisma.organizacion.delete({ where: { id: orgBId } });
+    await borrarOrgDePrueba(orgBId);
 
     for (const sesion of [admin, gestor, orgB]) {
       await apiFetch(baseUrl, '/api/auth/logout', {

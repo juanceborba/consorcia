@@ -12,10 +12,45 @@
 
 import prisma from '../db/prisma.js';
 
-// Extrae org_id del JWT (ya validado por requireAuth) → req.organizacionId
-export function tenant(req, res, next) {
-  req.organizacionId = req.user.organizacionId;
-  next();
+// Resuelve la organización activa del request → req.organizacionId.
+//
+// S4-01 (identidad global): la org sale del claim `org_id` (nunca del cliente),
+// pero se REVALIDA contra la membresía en DB en cada request. El access token
+// vive 15 min: sin esta verificación, desactivar una membresía no cortaría el
+// acceso hasta que expire. Fail-closed:
+//   403 SIN_ORGANIZACION_ACTIVA si el token no trae org (residente puro)
+//   403 SIN_MEMBRESIA si la membresía ya no existe o fue desactivada
+export async function tenant(req, res, next) {
+  const organizacionId = req.user.organizacionId;
+  if (!organizacionId) {
+    return res.status(403).json({
+      error: {
+        code: 'SIN_ORGANIZACION_ACTIVA',
+        message: 'La sesión no tiene una organización activa',
+      },
+    });
+  }
+
+  try {
+    const membresia = await prisma.organizacionUsuario.findUnique({
+      where: { organizacionId_usuarioId: { organizacionId, usuarioId: req.user.id } },
+      select: { activo: true },
+    });
+
+    if (!membresia || membresia.activo === false) {
+      return res.status(403).json({
+        error: {
+          code: 'SIN_MEMBRESIA',
+          message: 'No tenés una membresía activa en esa organización',
+        },
+      });
+    }
+
+    req.organizacionId = organizacionId;
+    return next();
+  } catch (err) {
+    return next(err);
+  }
 }
 
 // Valida el edificio referenciado por el request:

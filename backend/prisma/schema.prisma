@@ -130,6 +130,10 @@ model OrganizacionUsuario {
   // Rol de organización: ORG_ADMIN o GESTOR
   rol             RolUsuario
 
+  // Baja lógica de la membresía (S4-01): el Usuario global sobrevive, pierde
+  // el acceso a esta organización. Nunca se borra la fila (auditoría).
+  activo          Boolean  @default(true)
+
   // Relaciones
   organizacion    Organizacion @relation(fields: [organizacionId], references: [id])
   usuario         Usuario      @relation(fields: [usuarioId], references: [id])
@@ -139,6 +143,7 @@ model OrganizacionUsuario {
 
   @@unique([organizacionId, usuarioId])
   @@index([usuarioId])
+  @@index([usuarioId, activo])
   @@map("organizacion_usuarios")
 }
 
@@ -164,15 +169,17 @@ model GestorEdificio {
 // USUARIOS Y AUTENTICACIÓN
 // ==========================================
 
+// Identidad GLOBAL (S4-01, PRD-04-11 §2): un Usuario existe una sola vez en el
+// sistema y se identifica por su email (normalizado lowercase). Es la excepción
+// documentada al "todo cuelga de la organización": el Usuario no tiene tenant,
+// los permisos son vínculos (OrganizacionUsuario / GestorEdificio / UnidadUsuario).
 model Usuario {
   id              String   @id @default(uuid())
-  organizacionId  String   @map("organizacion_id")
-  email           String
+  email           String   @unique
   passwordHash    String   @map("password_hash")
   nombre          String
   apellido        String
   telefono        String?
-  rol             RolUsuario
   activo          Boolean  @default(true)
 
   // Relaciones
@@ -188,9 +195,7 @@ model Usuario {
   updatedAt   DateTime @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
 
-  @@unique([organizacionId, email])
-  @@index([organizacionId, rol])
-  @@index([organizacionId, activo])
+  @@index([activo])
   @@map("usuarios")
 }
 

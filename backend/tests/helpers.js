@@ -49,4 +49,23 @@ export function login(baseUrl, email, password) {
   });
 }
 
+// Borra una organización de prueba y los usuarios que quedan sin ningún
+// vínculo al eliminarla. S4-01: el Usuario es global (no tiene
+// `organizacionId`), así que se resuelve por sus membresías.
+export async function borrarOrgDePrueba(organizacionId) {
+  const miembros = await prisma.organizacionUsuario.findMany({
+    where: { organizacionId },
+    select: { usuarioId: true },
+  });
+  await prisma.organizacionUsuario.deleteMany({ where: { organizacionId } });
+  for (const { usuarioId } of miembros) {
+    const membresias = await prisma.organizacionUsuario.count({ where: { usuarioId } });
+    const unidades = await prisma.unidadUsuario.count({ where: { usuarioId } });
+    if (membresias === 0 && unidades === 0) {
+      await prisma.usuario.delete({ where: { id: usuarioId } });
+    }
+  }
+  await prisma.organizacion.delete({ where: { id: organizacionId } });
+}
+
 export { prisma, redis };

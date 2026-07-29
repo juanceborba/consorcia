@@ -8,7 +8,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { levantarApp, cerrarApp, apiFetch, login, prisma } from './helpers.js';
+import { levantarApp, cerrarApp, apiFetch, login, prisma, borrarOrgDePrueba } from './helpers.js';
 
 describe('edificios', () => {
   let server;
@@ -139,9 +139,7 @@ describe('edificios', () => {
         method: 'POST',
         body: { refreshToken: sesion.refreshToken },
       });
-      await prisma.organizacionUsuario.deleteMany({ where: { organizacionId: orgPruebaId } });
-      await prisma.usuario.deleteMany({ where: { organizacionId: orgPruebaId } });
-      await prisma.organizacion.delete({ where: { id: orgPruebaId } });
+      await borrarOrgDePrueba(orgPruebaId);
     }
   });
 
