@@ -101,7 +101,7 @@ db-migrate:
 	@docker exec -it consorcIA-backend npx prisma migrate dev
 
 db-seed:
-	@docker exec -it consorcIA-backend npx prisma db seed
+	@docker exec consorcIA-backend npx prisma db seed
 
 db-studio:
 	@echo "🎨 Prisma Studio disponible en http://localhost:5555"

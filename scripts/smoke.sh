@@ -2,7 +2,10 @@
 # scripts/smoke.sh — Smoke E2E de los slices S1+S2+S4 contra el stack dockerizado
 # Flujo: health → login (admin y gestor) → listados de edificios → detalle
 # con unidades → slice S2 (alta de edificio, bulk de unidades con invariante
-# de coeficientes, PATCH, DELETE soft delete) → refresh (rotación) → logout.
+# de coeficientes, PATCH, DELETE soft delete) → slice S4 (invitaciones, staff,
+# residentes, cambio de organización) → casos del seed multi-caso (S4-10:
+# segundo gestor, Org B aislada, residente multi-consorcio, invitación
+# pendiente) → refresh (rotación) → logout.
 # Cada paso imprime ✓/✗ y el script sale con 1 si algo falla. Lo que crea lo
 # limpia al final (el edificio de prueba queda dado de baja con soft delete).
 #
@@ -42,7 +45,7 @@ req() {
   BODY=$(sed '$d' <<< "$resp")
 }
 
-echo "Smoke ConsorcIA (S1-14 + S2-12 + S4-02/03/04/05) contra $BASE_URL"
+echo "Smoke ConsorcIA (S1-14 + S2-12 + S4-02/03/04/05 + S4-10) contra $BASE_URL"
 echo
 
 # --- 1. Health ----------------------------------------------------------------
@@ -151,7 +154,9 @@ else
     const p = new PrismaClient();
     (async () => {
       const admin = await p.usuario.findUnique({ where: { email: 'admin@demo.com' } });
-      const m = await p.organizacionUsuario.findFirst({ where: { usuarioId: admin.id } });
+      // Membresía ACTIVA: el admin del seed puede arrastrar membresías
+      // desactivadas de otras orgs (las que crea el spec E2E del selector).
+      const m = await p.organizacionUsuario.findFirst({ where: { usuarioId: admin.id, activo: true } });
       const inv = await p.invitacion.create({ data: {
         email: '$S4_EMAIL', organizacionId: m.organizacionId, tipo: 'STAFF',
         payload: { rol: 'ORG_ADMIN', nombre: 'Smoke', apellido: 'Invitado', edificioIds: [] },
@@ -299,6 +304,152 @@ if command -v docker >/dev/null 2>&1; then
 else
   fail "docker no disponible: quedan sin borrar $S4B_EMAIL y $S4B_RESIDENTE"
 fi
+
+# --- 3.8 Casos del seed multi-caso (S4-10, PRD-04-11 §10) -----------------------
+# Verifica por API los casos que el seed agrega: segundo gestor con ambos
+# edificios, Org B aislada de Org A, residente multi-consorcio (un solo Usuario
+# con UFs en las dos organizaciones) e invitación pendiente. No crea ni borra
+# nada: son todos chequeos de lectura sobre datos del seed.
+echo "3.8 Seed multi-caso (S4-10)"
+
+# Caso 2: segundo gestor de Org A con AMBOS edificios asignados
+req POST /api/auth/login '' '{"email":"gestor2@demo.com","password":"demo1234"}'
+check "login gestor2 (segundo gestor de Org A) → 200" 200 "$STATUS"
+GESTOR2_TOKEN=$(json_eval 'd.accessToken' <<< "$BODY")
+GESTOR2_REFRESH=$(json_eval 'd.refreshToken' <<< "$BODY")
+check "gestor2 tiene los 2 edificios en los claims" 2 \
+  "$(json_eval 'd.user.edificiosAsignados.length' <<< "$BODY")"
+
+req GET /api/edificios "$GESTOR2_TOKEN"
+check "gestor2 ve los 2 edificios del seed → 200" 200 "$STATUS"
+check "gestor2 ve Torre Palermo y San Martín" 2 \
+  "$(json_eval "d.filter(e => ['Torre Palermo','Edificio San Martín'].includes(e.nombre)).length" <<< "$BODY")"
+
+# Caso 3: Org B con su propio org_admin, aislada de Org A
+req POST /api/auth/login '' '{"email":"admin.sur@demo.com","password":"demo1234"}'
+check "login admin de Org B → 200" 200 "$STATUS"
+ORGB_TOKEN=$(json_eval 'd.accessToken' <<< "$BODY")
+ORGB_REFRESH=$(json_eval 'd.refreshToken' <<< "$BODY")
+
+req GET /api/organizaciones/me "$ORGB_TOKEN"
+check "la org activa del admin B es Administración Sur" "Administración Sur S.R.L." \
+  "$(json_eval 'd.nombre' <<< "$BODY")"
+
+req GET /api/edificios "$ORGB_TOKEN"
+check "el admin B ve solo su edificio" 1 "$(json_eval 'd.length' <<< "$BODY")"
+UNIDAD_ORGB=""
+if [ "$(json_eval 'd.length' <<< "$BODY")" = "1" ]; then
+  EDIFICIO_ORGB=$(json_eval 'd[0].id' <<< "$BODY")
+  req GET "/api/edificios/$EDIFICIO_ORGB" "$ORGB_TOKEN"
+  UNIDAD_ORGB=$(json_eval "(d.unidades.find(u => u.numero === '1A') || {}).id || ''" <<< "$BODY")
+fi
+
+req GET /api/organizaciones/me/usuarios "$ORGB_TOKEN"
+check "GET staff de Org B → 200" 200 "$STATUS"
+check "el staff de Org A no aparece en Org B" 0 \
+  "$(json_eval "d.filter(m => ['admin@demo.com','gestor@demo.com','gestor2@demo.com'].includes(m.email)).length" <<< "$BODY")"
+check "el staff de Org B es solo su org_admin" 1 "$(json_eval 'd.length' <<< "$BODY")"
+
+req GET "/api/edificios/$EDIFICIO_ID" "$ORGB_TOKEN"
+check "el admin B no accede a un edificio de Org A → 403" 403 "$STATUS"
+
+# Caso 4: residente multi-consorcio — un solo Usuario, UFs en las dos orgs
+req POST /api/auth/login '' '{"email":"multiconsorcio@demo.com","password":"demo1234"}'
+check "login del residente multi-consorcio → 200" 200 "$STATUS"
+check "es propietario" "propietario" "$(json_eval 'd.user.roles[0]' <<< "$BODY")"
+# Residente puro: sin membresía staff no tiene organización activa (§5.5)
+check "no tiene organización activa" null "$(json_eval 'String(d.user.organizacionId)' <<< "$BODY")"
+check "no tiene membresías para el selector" 0 "$(json_eval 'd.user.organizaciones.length' <<< "$BODY")"
+MULTI_REFRESH=$(json_eval 'd.refreshToken' <<< "$BODY")
+
+# Las UFs del seed con residentes están en Torre Palermo, que NO es
+# necesariamente `$EDIFICIO_ID` (ese es el primero de la lista): se resuelve por
+# nombre y su detalle se guarda una sola vez.
+req GET /api/edificios "$ADMIN_TOKEN"
+TORRE_ID=$(json_eval "(d.find(e => e.nombre === 'Torre Palermo') || {}).id || ''" <<< "$BODY")
+TORRE_BODY=""
+if [ -z "$TORRE_ID" ]; then
+  fail "no se encontró Torre Palermo en la organización demo"
+else
+  req GET "/api/edificios/$TORRE_ID" "$ADMIN_TOKEN"
+  TORRE_BODY="$BODY"
+fi
+
+# uf_de_torre <número> → id de esa UF de Torre Palermo ('' si no está)
+uf_de_torre() {
+  [ -z "$TORRE_BODY" ] && { echo ""; return; }
+  json_eval "(d.unidades.find(u => u.numero === '$1') || {}).id || ''" <<< "$TORRE_BODY"
+}
+
+# Su UF en Org A la ve el admin de Org A; la de Org B, el admin de Org B.
+UNIDAD_MULTI_A=$(uf_de_torre 2A)
+if [ -z "$UNIDAD_MULTI_A" ]; then
+  fail "no se encontró la UF 2A de Torre Palermo"
+else
+  req GET "/api/unidades/$UNIDAD_MULTI_A/residentes" "$ADMIN_TOKEN"
+  check "el multi-consorcio figura en su UF de Org A" 1 \
+    "$(json_eval "d.filter(v => v.usuario.email === 'multiconsorcio@demo.com' && v.vigente).length" <<< "$BODY")"
+fi
+
+if [ -z "$UNIDAD_ORGB" ] || [ -z "$UNIDAD_MULTI_A" ]; then
+  fail "sin las dos UFs del multi-consorcio: se saltea el chequeo de identidad global"
+else
+  req GET "/api/unidades/$UNIDAD_ORGB/residentes" "$ORGB_TOKEN"
+  check "el mismo email figura en su UF de Org B" 1 \
+    "$(json_eval "d.filter(v => v.usuario.email === 'multiconsorcio@demo.com' && v.vigente).length" <<< "$BODY")"
+  MULTI_ID_B=$(json_eval "(d.find(v => v.usuario.email === 'multiconsorcio@demo.com') || {usuario:{}}).usuario.id || ''" <<< "$BODY")
+
+  # Identidad global: los dos vínculos apuntan al MISMO usuarioId
+  req GET "/api/unidades/$UNIDAD_MULTI_A/residentes" "$ADMIN_TOKEN"
+  MULTI_ID_A=$(json_eval "(d.find(v => v.usuario.email === 'multiconsorcio@demo.com') || {usuario:{}}).usuario.id || ''" <<< "$BODY")
+  if [ -z "$MULTI_ID_A" ]; then
+    fail "el multi-consorcio no tiene usuarioId en su UF de Org A"
+  else
+    check "las dos UFs apuntan al mismo Usuario global" "$MULTI_ID_A" "$MULTI_ID_B"
+  fi
+fi
+
+# Caso 5: inquilino simple en una UF de Org A
+UNIDAD_INQUILINO=$(uf_de_torre 1A)
+if [ -n "$UNIDAD_INQUILINO" ]; then
+  req GET "/api/unidades/$UNIDAD_INQUILINO/residentes" "$ADMIN_TOKEN"
+  check "el inquilino del seed está vinculado como inquilino" 1 \
+    "$(json_eval "d.filter(v => v.usuario.email === 'inquilino@demo.com' && v.esInquilino && v.vigente).length" <<< "$BODY")"
+else
+  fail "no se encontró la UF 1A de Torre Palermo"
+fi
+
+# Caso 6: propietario con 2 UFs en el mismo edificio
+for UF in 3B 4B; do
+  UNIDAD_P2=$(uf_de_torre "$UF")
+  if [ -n "$UNIDAD_P2" ]; then
+    req GET "/api/unidades/$UNIDAD_P2/residentes" "$ADMIN_TOKEN"
+    check "propietario2 es propietario de la UF $UF" 1 \
+      "$(json_eval "d.filter(v => v.usuario.email === 'propietario2@demo.com' && v.esPropietario && v.vigente).length" <<< "$BODY")"
+  else
+    fail "no se encontró la UF $UF de Torre Palermo"
+  fi
+done
+
+# Caso 7: la invitación pendiente del seed sirve (no se acepta: es del demo)
+req GET /api/invitaciones/seed-invitacion-pendiente
+check "la invitación pendiente del seed → 200" 200 "$STATUS"
+check "es una invitación de staff" STAFF "$(json_eval 'd.tipo' <<< "$BODY")"
+check "apunta a la organización demo" "Administración Demo S.A." \
+  "$(json_eval 'd.organizacion.nombre' <<< "$BODY")"
+
+req POST /api/auth/login '' '{"email":"invitado@demo.com","password":"demo1234"}'
+check "el invitado sin activar no puede loguear → 401" 401 "$STATUS"
+
+# Residentes: sin membresía staff no entran a la nómina de la organización
+req GET /api/organizaciones/me/usuarios "$ADMIN_TOKEN"
+check "ningún residente del seed aparece como staff de Org A" 0 \
+  "$(json_eval "d.filter(m => ['propietario1@demo.com','propietario2@demo.com','propietario3@demo.com','inquilino@demo.com','multiconsorcio@demo.com','encargado@demo.com'].includes(m.email)).length" <<< "$BODY")"
+
+# Limpieza: se cierran las sesiones abiertas en esta sección
+for r in "$GESTOR2_REFRESH" "$ORGB_REFRESH" "$MULTI_REFRESH"; do
+  [ -n "$r" ] && req POST /api/auth/logout '' "{\"refreshToken\":\"$r\"}"
+done
 
 # --- Limpieza de seguridad -----------------------------------------------------
 # Si algo falló antes del DELETE del slice S2, el edificio de prueba queda
