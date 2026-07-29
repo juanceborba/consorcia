@@ -18,6 +18,7 @@ import proveedoresRoutes from './routes/proveedores.routes.js';
 import rubrosRoutes from './routes/rubros.routes.js';
 import gastosRoutes from './routes/gastos.routes.js';
 import liquidacionesRoutes from './routes/liquidaciones.routes.js';
+import recibosRoutes from './routes/recibos.routes.js';
 import meRoutes from './routes/me.routes.js';
 import invitacionesRoutes from './routes/invitaciones.routes.js';
 import { errorHandler, rutaNoEncontrada } from './middleware/error.middleware.js';
@@ -89,6 +90,11 @@ app.use('/api/gastos', gastosRoutes);
 // una liquidación SIEMPRE es de un edificio y un período; acá cuelgan el preview
 // y las transiciones de estado sobre una liquidación ya identificada.
 app.use('/api/liquidaciones', liquidacionesRoutes);
+
+// Recibos (S3-05). La emisión y el listado son de la liquidación
+// (`POST /api/liquidaciones/:id/enviar`, `GET /api/liquidaciones/:id/recibos`);
+// acá cuelga la descarga del PDF de un recibo ya identificado.
+app.use('/api/recibos', recibosRoutes);
 
 // Contexto propio del usuario (S4-12, #58): scopeado por `usuarioId`, no por
 // organización — es el único camino de lectura del residente puro, que por

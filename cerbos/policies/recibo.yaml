@@ -1,0 +1,59 @@
+# cerbos/policies/recibo.yaml — Recurso `recibo` (S3-05)
+# Spec: PRD-02-05 §4 · PRD-06-01 §3 · PRD-05-04 Cerbos RBAC §3.1.
+#
+# El recibo es el comprobante emitido de UNA unidad funcional, así que el
+# recurso lleva `unidad_id` además del scope org + edificio. Hoy solo lo lee el
+# staff (backoffice): la EMISIÓN es una acción de la liquidación
+# (`liquidacion.enviar`, liquidacion.yaml), no del recibo.
+#
+# Acceso del residente (S5, PRD-04-05 portal): un propietario/inquilino puede
+# leer el recibo de SU unidad y ninguno más. La regla no se habilita en este
+# sprint porque el principal del residente todavía no viaja con sus unidades en
+# el JWT (un residente puro no trae `org_id` — AGENTS.md "Acceso del
+# residente"); queda escrita abajo, comentada, para que S5 la active junto con
+# el claim `unidades` del token y no reinvente el contrato del recurso.
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: "default"
+  resource: "recibo"
+  rules:
+    # Superadmin puede todo
+    - actions: ['*']
+      effect: EFFECT_ALLOW
+      roles:
+        - superadmin
+
+    # Org admin: los recibos de su organización
+    - actions: ['read']
+      effect: EFFECT_ALLOW
+      roles:
+        - org_admin
+      condition:
+        match:
+          expr: request.resource.attr.organizacion_id == request.principal.attr.organizacion_id
+
+    # Gestor: solo los recibos de sus edificios asignados
+    - actions: ['read']
+      effect: EFFECT_ALLOW
+      roles:
+        - gestor
+      condition:
+        match:
+          all:
+            of:
+              - expr: request.resource.attr.organizacion_id == request.principal.attr.organizacion_id
+              - expr: request.resource.attr.edificio_id in request.principal.attr.edificios_asignados
+
+    # S5 — portal del residente (PRD-04-05). Requiere el claim `unidades` en el
+    # JWT; sin él la condición evalúa contra un atributo inexistente y Cerbos
+    # rechaza (fail-closed), así que la regla se activa recién con el claim.
+    # - actions: ['read']
+    #   effect: EFFECT_ALLOW
+    #   roles:
+    #     - propietario
+    #     - inquilino
+    #   condition:
+    #     match:
+    #       expr: request.resource.attr.unidad_id in request.principal.attr.unidades
+
+# Sin DENY global: el default cuando ninguna regla matchea ya es DENY.
