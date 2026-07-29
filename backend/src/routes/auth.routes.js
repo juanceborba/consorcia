@@ -12,6 +12,7 @@ import prisma from '../db/prisma.js';
 import { validarBody } from '../middleware/validation.middleware.js';
 import {
   emitirSesion,
+  normalizarEmail,
   renovarTokens,
   revocarRefreshToken,
 } from '../services/auth.service.js';
@@ -55,7 +56,24 @@ const logoutSchema = z.object({
 
 router.post('/register', validarBody(registerSchema), async (req, res, next) => {
   try {
-    const { email, password, nombre, apellido, organizacion } = req.body;
+    const { password, nombre, apellido, organizacion } = req.body;
+    const email = normalizarEmail(req.body.email);
+
+    // Identidad global (S4-01): el email identifica a la persona en todo el
+    // sistema. Si ya existe, no se crea una segunda cuenta — se sugiere login
+    // (para sumar una organización, el alta es por invitación staff, S4-03).
+    const emailEnUso = await prisma.usuario.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    if (emailEnUso) {
+      return res.status(422).json({
+        error: {
+          code: 'EMAIL_YA_REGISTRADO',
+          message: 'Ese email ya tiene una cuenta; iniciá sesión con tu password',
+        },
+      });
+    }
 
     const cuitEnUso = await prisma.organizacion.findUnique({
       where: { cuit: organizacion.cuit },
@@ -70,18 +88,11 @@ router.post('/register', validarBody(registerSchema), async (req, res, next) => 
     const passwordHash = await bcrypt.hash(password, 10);
 
     // Org + usuario + membresía en una transacción: nunca queda una org sin
-    // su org_admin ni un usuario huérfano de tenant.
+    // su org_admin ni un usuario sin membresía (de la que derivan sus claims).
     const usuario = await prisma.$transaction(async (tx) => {
       const org = await tx.organizacion.create({ data: organizacion });
       const creado = await tx.usuario.create({
-        data: {
-          organizacionId: org.id,
-          email,
-          passwordHash,
-          nombre,
-          apellido,
-          rol: 'ORG_ADMIN',
-        },
+        data: { email, passwordHash, nombre, apellido },
       });
       await tx.organizacionUsuario.create({
         data: { organizacionId: org.id, usuarioId: creado.id, rol: 'ORG_ADMIN' },
@@ -92,6 +103,15 @@ router.post('/register', validarBody(registerSchema), async (req, res, next) => 
     const sesion = await emitirSesion(usuario);
     return res.status(201).json(sesion);
   } catch (err) {
+    // Carrera contra otro register con el mismo email (unique global)
+    if (err.code === 'P2002' && err.meta?.target?.includes('email')) {
+      return res.status(422).json({
+        error: {
+          code: 'EMAIL_YA_REGISTRADO',
+          message: 'Ese email ya tiene una cuenta; iniciá sesión con tu password',
+        },
+      });
+    }
     return next(err);
   }
 });
@@ -102,10 +122,11 @@ router.post('/register', validarBody(registerSchema), async (req, res, next) => 
 
 router.post('/login', validarBody(loginSchema), async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { password } = req.body;
+    const email = normalizarEmail(req.body.email);
 
-    // El email es único por organización (no global); para el MVP se toma la
-    // primera coincidencia activa.
+    // Identidad global (S4-01): el email resuelve a un único Usuario. La
+    // organización activa se deriva de su membresía activa (auth.service).
     const usuario = await prisma.usuario.findFirst({
       where: { email, activo: true, deletedAt: null },
     });

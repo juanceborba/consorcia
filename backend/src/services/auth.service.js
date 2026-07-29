@@ -1,10 +1,14 @@
 // src/services/auth.service.js — Emisión y rotación de tokens
-// Spec: PRD-08-05 Seguridad §1 (JWT + Refresh Tokens)
+// Spec: PRD-08-05 Seguridad §1 (JWT + Refresh Tokens), PRD-04-11 §2 (identidad global)
 //
 // - Access token: JWT de 15 min con claims { sub, email, org_id, roles,
 //   edificios_asignados }. `org_id` es el tenant raíz (PRD-02-01 §6.2).
 // - Refresh token: UUID opaco en Redis (`refresh:{uuid}` → userId) con TTL de
 //   7 días. ROTA en cada uso: el anterior se invalida (PRD-08-05 §1.2).
+//
+// S4-01: el Usuario es global (sin `organizacionId` ni `rol`). La organización
+// activa y los roles del token se DERIVAN de la membresía activa
+// (`OrganizacionUsuario.activo`). La forma de los claims no cambió.
 
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'node:crypto';
@@ -16,40 +20,89 @@ import { config } from '../config/index.js';
 // mismo nombre que usan las políticas Cerbos (PRD-05-04 §2.1).
 export const rolCanonico = (rol) => rol.toLowerCase();
 
+// Email como identificador global: siempre lowercase (PRD-04-11 §7).
+export const normalizarEmail = (email) => email.trim().toLowerCase();
+
 // Edificios asignados a un gestor (tabla gestor_edificios). Solo aplica al
 // rol GESTOR; para el resto devuelve siempre [].
-async function obtenerEdificiosAsignados(usuario) {
-  if (usuario.rol !== 'GESTOR') return [];
+async function obtenerEdificiosAsignados(usuarioId) {
   const asignaciones = await prisma.gestorEdificio.findMany({
-    where: { usuarioId: usuario.id },
+    where: { usuarioId },
     select: { edificioId: true },
   });
   return asignaciones.map((a) => a.edificioId);
 }
 
+// Membresía activa del usuario = organización activa de la sesión.
+//
+// DECISIÓN (multi-membresía, S4-01): con N membresías activas se elige la de
+// la organización PRIMERA ALFABÉTICAMENTE (desempate por `organizacionId`).
+// Es determinística y estable —no depende de timestamps de creación, que el
+// seed genera iguales con `createMany`— y predecible para el usuario, que ve
+// las orgs ordenadas por nombre. Cambiar de contexto sin re-login es S4-05
+// (`POST /api/auth/cambiar-organizacion`).
+export function membresiaActiva(usuarioId) {
+  return prisma.organizacionUsuario.findFirst({
+    where: { usuarioId, activo: true },
+    orderBy: [{ organizacion: { nombre: 'asc' } }, { organizacionId: 'asc' }],
+  });
+}
+
+// Contexto de acceso derivado de los vínculos del usuario global:
+//   { organizacionId, roles, edificiosAsignados }
+//
+// Staff (con membresía activa): org activa + su rol de organización.
+// Residente puro (sin membresía): NO tiene organización activa (PRD-04-11 §5.5,
+// el portal agrega por `usuarioId`); sus roles salen de los vínculos a unidades
+// vigentes. Sin vínculos ni membresía: roles [] → Cerbos fail-closed.
+export async function resolverContextoAcceso(usuario) {
+  const membresia = await membresiaActiva(usuario.id);
+
+  if (membresia) {
+    const esGestor = membresia.rol === 'GESTOR';
+    return {
+      organizacionId: membresia.organizacionId,
+      roles: [rolCanonico(membresia.rol)],
+      edificiosAsignados: esGestor ? await obtenerEdificiosAsignados(usuario.id) : [],
+    };
+  }
+
+  const vinculos = await prisma.unidadUsuario.findMany({
+    where: { usuarioId: usuario.id, fechaFin: null },
+    select: { esPropietario: true, esInquilino: true },
+  });
+  const roles = [];
+  if (vinculos.some((v) => v.esPropietario)) roles.push('propietario');
+  if (vinculos.some((v) => v.esInquilino)) roles.push('inquilino');
+
+  return { organizacionId: null, roles, edificiosAsignados: [] };
+}
+
 // Shape público del usuario para las respuestas de auth (contrato S1).
 // `edificiosAsignados` solo se expone a gestores.
-export function serializarUsuario(usuario, edificiosAsignados) {
+export function serializarUsuario(usuario, contexto) {
   const dto = {
     id: usuario.id,
     email: usuario.email,
     nombre: usuario.nombre,
-    roles: [rolCanonico(usuario.rol)],
-    organizacionId: usuario.organizacionId,
+    roles: contexto.roles,
+    organizacionId: contexto.organizacionId,
   };
-  if (usuario.rol === 'GESTOR') dto.edificiosAsignados = edificiosAsignados;
+  if (contexto.roles.includes('gestor')) {
+    dto.edificiosAsignados = contexto.edificiosAsignados;
+  }
   return dto;
 }
 
 // Genera el par access/refresh y persiste el refresh en Redis.
-export async function generarTokens(usuario, edificiosAsignados = []) {
+export async function generarTokens(usuario, contexto) {
   const accessToken = jwt.sign(
     {
       sub: usuario.id,
       email: usuario.email,
-      org_id: usuario.organizacionId,
-      roles: [rolCanonico(usuario.rol)],
-      edificios_asignados: edificiosAsignados,
+      org_id: contexto.organizacionId,
+      roles: contexto.roles,
+      edificios_asignados: contexto.edificiosAsignados,
     },
     config.jwt.secret,
     { expiresIn: config.jwt.accessTokenTtl }
@@ -72,16 +125,16 @@ export async function renovarTokens(refreshToken) {
   const usuarioId = await redis.getdel(clave);
   if (!usuarioId) return null;
 
-  // Se recargan usuario y asignaciones desde DB para que el nuevo access
-  // token refleje cambios de rol/edificios desde el último login.
+  // Se recargan usuario y contexto desde DB para que el nuevo access token
+  // refleje cambios de membresía/rol/edificios desde el último login.
   const usuario = await prisma.usuario.findFirst({
     where: { id: usuarioId, activo: true, deletedAt: null },
   });
   if (!usuario) return null;
 
-  const edificiosAsignados = await obtenerEdificiosAsignados(usuario);
-  const tokens = await generarTokens(usuario, edificiosAsignados);
-  return { ...tokens, usuario, edificiosAsignados };
+  const contexto = await resolverContextoAcceso(usuario);
+  const tokens = await generarTokens(usuario, contexto);
+  return { ...tokens, usuario, contexto };
 }
 
 // Revoca un refresh token (logout). Idempotente: no falla si ya no existe.
@@ -89,12 +142,12 @@ export async function revocarRefreshToken(refreshToken) {
   await redis.del(`refresh:${refreshToken}`);
 }
 
-// Helper de login: resuelve usuario + asignaciones y emite tokens.
+// Helper de login: resuelve el contexto de acceso y emite tokens.
 export async function emitirSesion(usuario) {
-  const edificiosAsignados = await obtenerEdificiosAsignados(usuario);
-  const tokens = await generarTokens(usuario, edificiosAsignados);
+  const contexto = await resolverContextoAcceso(usuario);
+  const tokens = await generarTokens(usuario, contexto);
   return {
     ...tokens,
-    user: serializarUsuario(usuario, edificiosAsignados),
+    user: serializarUsuario(usuario, contexto),
   };
 }
