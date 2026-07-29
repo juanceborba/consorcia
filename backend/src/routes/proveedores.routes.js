@@ -53,6 +53,7 @@ import {
   editarProveedorSchema,
   listarProveedoresSchema,
 } from '../schemas/proveedor.schema.js';
+import { rubroUsable } from '../services/rubros.js';
 
 const router = Router();
 
@@ -163,20 +164,13 @@ async function cuitYaEnDirectorio(organizacionId, cuit, excluirId) {
 }
 
 // El rubro habitual es solo una sugerencia al cargar gastos, pero tiene que ser
-// un rubro que la organización realmente vea (maestro o propio activo). La
-// visibilidad fina del maestro (`RubroVisibilidad`) la resuelve S3-13; acá
-// alcanza con dueño + activo, que es lo que la FK no puede garantizar.
+// un rubro que la organización realmente vea: el merge del árbol (maestro +
+// overrides de visibilidad + propios activos) lo resuelve services/rubros.js
+// (S3-13). No se exige que sea hoja — eso lo exige el gasto (S3-02), no la
+// sugerencia del proveedor.
 async function rubroHabitualInvalido(organizacionId, rubroHabitualId) {
   if (!rubroHabitualId) return false;
-  const rubro = await prisma.rubro.findUnique({
-    where: { id: rubroHabitualId },
-    select: { organizacionId: true, activo: true },
-  });
-  return (
-    !rubro ||
-    !rubro.activo ||
-    (rubro.organizacionId !== null && rubro.organizacionId !== organizacionId)
-  );
+  return !(await rubroUsable(organizacionId, rubroHabitualId));
 }
 
 const rubroInvalido = () => ({
