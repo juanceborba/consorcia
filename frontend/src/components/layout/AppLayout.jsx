@@ -5,7 +5,7 @@
 import { useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router';
 import { Building2, ChevronsUpDown, LogOut, UserRound } from 'lucide-react';
-import { useAuthStore } from '@/stores/auth.store';
+import { SIN_ROLES, useAuthStore } from '@/stores/auth.store';
 import { useEdificioStore } from '@/stores/edificio.store';
 import { useEdificios } from '@/hooks/useEdificios';
 import { useOrganizacion } from '@/hooks/useOrganizacion';
@@ -23,12 +23,21 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
-// Módulos del sidebar: solo Edificios está activo en S1; el resto llega en S2+.
+// Módulos del sidebar (PRD-07-03 §4). "Usuarios" (S4-07) solo se muestra a
+// org_admin: Cerbos no le da al gestor ni lectura de la nómina, así que el
+// gestor vería un link que siempre responde 403 (know-how
+// pattern/require-role-guards-ui).
 const MODULOS = [
   { nombre: 'Edificios', path: '/edificios', activo: true },
   { nombre: 'Gastos', activo: false },
   { nombre: 'Liquidaciones', activo: false },
   { nombre: 'Cobranzas', activo: false },
+  {
+    nombre: 'Usuarios',
+    path: '/configuracion/usuarios',
+    activo: true,
+    roles: ['org_admin', 'superadmin'],
+  },
 ];
 
 export default function AppLayout() {
@@ -50,6 +59,12 @@ export default function AppLayout() {
 
   const edificioActual = edificios.find((e) => e.id === edificioId) ?? null;
 
+  // Los módulos con `roles` se ocultan a quien no los tiene.
+  const roles = user?.roles ?? SIN_ROLES;
+  const modulosVisibles = MODULOS.filter(
+    (modulo) => !modulo.roles || modulo.roles.some((rol) => roles.includes(rol)),
+  );
+
   const handleLogout = async () => {
     await logout();
     navigate('/login', { replace: true });
@@ -63,7 +78,7 @@ export default function AppLayout() {
           <span className="text-lg font-semibold">ConsorcIA</span>
         </div>
         <nav className="flex flex-col gap-1 p-2">
-          {MODULOS.map((modulo) =>
+          {modulosVisibles.map((modulo) =>
             modulo.activo ? (
               <NavLink
                 key={modulo.nombre}

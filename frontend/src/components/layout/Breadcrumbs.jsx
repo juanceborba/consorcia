@@ -43,6 +43,17 @@ const RUTAS = [
       { label: TAB_LABELS[tab] },
     ],
   })),
+  // Backoffice de staff (S4-07): /configuracion todavía no tiene página propia
+  // (llega con el resto de las tabs de configuración), así que el segmento
+  // intermedio va sin href.
+  {
+    pattern: '/configuracion/usuarios',
+    items: [
+      { label: 'Inicio', href: '/' },
+      { label: 'Configuración' },
+      { label: 'Usuarios' },
+    ],
+  },
   // /edificios/:id a secas redirige a /unidades, pero puede renderizar un
   // instante durante el redirect.
   {
