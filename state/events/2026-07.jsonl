@@ -10,3 +10,5 @@
 {"id": "evt-000104", "ts": "2026-07-29T22:32:57Z", "actor": "claude", "type": "claim", "task": "S3-14"}
 {"id": "evt-000105", "ts": "2026-07-29T22:49:41Z", "actor": "claude", "type": "status", "task": "S3-14", "to": "done", "motivo": "UI de proveedores y rubros + selectores reusables para el form de gasto (S3-08 los monta)"}
 {"id": "evt-000106", "ts": "2026-07-29T23:01:57Z", "actor": "human", "type": "status", "task": "S3-07", "to": "done", "motivo": "commit 9173c87 (issue #37)"}
+{"id": "evt-000107", "ts": "2026-07-29T23:12:52Z", "actor": "claude", "type": "claim", "task": "S3-08"}
+{"id": "evt-000108", "ts": "2026-07-29T23:33:55Z", "actor": "claude", "type": "status", "task": "S3-08", "to": "done", "motivo": "form de carga + edición/baja (commit 91f02a8, issue #38)"}
