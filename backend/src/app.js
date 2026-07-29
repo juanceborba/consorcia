@@ -14,6 +14,7 @@ import authRoutes from './routes/auth.routes.js';
 import organizacionesRoutes from './routes/organizaciones.routes.js';
 import edificiosRoutes from './routes/edificios.routes.js';
 import unidadesRoutes from './routes/unidades.routes.js';
+import invitacionesRoutes from './routes/invitaciones.routes.js';
 import { errorHandler, rutaNoEncontrada } from './middleware/error.middleware.js';
 
 const app = express();
@@ -66,6 +67,10 @@ app.use('/api/auth', authRoutes);
 app.use('/api/organizaciones', organizacionesRoutes);
 app.use('/api/edificios', edificiosRoutes);
 app.use('/api/unidades', unidadesRoutes);
+
+// Activación por invitación (S4-02) — público: el token del link es la
+// credencial, el invitado todavía no tiene sesión.
+app.use('/api/invitaciones', invitacionesRoutes);
 
 // 404 para rutas /api no matcheadas + handler central de errores
 app.use('/api', rutaNoEncontrada);

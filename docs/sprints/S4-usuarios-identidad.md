@@ -7,9 +7,9 @@
 
 ## Backend
 
-- [ ] **S4-01 Migración a identidad global.** Schema: `Usuario.email` `@unique` global (lowercase), eliminar `Usuario.organizacionId` y `Usuario.rol` (migrar datos a `OrganizacionUsuario`), agregar `OrganizacionUsuario.activo`. Adaptar `register` (email global único → 422 `EMAIL_YA_REGISTRADO`), `login` (por email global), `tenant.middleware` (org activa desde membresía, no del Usuario) y emisión de JWT (claims iguales: `sub, email, org_id, roles, edificios_asignados` derivados de la membresía activa). Actualizar `PRD-02-04` en la misma tarea.
+- [x] **S4-01 Migración a identidad global.** Schema: `Usuario.email` `@unique` global (lowercase), eliminar `Usuario.organizacionId` y `Usuario.rol` (migrar datos a `OrganizacionUsuario`), agregar `OrganizacionUsuario.activo`. Adaptar `register` (email global único → 422 `EMAIL_YA_REGISTRADO`), `login` (por email global), `tenant.middleware` (org activa desde membresía, no del Usuario) y emisión de JWT (claims iguales: `sub, email, org_id, roles, edificios_asignados` derivados de la membresía activa). Actualizar `PRD-02-04` en la misma tarea.
   - _Depende de: nada (S3 no toca auth). **Ojo:** es breaking para tests S1/S2 — ajustarlos._
-- [ ] **S4-02 Modelo Invitación + endpoints.** Modelo `Invitacion` (PRD-04-11 §2.3) + migración. `GET /api/invitaciones/:token` (público, email enmascarado) y `POST /api/invitaciones/:token/aceptar` (define password, activa, loguea). 410 `INVITACION_INVALIDA`, un solo uso, expira 7 días.
+- [x] **S4-02 Modelo Invitación + endpoints.** Modelo `Invitacion` (PRD-04-11 §2.3) + migración. `GET /api/invitaciones/:token` (público, email enmascarado) y `POST /api/invitaciones/:token/aceptar` (define password, activa, loguea). 410 `INVITACION_INVALIDA`, un solo uso, expira 7 días.
   - _Depende de: S4-01._
 - [ ] **S4-03 Endpoints staff (Workflow A).** `GET/POST /api/organizaciones/me/usuarios`, `PATCH /api/organizaciones/me/usuarios/:id` (rol, edificios de gestor, activar/desactivar). Alta por email: usuario nuevo → crea Usuario + membresía + invitación; existente → solo membresía + invitación. Respuesta incluye `invitacionUrl` (MVP sin envío de email — link para copiar; el envío queda encapsulado para AgentMail post-beta). Guard: no desactivar al último org_admin (422 `ULTIMO_ORG_ADMIN`).
   - _Depende de: S4-02._

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/smoke.sh — Smoke E2E de los slices S1+S2 contra el stack dockerizado
+# scripts/smoke.sh — Smoke E2E de los slices S1+S2+S4 contra el stack dockerizado
 # Flujo: health → login (admin y gestor) → listados de edificios → detalle
 # con unidades → slice S2 (alta de edificio, bulk de unidades con invariante
 # de coeficientes, PATCH, DELETE soft delete) → refresh (rotación) → logout.
@@ -42,7 +42,7 @@ req() {
   BODY=$(sed '$d' <<< "$resp")
 }
 
-echo "Smoke ConsorcIA (S1-14 + S2-12) contra $BASE_URL"
+echo "Smoke ConsorcIA (S1-14 + S2-12 + S4-02) contra $BASE_URL"
 echo
 
 # --- 1. Health ----------------------------------------------------------------
@@ -134,6 +134,73 @@ else
 
   req GET "/api/edificios/$S2_ID" "$ADMIN_TOKEN"
   check "GET del edificio dado de baja → 404" 404 "$STATUS"
+fi
+
+# --- 3.6 Slice S4 (invitaciones) ------------------------------------------------
+# Los endpoints que CREAN invitaciones son de S4-03/04, así que el smoke la
+# inserta con Prisma dentro del contenedor (igual que los tests) y después
+# recorre el flujo público: GET → aceptar → login → segundo uso → 410.
+echo "3.6 Slice S4 (invitaciones)"
+if ! command -v docker >/dev/null 2>&1; then
+  fail "docker no disponible: se saltean los chequeos de invitaciones"
+else
+  S4_EMAIL="smoke-invitado-$(date +%s)@test.dev"
+  S4_TOKEN=$(docker exec consorcIA-backend node -e "
+    const { PrismaClient } = require('@prisma/client');
+    const p = new PrismaClient();
+    (async () => {
+      const admin = await p.usuario.findUnique({ where: { email: 'admin@demo.com' } });
+      const m = await p.organizacionUsuario.findFirst({ where: { usuarioId: admin.id } });
+      const inv = await p.invitacion.create({ data: {
+        email: '$S4_EMAIL', organizacionId: m.organizacionId, tipo: 'STAFF',
+        payload: { rol: 'ORG_ADMIN', nombre: 'Smoke', apellido: 'Invitado', edificioIds: [] },
+        expiraAt: new Date(Date.now() + 7 * 24 * 3600 * 1000), invitadoPorId: admin.id,
+      } });
+      console.log(inv.token);
+      await p.\$disconnect();
+    })();
+  " 2>/dev/null | tr -d '\r')
+
+  if [ -z "$S4_TOKEN" ]; then
+    fail "no se pudo crear la invitación de prueba"
+  else
+    req GET "/api/invitaciones/$S4_TOKEN"
+    check "GET /api/invitaciones/:token → 200" 200 "$STATUS"
+    check "el email viaja enmascarado" "s***@test.dev" "$(json_eval 'd.email' <<< "$BODY")"
+
+    req GET "/api/invitaciones/00000000-0000-0000-0000-000000000000"
+    check "GET con token inexistente → 410" 410 "$STATUS"
+
+    req POST "/api/invitaciones/$S4_TOKEN/aceptar" '' '{"password":"invitado1234","confirmacion":"invitado1234"}'
+    check "POST /api/invitaciones/:token/aceptar → 200" 200 "$STATUS"
+    check "la sesión trae el rol invitado" "org_admin" "$(json_eval 'd.user.roles[0]' <<< "$BODY")"
+    S4_REFRESH=$(json_eval 'd.refreshToken' <<< "$BODY")
+
+    req POST /api/auth/login '' "{\"email\":\"$S4_EMAIL\",\"password\":\"invitado1234\"}"
+    check "login del invitado activado → 200" 200 "$STATUS"
+    S4_REFRESH_LOGIN=$(json_eval 'd.refreshToken' <<< "$BODY")
+
+    req POST "/api/invitaciones/$S4_TOKEN/aceptar" '' '{"password":"invitado1234"}'
+    check "segundo uso de la invitación → 410" 410 "$STATUS"
+
+    # Limpieza: se cierran las sesiones y se borra el usuario invitado
+    for r in "$S4_REFRESH" "${S4_REFRESH_LOGIN:-}"; do
+      [ -n "$r" ] && req POST /api/auth/logout '' "{\"refreshToken\":\"$r\"}"
+    done
+    docker exec consorcIA-backend node -e "
+      const { PrismaClient } = require('@prisma/client');
+      const p = new PrismaClient();
+      (async () => {
+        await p.invitacion.deleteMany({ where: { email: '$S4_EMAIL' } });
+        const u = await p.usuario.findUnique({ where: { email: '$S4_EMAIL' } });
+        if (u) {
+          await p.organizacionUsuario.deleteMany({ where: { usuarioId: u.id } });
+          await p.usuario.delete({ where: { id: u.id } });
+        }
+        await p.\$disconnect();
+      })();
+    " >/dev/null 2>&1 || true
+  fi
 fi
 
 # --- Limpieza de seguridad -----------------------------------------------------

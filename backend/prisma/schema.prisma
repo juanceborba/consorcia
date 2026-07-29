@@ -30,6 +30,13 @@ enum RolUsuario {
   PROVEEDOR   // Scope edificio
 }
 
+// Tipo de invitación (S4-02, PRD-04-11 §2.3): define qué vínculos crea al
+// aceptarse (STAFF → membresía + edificios de gestor · RESIDENTE → UnidadUsuario)
+enum TipoInvitacion {
+  STAFF
+  RESIDENTE
+}
+
 enum EstadoUnidad {
   ACTIVA
   INACTIVA
@@ -112,6 +119,7 @@ model Organizacion {
   // Relaciones
   edificios       Edificio[]
   miembros        OrganizacionUsuario[]
+  invitaciones    Invitacion[]
   config          OrganizacionConfig?
 
   // Timestamps
@@ -176,7 +184,10 @@ model GestorEdificio {
 model Usuario {
   id              String   @id @default(uuid())
   email           String   @unique
-  passwordHash    String   @map("password_hash")
+  // Null mientras la cuenta no fue activada: el alta por backoffice (S4-03/04)
+  // crea al Usuario sin password y la define él al aceptar la invitación
+  // (S4-02). Sin password no hay login posible.
+  passwordHash    String?  @map("password_hash")
   nombre          String
   apellido        String
   telefono        String?
@@ -189,6 +200,7 @@ model Usuario {
   ticketsCreados  Ticket[]         @relation("TicketCreador")
   ticketsAsignados Ticket[]        @relation("TicketAsignado")
   auditLogs       AuditLog[]
+  invitacionesEnviadas Invitacion[] @relation("InvitacionAutor")
 
   // Timestamps
   createdAt   DateTime @default(now()) @map("created_at")
@@ -197,6 +209,42 @@ model Usuario {
 
   @@index([activo])
   @@map("usuarios")
+}
+
+// Invitación de activación (S4-02, PRD-04-11 §2.3). La crea el backoffice
+// (S4-03 staff / S4-04 residentes) y la consume el invitado en
+// `/invitacion/:token`: define su password y los vínculos del `payload` se
+// materializan. Un solo uso (`usadaAt`) y vence a los 7 días.
+model Invitacion {
+  id              String   @id @default(uuid())
+  email           String   // Normalizado lowercase (identidad global)
+  organizacionId  String   @map("organizacion_id")
+  tipo            TipoInvitacion
+
+  // STAFF:     { rol, nombre?, apellido?, edificioIds[] }
+  // RESIDENTE: { nombre?, apellido?, unidadId, esPropietario, esInquilino, fechaInicio? }
+  payload         Json
+
+  token           String   @unique @default(uuid()) // va en el link /invitacion/:token
+  expiraAt        DateTime @map("expira_at")
+  usadaAt         DateTime? @map("usada_at")
+  invitadoPorId   String   @map("invitado_por_id") // auditoría: quién invitó
+
+  // Relaciones
+  organizacion    Organizacion @relation(fields: [organizacionId], references: [id])
+  invitadoPor     Usuario      @relation("InvitacionAutor", fields: [invitadoPorId], references: [id])
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Una sola invitación PENDIENTE por (email, organización, tipo): se aplica
+  // con un índice único parcial `WHERE usada_at IS NULL` creado en la
+  // migración (Prisma no expresa índices parciales). Reenviar = regenerar
+  // token/expiración de la misma fila.
+  @@index([organizacionId, email])
+  @@index([organizacionId, tipo])
+  @@map("invitaciones")
 }
 
 // ==========================================
