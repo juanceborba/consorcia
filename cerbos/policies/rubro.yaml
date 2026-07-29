@@ -1,0 +1,64 @@
+# cerbos/policies/rubro.yaml — Recurso `rubro` (S3-01)
+# Spec: PRD-04-02 §1.4 · PRD-05-04 Cerbos RBAC §3.1 (estructura canónica).
+#
+# Mismo modelo híbrido que `proveedor`: el árbol maestro es de plataforma
+# (`Rubro.organizacionId = null`) y cada organización le suma ítems propios y
+# overrides de visibilidad. Contrato de attrs para las rutas (S3-13):
+#
+#   organizacion_id : string — org dueña del ítem; **string vacío** ("") si es
+#                     del maestro. Nunca ausente.
+#   es_maestro      : bool  — true si `organizacionId` es null.
+#
+# En las acciones sobre la colección (listar / crear propio) el recurso es la
+# organización activa: `organizacion_id` = org del JWT y `es_maestro` = false.
+#
+#   superadmin global (único que edita el maestro) ·
+#   org_admin CRUD de los propios + lectura del maestro + `visibilidad`
+#   (el override de ocultar un ítem del maestro es un dato de SU organización,
+#   no una escritura sobre el maestro) ·
+#   gestor solo lectura del árbol.
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: "default"
+  resource: "rubro"
+  rules:
+    # Superadmin puede todo, incluido administrar el maestro
+    - actions: ['*']
+      effect: EFFECT_ALLOW
+      roles:
+        - superadmin
+
+    # Org admin administra los rubros propios de su organización
+    - actions: ['read', 'create', 'update', 'delete']
+      effect: EFFECT_ALLOW
+      roles:
+        - org_admin
+      condition:
+        match:
+          all:
+            of:
+              - expr: request.resource.attr.es_maestro == false
+              - expr: request.resource.attr.organizacion_id == request.principal.attr.organizacion_id
+
+    # Org admin: lectura del maestro y toggle de visibilidad sobre sus ítems
+    # (el override vive en rubro_visibilidad, scopeado a su organización)
+    - actions: ['read', 'visibilidad']
+      effect: EFFECT_ALLOW
+      roles:
+        - org_admin
+      condition:
+        match:
+          expr: request.resource.attr.es_maestro == true
+
+    # Gestor: lectura del maestro y de los propios de su org, sin escritura
+    - actions: ['read']
+      effect: EFFECT_ALLOW
+      roles:
+        - gestor
+      condition:
+        match:
+          any:
+            of:
+              - expr: request.resource.attr.es_maestro == true
+              - expr: request.resource.attr.organizacion_id == request.principal.attr.organizacion_id
+# Sin regla DENY global: el default cuando ninguna regla matchea ya es DENY.

@@ -1,0 +1,41 @@
+# cerbos/policies/liquidacion.yaml — Recurso `liquidacion` (S3-01)
+# Spec: PRD-04-03 §1 (máquina de estados) · PRD-05-04 Cerbos RBAC §3.1.
+#   superadmin global · org_admin CRUD + las acciones del workflow
+#   (`aprobar`, `anular`, `enviar`) en su organización ·
+#   gestor SOLO lectura de las liquidaciones de sus edificios asignados: no
+#   liquida ni aprueba (backlog S3 · DoD del sprint).
+# Las transiciones de estado son acciones propias porque son el acto oficial
+# del administrador responsable (Ley 941), no un `update` cualquiera.
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: "default"
+  resource: "liquidacion"
+  rules:
+    # Superadmin puede todo
+    - actions: ['*']
+      effect: EFFECT_ALLOW
+      roles:
+        - superadmin
+
+    # Org admin administra y firma las liquidaciones de su organización
+    - actions: ['read', 'create', 'update', 'delete', 'aprobar', 'anular', 'enviar']
+      effect: EFFECT_ALLOW
+      roles:
+        - org_admin
+      condition:
+        match:
+          expr: request.resource.attr.organizacion_id == request.principal.attr.organizacion_id
+
+    # Gestor: solo lectura, y solo en sus edificios asignados
+    - actions: ['read']
+      effect: EFFECT_ALLOW
+      roles:
+        - gestor
+      condition:
+        match:
+          all:
+            of:
+              - expr: request.resource.attr.organizacion_id == request.principal.attr.organizacion_id
+              - expr: request.resource.attr.edificio_id in request.principal.attr.edificios_asignados
+# Sin regla DENY global: el default cuando ninguna regla matchea ya es DENY.
+# En particular `create`/`aprobar`/`enviar` para gestor caen ahí (fail-closed).
