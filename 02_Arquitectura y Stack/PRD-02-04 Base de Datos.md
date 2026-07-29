@@ -17,7 +17,7 @@ outcomes:
 # PRD-02-04: Base de Datos
 
 > **PostgreSQL 17 + pgvector.** Multi-tenant por diseño. El tenant raíz es la **Organización** (administración/estudio). Cada tabla tiene `organizacion_id`.  
-> **Regla:** Ninguna query sin `organizacion_id`. Nunca.
+> **Regla:** Ninguna query sin `organizacion_id`. Nunca. **Única excepción:** `usuarios`, donde la identidad es global (§1.4).
 
 ---
 
@@ -30,7 +30,7 @@ outcomes:
 | Nivel | Implementación | Justificación |
 |-------|---------------|---------------|
 | **Schema** | Un solo schema `consorcia` | Simplicidad; no se necesitan JOIN entre organizaciones |
-| **Tabla** | `organizacion_id` en cada tabla | RLS (Row Level Security) filtra automáticamente |
+| **Tabla** | `organizacion_id` en cada tabla (salvo `usuarios`, §1.4) | RLS (Row Level Security) filtra automáticamente |
 | **Query** | Middleware inyecta `organizacion_id` | Cero riesgo de fuga de datos entre organizaciones |
 | **Índice** | Índice compuesto `(organizacion_id, ...)` | Performance optimizada para queries tenant-scoped |
 
@@ -52,7 +52,26 @@ Toda tabla con datos sensibles tiene:
 | Suma de montos = montoTotal | Trigger `AFTER INSERT` en `liquidacion_detalle` |
 | Coeficiente >= 0 | Constraint `CHECK` en `unidades.coeficiente` |
 | Monto > 0 | Constraint `CHECK` en `gastos.monto` |
-| Email único por organización | Índice único compuesto `(organizacion_id, email)` (el mismo email puede existir en otra organización) |
+| Email único global | Índice único `usuarios(email)`, normalizado a lowercase (identidad global, S4-01 — ver §1.4) |
+
+### 1.4 Identidad global (excepción al scope por organización, S4-01)
+
+`usuarios` es la **única tabla sin `organizacion_id`**: la identidad es global y los permisos son vínculos (ver [[PRD-04-11 Gestión de Usuarios e Identidad]] §2). Una persona = un `Usuario` = un login, con N membresías staff y N vínculos a unidades, incluso entre organizaciones distintas.
+
+```
+Usuario (email único global, lowercase)
+  ├── OrganizacionUsuario (staff) ──────► Organización   rol: ORG_ADMIN | GESTOR · activo
+  │        └── GestorEdificio ──────────► Edificio       (solo GESTOR: edificios permitidos)
+  └── UnidadUsuario (residente) ────────► Unidad ─► Edificio ─► Organización
+```
+
+Consecuencias implementadas en S4-01 (migración `20260729020000_s4_identidad_global`):
+
+- `usuarios.organizacion_id` y `usuarios.rol` **eliminados**. La migración mueve el par (`organizacion_id`, `rol`) de cada usuario existente a su fila de `organizacion_usuarios` antes de dropear las columnas, y aborta si algún usuario quedaría sin membresía o si el lowercase genera emails duplicados.
+- `organizacion_usuarios.activo` (default `true`): baja lógica de la membresía. El `Usuario` global sobrevive y pierde el acceso a esa organización.
+- **RLS**: la política `organizacion_isolation_usuarios` se elimina y `usuarios` queda sin RLS (no tiene columna por la cual scopear). El aislamiento de personas se aplica sobre los vínculos (`organizacion_usuarios`, `unidad_usuarios`), que sí llevan `organizacion_id`.
+- **Organización activa de la sesión**: se deriva de la membresía activa, no del usuario. Con N membresías activas se elige la de la organización **primera alfabéticamente** (desempate por `organizacion_id`): determinística y estable frente a timestamps iguales. El cambio de contexto sin re-login es `POST /api/auth/cambiar-organizacion` (S4-05).
+- **Claims del JWT sin cambios de forma** (`sub, email, org_id, roles, edificios_asignados`), pero derivados de la membresía. Un residente puro (sin membresía staff) viaja con `org_id: null` y roles derivados de sus `unidad_usuarios` vigentes; `tenant.middleware` revalida la membresía en cada request (fail-closed: 403 `SIN_MEMBRESIA` / `SIN_ORGANIZACION_ACTIVA`).
 
 ---
 
@@ -190,6 +209,10 @@ model OrganizacionUsuario {
   // Rol de organización: ORG_ADMIN o GESTOR
   rol             RolUsuario
 
+  // Baja lógica de la membresía (S4-01): el Usuario global sobrevive, pierde
+  // el acceso a esta organización. Nunca se borra la fila (auditoría).
+  activo          Boolean  @default(true)
+
   // Relaciones
   organizacion    Organizacion @relation(fields: [organizacionId], references: [id])
   usuario         Usuario      @relation(fields: [usuarioId], references: [id])
@@ -199,6 +222,7 @@ model OrganizacionUsuario {
 
   @@unique([organizacionId, usuarioId])
   @@index([usuarioId])
+  @@index([usuarioId, activo])
   @@map("organizacion_usuarios")
 }
 
@@ -224,15 +248,17 @@ model GestorEdificio {
 // USUARIOS Y AUTENTICACIÓN
 // ==========================================
 
+// Identidad GLOBAL (S4-01, PRD-04-11 §2): un Usuario existe una sola vez en el
+// sistema y se identifica por su email (normalizado lowercase). Es la excepción
+// documentada al "todo cuelga de la organización": el Usuario no tiene tenant,
+// los permisos son vínculos (OrganizacionUsuario / GestorEdificio / UnidadUsuario).
 model Usuario {
   id              String   @id @default(uuid())
-  organizacionId  String   @map("organizacion_id")
-  email           String
+  email           String   @unique
   passwordHash    String   @map("password_hash")
   nombre          String
   apellido        String
   telefono        String?
-  rol             RolUsuario
   activo          Boolean  @default(true)
 
   // Relaciones
@@ -248,9 +274,7 @@ model Usuario {
   updatedAt   DateTime @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
 
-  @@unique([organizacionId, email])
-  @@index([organizacionId, rol])
-  @@index([organizacionId, activo])
+  @@index([activo])
   @@map("usuarios")
 }
 
@@ -858,7 +882,8 @@ FOR EACH ROW EXECUTE FUNCTION audit_trigger();
 -- migrations/rls_policies.sql
 
 -- Habilitar RLS en todas las tablas tenant-scoped
-ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
+-- NOTA (S4-01): `usuarios` quedó FUERA de RLS — la identidad es global y la
+-- tabla ya no tiene `organizacion_id` por el cual scopear (ver §1.4).
 ALTER TABLE edificios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE unidades ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gastos ENABLE ROW LEVEL SECURITY;
@@ -869,10 +894,7 @@ ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comunicaciones ENABLE ROW LEVEL SECURITY;
 ALTER TABLE documentos ENABLE ROW LEVEL SECURITY;
 
--- Política: usuarios solo ven datos de su organización
-CREATE POLICY organizacion_isolation_usuarios ON usuarios
-    USING (organizacion_id = current_setting('app.current_organizacion_id', true));
-
+-- Política: cada organización solo ve sus propios datos
 CREATE POLICY organizacion_isolation_edificios ON edificios
     USING (organizacion_id = current_setting('app.current_organizacion_id', true));
 
