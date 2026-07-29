@@ -78,6 +78,7 @@ Usuario (global, email único)
 | `expiraAt` | DateTime | 7 días |
 | `usadaAt` | DateTime? | Un solo uso |
 | `invitadoPorId` | UUID | FK → Usuario (auditoría) |
+| `creaUsuario` | Boolean | **S4-11.** `true` si el alta que generó esta invitación fue la que **creó la identidad global**. Es lo único que habilita a la invitación a definir la password de una cuenta sin activar (§6.3). En el reenvío se conserva con un OR: la persona ya existe porque la creó la invitación anterior de esa misma organización, así que recalcularlo dejaría el link nuevo sin poder activar la cuenta que su propio origen aprovisionó |
 
 Restricción: una sola invitación **pendiente** por `(email, organizacionId, tipo)`. Reenviar = regenerar token/expiración.
 
@@ -94,6 +95,8 @@ Restricción: una sola invitación **pendiente** por `(email, organizacionId, ti
 
 La autorización sigue siendo Cerbos fail-closed ([[PRD-05-04 Cerbos RBAC]]); el fast-path de vínculo usuario↔unidad del portal se mantiene (ver §8, sync con PRD-04-05).
 
+**Los roles de la sesión son la UNIÓN de la membresía y de los vínculos de unidad vigentes (S4-11).** Antes eran excluyentes —si había membresía staff, los roles de `UnidadUsuario` no se derivaban—, así que a un propietario le alcanzaba con que **cualquier** organización lo invitara como staff (sin su consentimiento, §4.3) para perder `propietario` de su sesión y quedar sin acceso a su portal. La unión vale en los tres caminos que arman contexto: login, `cambiar-organizacion` y `refresh`. Los roles de residente no se scopean por organización (el portal agrega por `usuarioId`, §5.5); no amplían permisos en el backoffice porque las policies de `propietario`/`inquilino` exigen un `edificio_id` en el principal que solo el portal va a setear.
+
 ---
 
 ## 4. Workflow A — Alta de staff (backoffice)
@@ -106,7 +109,7 @@ La autorización sigue siendo Cerbos fail-closed ([[PRD-05-04 Cerbos RBAC]]); el
    - Si el email **no existe**: crea `Usuario` (sin password) + `OrganizacionUsuario` (+ `GestorEdificio` si gestor) + `Invitacion` tipo STAFF.
    - Si el email **ya existe** (persona de otra org o residente): solo agrega la membresía/vínculos + invitación de "sumaste una organización" — **mismo login**, sin password nuevo.
 4. MVP: la UI muestra el **link de invitación para copiar** (AgentMail llega post-beta, ver [[PRD-05-01 AgentMail]] — el endpoint ya deja el envío encapsulado).
-5. El invitado abre `/invitacion/:token` → define su password → cuenta activa → login.
+5. El invitado abre `/invitacion/:token` → define su password → cuenta activa → login. **Solo si esta invitación creó la identidad** (§6.3): si el email ya tenía cuenta, el link no define password ni emite sesión — el vínculo ya quedó creado en el paso 3 y la persona entra con la credencial que ya tenía.
 6. Si el staff tiene membresías en N organizaciones, tras el login ve un **selector de organización** en el header; `POST /api/auth/cambiar-organizacion` re-emite el JWT con el `org_id` activo (mismos claims de siempre: `sub, email, org_id, roles, edificios_asignados`).
 
 Gestión posterior (misma pantalla): listar staff, cambiar rol, editar edificios del gestor, desactivar (baja lógica de la membresía, no del Usuario global).
@@ -143,16 +146,41 @@ Gestión posterior (misma pantalla): listar staff, cambiar rol, editar edificios
 | `POST /api/unidades/:id/residentes` | org_admin, gestor asignado | Vincula/invita residente (Workflow B) → 201 + `invitacionUrl` |
 | `DELETE /api/unidades/:id/residentes/:vinculoId` | org_admin, gestor asignado | Desvincula (`fechaFin = hoy`) |
 | `GET /api/invitaciones/:token` | público | Datos de la invitación (email enmascarado, org, tipo) para la pantalla de aceptación |
-| `POST /api/invitaciones/:token/aceptar` | público | Define password, activa cuenta, loguea → 200 { accessToken, refreshToken, user } |
+| `POST /api/invitaciones/:token/aceptar` | público | Activa la cuenta **solo si esta invitación creó la identidad** → 200 { accessToken, refreshToken, user }. Si no, no emite sesión ni toca credenciales: ver §6.3 |
 
-Errores del contrato `{ error: { code, message } }`. Códigos nuevos: `EMAIL_YA_REGISTRADO` (422), `INVITACION_INVALIDA` (410, expirada/usada/inexistente), `INVITACION_PENDIENTE` (409, ya hay una pendiente — sugiere reenviar), `VINCULO_DUPLICADO` (409, esa persona ya está en esa UF), `SIN_MEMBRESIA` (403, cambiar-organizacion a org ajena o membresía desactivada), `SIN_ORGANIZACION_ACTIVA` (403, sesión sin org activa — residente puro contra el backoffice), `INVITACION_INCONSISTENTE` (422, el payload de la invitación no valida o su unidad ya no existe: hay que reenviarla), `EDIFICIO_INVALIDO` (422, alguno de los `edificioIds` no existe, está dado de baja o es de otra organización), `ULTIMO_ORG_ADMIN` (422, ver §9), `USUARIO_NO_ENCONTRADO` (404, el `:id` del PATCH no es miembro de la organización del JWT).
+Errores del contrato `{ error: { code, message } }`. Códigos nuevos: `EMAIL_YA_REGISTRADO` (422), `INVITACION_INVALIDA` (410, expirada/usada/inexistente), `INVITACION_PENDIENTE` (409, ya hay una pendiente — sugiere reenviar), `VINCULO_DUPLICADO` (409, esa persona ya está en esa UF), `SIN_MEMBRESIA` (403, cambiar-organizacion a org ajena o membresía desactivada), `SIN_ORGANIZACION_ACTIVA` (403, sesión sin org activa — residente puro contra el backoffice), `INVITACION_INCONSISTENTE` (422, el payload de la invitación no valida o su unidad ya no existe: hay que reenviarla), `EDIFICIO_INVALIDO` (422, alguno de los `edificioIds` no existe, está dado de baja o es de otra organización), `ULTIMO_ORG_ADMIN` (422, ver §9), `USUARIO_NO_ENCONTRADO` (404, el `:id` del PATCH no es miembro de la organización del JWT), y los de §6.3: `ACTIVACION_NO_DISPONIBLE` (409), `MEMBRESIA_DESACTIVADA` (403), `CUENTA_DESACTIVADA` (403).
+
+### 6.3 Semántica de la aceptación (S4-11)
+
+**Por qué cambió.** El diseño original apoyaba la aceptación en que "el token prueba posesión del buzón" (§7). En el MVP eso **no es cierto**: no hay envío de email, el link se le devuelve al invitador (`invitacionUrl`) y la UI lo muestra para copiar. Sumado a la identidad global —el email es una credencial de aprovisionamiento y cualquier `org_admin` puede invitar a cualquier email, con `POST /auth/register` público— el token funcionaba como credencial de suplantación: aceptar una invitación dirigida a una cuenta ajena devolvía una **sesión completa de esa persona**, con todas sus organizaciones alcanzables vía `cambiar-organizacion`. Auditado en `docs/sprints/S4-security.md` (SEC-01 CRITICAL, SEC-02/03 HIGH) y reproducido de forma independiente en `S4-review.md` (B1) y `S4-qa.md` (QA-01).
+
+**Regla de diseño resultante — no negociable mientras el link vuelva al invitador:**
+
+> La aceptación de una invitación **nunca emite sesión ni fija password sobre un `Usuario` preexistente**. Solo la invitación que **creó** la identidad puede activarla.
+
+`Invitacion.creaUsuario` (§2.3) es lo que materializa esa atribución: se setea en el alta según si el `Usuario` existía o no. Se eligió el flag en la invitación —y no un `creadoPorInvitacionId` en `Usuario`— porque es una columna booleana sin FK ni backfill, se resuelve en el mismo `findUnique` que el alta ya hacía, y sobrevive naturalmente al reenvío (que reusa la fila).
+
+| Caso al aceptar | Respuesta | Efectos |
+|---|---|---|
+| El `Usuario` **no existe** | `200` sesión completa | Crea el `Usuario` con la password, aplica los vínculos del payload, consume el token |
+| Existe **sin activar** y `creaUsuario = true` (esta invitación lo aprovisionó) | `200` sesión completa | Define la password, aplica los vínculos, consume el token |
+| Existe y **ya está activado** (`passwordHash != null`) | `200 { yaActivada: true }` — **sin tokens ni DTO de usuario** | Consume el token y nada más: el vínculo ya se materializó en el alta (§4.3). La password tipeada se descarta y la UI lo dice explícitamente |
+| Existe **sin activar** y `creaUsuario = false` (lo aprovisionó otra invitación) | `409 ACTIVACION_NO_DISPONIBLE` | Ninguno: **no** consume el token. La cuenta se activa con la invitación de origen; si se perdió, esa organización la reenvía |
+| Su membresía en la organización que invita está **desactivada** | `403 MEMBRESIA_DESACTIVADA` | Ninguno. El accept no reactiva bajas lógicas: volver al staff es un `PATCH /me/usuarios/:id` de la organización |
+| El `Usuario` está dado de **baja global** (`activo: false` / `deletedAt`) | `403 CUENTA_DESACTIVADA` | Ninguno. La reactivación es un acto administrativo explícito, no un efecto de un link que el propio atacante genera |
+
+Notas:
+
+- El vínculo de residente (`UnidadUsuario`) **sí** se reabre al aceptar (`fechaFin = null`), a diferencia de la membresía staff. Es intencional: la unicidad es `(org, unidad, usuario)` y re-vincular a un titular dado de baja reabre su fila por diseño (§5.6); además el vínculo ya lo creó el POST de alta, así que el accept no agrega poder.
+- La pantalla `/invitacion/:token` distingue los tres desenlaces: sesión (entra), `yaActivada` ("tu cuenta ya estaba activa, la contraseña que escribiste no se guardó" + botón a `/login`) y los 409/403, que son condiciones **permanentes** del link y van a pantalla completa con su motivo, no a un toast de "reintentá".
+- Queda pendiente el cierre de fondo del vector (que no depende de este endpoint): enviar el link al buzón en vez de devolvérselo al invitador, y no crear la membresía activa sin consentimiento de la persona. Ver SEC-04/05 en `S4-security.md`.
 
 **Implementado en S4-02** (`src/routes/invitaciones.routes.js`):
 
 - Los dos endpoints públicos responden **410 `INVITACION_INVALIDA` sin distinguir** entre inexistente, usada y vencida: distinguir filtraría si un email/organización existe.
 - `GET` devuelve `{ email (enmascarado, "j***@demo.com"), tipo, organizacion: {id, nombre}, nombre, apellido, expiraAt }`. El email nunca viaja completo (Ley 25.326, minimización: el link puede terminar en manos de un tercero).
-- `aceptar` corre en **una sola transacción**: crea o reactiva el `Usuario`, materializa los vínculos del payload (STAFF → `OrganizacionUsuario` upsert + `GestorEdificio` de los edificios de la org que invita · RESIDENTE → `UnidadUsuario` upsert) y consume el token con `usadaAt` bajo condición `usadaAt IS NULL` (dos aceptaciones simultáneas no duplican vínculos). Si algo falla, la invitación **no** queda consumida.
-- **La password solo se define si el Usuario no tenía**: a una persona ya activada la invitación le suma vínculos sin resetear sus credenciales (§4.3 "mismo login, sin password nuevo"). Quien tenga el link de una persona ya registrada no puede tomarle la cuenta.
+- `aceptar` corre en **una sola transacción**: crea el `Usuario` (o le define la password si esta invitación lo aprovisionó, §6.3 — **nunca** lo reactiva), materializa los vínculos del payload (STAFF → `OrganizacionUsuario` upsert + `GestorEdificio` de los edificios de la org que invita · RESIDENTE → `UnidadUsuario` upsert) y consume el token con `usadaAt` bajo condición `usadaAt IS NULL` (dos aceptaciones simultáneas no duplican vínculos). Si algo falla, la invitación **no** queda consumida.
+- **La password solo se define si el Usuario no tenía** y además solo si esta invitación creó la identidad (**§6.3, S4-11**): a una persona ya activada la invitación no le toca las credenciales ni le emite sesión, y a una cuenta sin activar que aprovisionó otra organización no puede fijarle la password.
 - Un residente puro sale de `aceptar` con `org_id: null` y roles derivados de sus `UnidadUsuario` vigentes (§5.5); el backoffice le responde 403 `SIN_ORGANIZACION_ACTIVA`.
 - `usuarios.password_hash` pasa a nullable para admitir cuentas creadas por backoffice sin activar; el login las rechaza con el mismo 401 `CREDENCIALES_INVALIDAS` (sin oráculo).
 
@@ -162,7 +190,7 @@ Errores del contrato `{ error: { code, message } }`. Códigos nuevos: `EMAIL_YA_
 - El alta deja la **membresía activa de entrada** (§4.3): quien ya tenía cuenta entra sin esperar el link; para el Usuario recién creado (sin password) la invitación es lo que le da acceso. Aceptar la invitación es idempotente sobre esos vínculos.
 - **Orden de los conflictos:** la invitación pendiente manda sobre el vínculo. Un segundo POST al mismo email responde 409 `INVITACION_PENDIENTE`, y **`{ reenviar: true }` regenera token + expiración + payload de la misma fila** y devuelve **200** (no 201: no se creó un recurso). 409 `VINCULO_DUPLICADO` queda para el caso "ya es miembro activo y no hay invitación pendiente", o sea alguien ya onboardeado. Chequear el vínculo primero volvería `INVITACION_PENDIENTE` inalcanzable (la membresía nace activa) y dejaría al admin sin forma de reenviar el link a quien no entró todavía — que es el caso frecuente.
 - `edificioIds` solo aplica a `GESTOR` (un `ORG_ADMIN` con edificios → 422 `VALIDACION_FALLIDA`); un gestor **sin** edificios es válido (§9). El PATCH **reemplaza** el set (no acumula) y solo toca las asignaciones de edificios de esta organización: si la persona gestiona edificios de otra org con el mismo Usuario global, esos vínculos no se tocan. Promover a `ORG_ADMIN` limpia sus asignaciones por edificio (administra toda la org, no significan nada).
-- El guard `ULTIMO_ORG_ADMIN` cubre **desactivar y degradar**, y corre bajo `SELECT ... FOR UPDATE` de la fila de la organización: dos PATCH concurrentes degradando a los dos últimos admins no pueden dejar la org sin ninguno.
+- El guard `ULTIMO_ORG_ADMIN` cubre **desactivar y degradar**, y corre bajo `SELECT ... FOR UPDATE` de la fila de la organización: dos PATCH concurrentes degradando a los dos últimos admins no pueden dejar la org sin ninguno. **S4-11:** cuenta solo org_admins **operables** —membresía activa **y** `usuario.passwordHash != null`, `activo`, sin `deletedAt`—. Antes, invitar a un segundo org_admin ya "habilitaba" degradarse a uno mismo aunque el invitado no pudiera loguear todavía; si el admin había cerrado el diálogo sin copiar el `invitacionUrl` (y no hay envío de email), la organización quedaba sin nadie capaz de administrarla.
 - El envío está encapsulado en `src/services/notificaciones.service.js` (stub): la respuesta trae `invitacionUrl` + `emailEnviado: false` y sumar AgentMail no toca las rutas. La URL se arma con `APP_BASE_URL` (base pública de la SPA), nunca con la de la API.
 - Cerbos: recurso **`staff`** (`cerbos/policies/staff.yaml`), el recurso es la organización misma. Solo `superadmin` y `org_admin` de su propia org; el gestor no tiene ni lectura de la nómina (§3: "no crea edificios ni usuarios").
 
@@ -188,7 +216,7 @@ Errores del contrato `{ error: { code, message } }`. Códigos nuevos: `EMAIL_YA_
 
 ## 7. Decisión: identificación unívoca por email
 
-- **Email = identificador de login e identidad global.** Único, verificable (el link de invitación prueba posesión del buzón), y es el canal natural de comunicaciones (AgentMail).
+- **Email = identificador de login e identidad global.** Único y canal natural de comunicaciones (AgentMail). **Corrección S4-11:** mientras el MVP le devuelva el link al invitador en vez de enviarlo al buzón, el token **no** prueba posesión del email — por eso la aceptación no puede tener efectos sobre una identidad preexistente (§6.3). El email es, hoy, una credencial de **aprovisionamiento**, no de autenticación.
 - Se normaliza a lowercase y se valida formato en Zod.
 - **DNI/CUIT se descartan como identificador de login** en el MVP: no todos los residentes lo tienen a mano, no es verificable sin integración con Renaper/AFIP, y la Ley 25.326 aconseja no recolectar datos sensibles sin necesidad. Queda como campo opcional futuro (útil para matching al importar padrón de propietarios, ver [[PRD-04-07 Importación Inteligente]]).
 - Riesgo conocido y aceptado: una persona con dos emails = dos cuentas. Mitigación futura: flujo de "unificar cuentas" por verificación de email.
@@ -213,8 +241,13 @@ Errores del contrato `{ error: { code, message } }`. Códigos nuevos: `EMAIL_YA_
 | Invitación expirada | 410 `INVITACION_INVALIDA`; el admin reenvía (nuevo token) |
 | Residente que también es gestor (de otra org) | Válido: mismo Usuario, membresía staff en org A + UnidadUsuario en org B. Al loguear, si tiene membresías staff ve selector; el portal siempre disponible |
 | Desvincular residente con expensas impagas | Permitido (fechaFin); la deuda queda asociada a la UF, visible en historial |
-| Org_admin se desactiva a sí mismo | Prohibido (debe quedar al menos un org_admin activo por org) → 422 `ULTIMO_ORG_ADMIN` |
+| Org_admin se desactiva a sí mismo | Prohibido (debe quedar al menos un org_admin **activo y operable** por org) → 422 `ULTIMO_ORG_ADMIN`. Un org_admin invitado que todavía no activó su cuenta **no cuenta** (S4-11) |
 | Gestor sin edificios asignados | Permitido (ve la org en solo lectura); la UI sugiere asignarle edificios |
+| Aceptar una invitación dirigida a una cuenta ya activada | `200 { yaActivada: true }` sin sesión: el vínculo ya está creado, se entra por login (§6.3) |
+| Aceptar una invitación sobre una identidad sin activar que creó **otra** organización | 409 `ACTIVACION_NO_DISPONIBLE`: la activa su invitación de origen (§6.3) |
+| Aceptar con la membresía staff dada de baja | 403 `MEMBRESIA_DESACTIVADA`: el link no revive bajas lógicas; reactivar es un PATCH de la organización (§6.3) |
+| Persona con membresía staff **y** UFs a su nombre | La sesión trae la unión de roles (p. ej. `['gestor','propietario']`), no solo el de la membresía (§3) |
+| Usuario autenticado sin membresía activa ni vínculos | Login 200 con `roles: []` y `organizacionId: null`; el frontend muestra una pantalla **permanente** ("tu cuenta no tiene acceso a ninguna organización, contactá a tu administración") con salida a logout, no un error de red transitorio |
 
 ---
 
@@ -229,12 +262,14 @@ Casos que el seed debe cubrir (credenciales documentadas en AGENTS.md del app):
 5. **Inquilino simple** en una UF de Org A.
 6. **Propietario con N UFs** en el mismo edificio (2+ unidades).
 7. **Invitación pendiente** (sin aceptar) para probar el flujo de activación.
+8. **Staff multi-organización** (S4-11): un Usuario con membresía activa en Org A y en Org B. Es la precondición del selector de organización del header (§4.6) y sin él ese punto de la DoD había que probarlo fabricando la membresía a mano — que además el reseed desactivaba.
 
 **Implementado (S4-10, `backend/prisma/seed.js`).** Decisiones que tomó la implementación:
 
 - **Org B** = "Administración Sur S.R.L." (CUIT `30-71234569-4`) con el "Edificio Lomas" (5 UFs) y su propio org_admin `admin.sur@demo.com`.
 - **Los residentes no llevan membresía de organización**: solo `UnidadUsuario`. Una membresía con rol PROPIETARIO/INQUILINO los metería en la nómina de staff de `GET /api/organizaciones/me/usuarios` (efecto colateral de la migración S4-01, corregido acá).
-- **La invitación pendiente usa un token FIJO** (`seed-invitacion-pendiente`, la columna es String) para poder abrir `/invitacion/seed-invitacion-pendiente` sin consultar la DB. Su invitado (`invitado@demo.com`) existe sin password, igual que lo deja el alta por backoffice.
+- **La invitación pendiente usa un token FIJO** (`seed-invitacion-pendiente`, la columna es String) para poder abrir `/invitacion/seed-invitacion-pendiente` sin consultar la DB. Su invitado (`invitado@demo.com`) existe sin password, igual que lo deja el alta por backoffice, y la invitación lleva `creaUsuario: true` porque es la que lo aprovisionó (sin eso el accept respondería 409, §6.3).
+- **El caso 8 es `multiorg@demo.com`** (S4-11): GESTOR de Org A limitado a Torre Palermo y ORG_ADMIN de Org B. Su organización por defecto es Org A (primera alfabética) y el smoke verifica el cambio de contexto de punta a punta.
 - **Idempotencia**: el seed borra las dos organizaciones demo por CUIT, hace `upsert` de los usuarios por email (con identidad global un Usuario puede sobrevivir a la org si tiene vínculos en otra), limpia el residuo de los specs E2E (`e2e-staff-*`, `e2e-residente-*`) y desactiva las membresías de los usuarios demo en organizaciones ajenas al seed. El `encargado@demo.com` queda como identidad **sin vínculos** (el rol ENCARGADO es de scope edificio y todavía no tiene modelo).
 
 ---
