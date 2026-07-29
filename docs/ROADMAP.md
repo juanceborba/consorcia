@@ -11,9 +11,10 @@
 | **S1** | Fundación visible | 1.5 sem | Login → ves las organizaciones/edificios del usuario |
 | **S2** | Edificios y unidades | 1.5 sem | Alta completa de un edificio con unidades y coeficientes A/B/C |
 | **S3** | Gastos + motor contable | 2 sem | Cargar gastos → liquidar → recibos PDF con QR y matrícula RPA |
-| **S4** | Portal residente | 1.5 sem | Un propietario ve su expensa y descarga su recibo |
-| **S5** | Cobranzas | 1.5 sem | Pago con MercadoPago sandbox → expensa marcada como cobrada |
-| **S6** | Hardening beta | 1 sem | E2E, validación Ley 941, seguridad → **beta 5-10 edificios** |
+| **S4** | Usuarios e identidad | 1.5 sem | Alta de staff por backoffice + residente multi-consorcio activa por invitación y entra al portal con un solo login (spec: `PRD-04-11`) |
+| **S5** | Portal residente | 1.5 sem | Un propietario ve su expensa y descarga su recibo |
+| **S6** | Cobranzas | 1.5 sem | Pago con MercadoPago sandbox → expensa marcada como cobrada |
+| **S7** | Hardening beta | 1 sem | E2E, validación Ley 941, seguridad → **beta 5-10 edificios** |
 
 **Post-beta (Fase 2 temprana):** agentes IA (Onboarding, Contable), comunicaciones AgentMail, kanban, importación inteligente.
 
@@ -38,4 +39,5 @@
 - [S1 — Fundación visible](sprints/S1-fundacion.md) ✅ (cerrado 2026-07-28)
 - [S2 — Edificios y unidades](sprints/S2-edificios-unidades.md) ✅ (cerrado 2026-07-28)
 - [S3 — Gastos + motor contable](sprints/S3-gastos-liquidacion.md) (backlog listo 2026-07-28)
-- S4 a S6: se detallan al cerrar el sprint anterior (las specs ya están en los PRDs).
+- [S4 — Usuarios e identidad](sprints/S4-usuarios-identidad.md)
+- S5 a S7: se detallan al cerrar el sprint anterior (las specs ya están en los PRDs).
