@@ -230,6 +230,13 @@ Casos que el seed debe cubrir (credenciales documentadas en AGENTS.md del app):
 6. **Propietario con N UFs** en el mismo edificio (2+ unidades).
 7. **Invitación pendiente** (sin aceptar) para probar el flujo de activación.
 
+**Implementado (S4-10, `backend/prisma/seed.js`).** Decisiones que tomó la implementación:
+
+- **Org B** = "Administración Sur S.R.L." (CUIT `30-71234569-4`) con el "Edificio Lomas" (5 UFs) y su propio org_admin `admin.sur@demo.com`.
+- **Los residentes no llevan membresía de organización**: solo `UnidadUsuario`. Una membresía con rol PROPIETARIO/INQUILINO los metería en la nómina de staff de `GET /api/organizaciones/me/usuarios` (efecto colateral de la migración S4-01, corregido acá).
+- **La invitación pendiente usa un token FIJO** (`seed-invitacion-pendiente`, la columna es String) para poder abrir `/invitacion/seed-invitacion-pendiente` sin consultar la DB. Su invitado (`invitado@demo.com`) existe sin password, igual que lo deja el alta por backoffice.
+- **Idempotencia**: el seed borra las dos organizaciones demo por CUIT, hace `upsert` de los usuarios por email (con identidad global un Usuario puede sobrevivir a la org si tiene vínculos en otra), limpia el residuo de los specs E2E (`e2e-staff-*`, `e2e-residente-*`) y desactiva las membresías de los usuarios demo en organizaciones ajenas al seed. El `encargado@demo.com` queda como identidad **sin vínculos** (el rol ENCARGADO es de scope edificio y todavía no tiene modelo).
+
 ---
 
 ## 11. Métricas de éxito
