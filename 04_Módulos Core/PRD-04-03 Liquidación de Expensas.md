@@ -322,6 +322,29 @@ Las transiciones del §1 se operan desde la preview. `frontend/src/lib/liquidaci
 > Detalle, matriz de las 6 combinaciones, brechas por riesgo y fuentes legales:
 > `app/docs/investigacion/ordinarias-extraordinarias-y-categorias.md`.
 
+#### Implementado en S3-21 — fondo de reserva (capa A)
+
+La brecha 4 del research (fondo de reserva prometido en [[PRD-06-04 Código Civil y Comercial]] §4.1 y ausente del motor) se cierra así:
+
+| Pieza | Qué hace |
+|---|---|
+| `ReglaFondoReserva` | La regla del edificio, **versionada por período de vigencia** (`vigenciaDesde`). No se edita: se sucede. Base `ORDINARIAS` (default, 5-10% en la práctica), `TOTAL` o `MONTO_FIJO`; `esquemaRepartoId` propio opcional y `motivo` como respaldo del acta |
+| `Liquidacion.totalFondoReserva` + snapshot (`reglaFondoReservaId`, `fondoReservaBase`, `fondoReservaValor`) | El **tercer subtotal**, separado de ordinarias y extraordinarias (la Ley 941 obliga a separar esas dos y el fondo no es ninguna). El snapshot explica el número emitido aunque la regla cambie después |
+| `LiquidacionDetalle.tipo` (`GASTO` \| `FONDO_RESERVA`) con `gastoId` nullable | El aporte por UF es un detalle más: una sola definición de "lo que paga esta UF", y la reconciliación Σ detalles = ordinarias + extraordinarias + fondo se mantiene al centavo |
+| `services/fondo-reserva.js` | Resuelve **la regla que regía en el período liquidado**, no la actual, y calcula el aporte |
+| `GET/POST /api/edificios/:id/fondo-reserva` · `DELETE /api/fondo-reserva/:id` | Alta y consulta de reglas (org_admin). La baja solo procede si ninguna liquidación la usó — la FK es `Restrict` y el 409 lo explica |
+| `components/fondo-reserva/FondoReservaSection.jsx` | En el tab Configuración: historial de reglas, cuál rige hoy y el aviso de que el fondo **todavía no se puede usar** |
+
+Decisiones:
+
+1. **La regla se resuelve por período, no "la vigente".** El porcentaje lo vota una asamblea con fecha; liquidar mayo con la regla de julio cambiaría el importe de un período cerrado.
+2. **El aporte no es un gasto sintético.** No tiene factura ni proveedor: es una contribución patrimonial (CCyC art. 2046 inc. d). Modelarlo como gasto habría contaminado el listado, los rubros y el dashboard con una fila que nadie cargó.
+3. **Se reparte como una categoría A** (todas las UFs por coeficiente) salvo que la regla indique un esquema: contribuir al fondo no admite las exenciones de B y C. Por eso la regla puede tener **su propio** esquema, distinto del general del edificio.
+4. **El recibo lo imprime solo si hubo aporte**: un renglón en $ 0,00 haría creer al propietario que aporta a un fondo inexistente.
+5. **Fuera de alcance en S3: usar el fondo.** Financiar una extraordinaria con el fondo pide saldo, y el saldo pide el ledger del edificio — decisión y evaluación de alternativas en `app/docs/decisiones/ADR-001-ledger-del-edificio.md`, alcance en `app/docs/investigacion/ledger-y-fondo-de-reserva.md`. La UI dice que el fondo se acumula pero no se puede usar todavía, en vez de ofrecer un botón que no existe.
+
+---
+
 | Decisión | Contexto | Justificación |
 |----------|----------|---------------|
 | **Borrador antes de aprobar** | Seguridad | Admin siempre revisa antes de enviar. Cero envíos automáticos |
