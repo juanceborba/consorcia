@@ -1,9 +1,9 @@
 # GENERADO por app/state/engine.py — no editar a mano
 sprint: S3
 titulo: "Gastos + motor contable"
-generado: 2026-07-30T16:12:35Z
-total: 21
-done: 19
+generado: 2026-07-30T17:09:31Z
+total: 22
+done: 20
 tareas:
   - id: S3-01
     titulo: "Ajustes de schema + policies Cerbos"
@@ -175,23 +175,23 @@ tareas:
     seccion: "Frontend — features"
     status: done
     depende_de: [S3-07, S3-15]
-    desbloquea: [S3-17]
+    desbloquea: [S3-17, S3-22]
     issue: 64
     lote: G
     fuente: [PRD-04-02]
     claimed_by: null
-    score: 7.6
+    score: 10.6
   - id: S3-17
     titulo: "Tests E2E dashboard + smoke"
     seccion: "Frontend — features"
     status: done
     depende_de: [S3-16]
-    desbloquea: []
+    desbloquea: [S3-22]
     issue: 65
     lote: G
     fuente: [PRD-04-02, PRD-04-03, PRD-02-05, PRD-02-04, PRD-07-02, PRD-07-03, PRD-07-04]
     claimed_by: null
-    score: 4.7
+    score: 7.7
   - id: S3-18
     titulo: "Motor de reparto por pesos por unidad (seam)"
     seccion: Backend
@@ -236,3 +236,14 @@ tareas:
     fuente: [PRD-06-04]
     claimed_by: null
     score: 5.1
+  - id: S3-22
+    titulo: "Separar el tablero de gastos del tab operativo"
+    seccion: "Frontend — features"
+    status: done
+    depende_de: [S3-16, S3-17]
+    desbloquea: []
+    issue: null
+    lote: G
+    fuente: [PRD-04-02, PRD-07-03]
+    claimed_by: null
+    score: 5.2

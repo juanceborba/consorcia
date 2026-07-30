@@ -51,6 +51,8 @@
   - _Depende de: S3-07, S3-15._
 - [x] **S3-17 Tests E2E dashboard + smoke.** Playwright: filtros reactivos actualizan KPIs y lista; consolidado 403 en plan starter. Extender `scripts/smoke.sh`.
   - _Depende de: S3-16._
+- [x] **S3-22 Separar el tablero de gastos del tab operativo.** Corrige la fusión de S3-16: el tab `/edificios/:id/gastos` vuelve a ser la pantalla operativa (filtros + totalizador segmentado + listado + carga, sin KPIs ni charts) y el dashboard interactivo vive solo en Reportes → `/reportes/gastos`, con selector de alcance (un edificio o toda la administración, esta última Business+ y org_admin). El guard de /reportes baja a RequireStaff. Actualiza PRD-04-02 §3 (que definía el dashboard COMO el tab), PRD-07-03 §2.2, la ayuda contextual y los specs E2E.
+  - _Depende de: S3-16, S3-17._
 
 ## Cierre
 
@@ -87,6 +89,8 @@ S3-16 ──► S3-17
 S3-02 ──► S3-19
 S3-18 ──► S3-20
 S3-04 ──► S3-21
+S3-16 ──► S3-22
+S3-17 ──► S3-22
 ```
 
 **Lotes paralelos sugeridos:** Lote A (S3-01), Lote B (S3-12 + S3-13 + S3-03, en paralelo tras A), Lote C (S3-02), Lote D (S3-04→05→06), Lote E (S3-07→08 + S3-14), Lote F (S3-09→10), Lote G (S3-15→16→17), Lote H (S3-11).
