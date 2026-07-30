@@ -134,6 +134,19 @@ outcomes:
 > - El **selector de organización** vive en el header del `AppLayout` (`components/layout/OrganizacionSelector.jsx`), no en una ruta: cambia el contexto del tenant con `POST /api/auth/cambiar-organizacion` + `queryClient.clear()` + redirect a `/`. Solo se muestra con **más de una** membresía activa (`user.organizaciones`, que viene en el DTO de usuario de todas las respuestas de auth); un residente puro no lo ve nunca.
 > - `/configuracion` **no tiene página propia todavía** (las tabs perfil/edificio/notificaciones/planes de §2.1 llegan más adelante): `usuarios` es su primera ruta hija y el breadcrumb del segmento intermedio va sin href.
 > - "Usuarios" entra al sidebar como módulo de primer nivel (no anidado bajo Configuración) porque es la única entrada de configuración que existe; se reacomoda cuando lleguen las demás.
+> **Implementado (S3-16):** módulo **Reportes** ([[PRD-04-02 Gestor de Gastos]] §3).
+>
+> | Ruta | Guard | Página | Notas |
+> |------|-------|--------|-------|
+> | `/reportes` | `RequireStaff` + `RequireRole org_admin` | `pages/reportes/ReportesPage.jsx` | Hub: grilla de reportes del negocio. Hoy uno solo, "Gastos consolidados" |
+> | `/reportes/gastos` | idem | `pages/reportes/ReporteGastosPage.jsx` | Dashboard de gastos de **toda la organización** (Business+). Un reporte no disponible por plan se muestra deshabilitado con el motivo, no oculto |
+>
+> Diferencias con §2.1 de este documento:
+>
+> - El hijo del hub es `/reportes/gastos` (una ruta por reporte, con su propia página), **no** el `/reportes/:reportId` genérico: cada reporte tiene su alcance, su gate de plan y sus controles, y un router por id obligaría a un registry de configuraciones antes de tener dos casos que lo justifiquen. Cuando existan varios se evalúa el patrón dinámico.
+> - Entra al sidebar como módulo de primer nivel ("Reportes"), **sin `featureFlag`** (no hay infra de flags): lo que lo gobierna es el rol de la ruta y el plan de cada tarjeta.
+> - **Esto reemplaza a la reserva de `/gastos` top-level** que anotó S3-07 (ver arriba): la vista consolidada de gastos no es una sección `/gastos` sino el primer reporte del módulo Reportes. La entrada "Gastos" del sidebar sigue apuntando al tab del edificio de trabajo.
+>
 > **Implementado (S3-14):** configuración de la organización que alimenta la carga de gastos ([[PRD-04-02 Gestor de Gastos]] §1.3/§1.4).
 >
 > | Ruta | Guard | Página | Notas |

@@ -330,6 +330,34 @@ Query: `?periodo=YYYY-MM` | `?desde=&hasta=` | `?todo=1`, más los filtros de la
 
 ---
 
+#### Implementado en S3-16 — la UI del dashboard
+
+| Ruta / componente | Guard | Archivo | Notas |
+|---|---|---|---|
+| `/edificios/:id/gastos` | `RequireStaff` | `pages/edificio/EdificioGastosTab.jsx` | El tab pasa a **dashboard + listado en la misma pantalla**: toolbar arriba, KPIs, cuatro paneles y la tabla de §4.1 abajo, todos sobre el mismo filtro. Los KPI cards **reemplazan** al totalizador segmentado y a las tarjetas por categoría de S3-08b (eran sus antecesores anunciados) |
+| `/reportes` | `RequireStaff` + `RequireRole org_admin` | `pages/reportes/ReportesPage.jsx` | **Hub del módulo Reportes** ([[PRD-07-03 Rutas y Navegacion]] §2.1): grilla de reportes del negocio. Hoy una sola tarjeta, "Gastos consolidados" |
+| `/reportes/gastos` | idem | `pages/reportes/ReporteGastosPage.jsx` | El consolidado de la organización (§3.4, Business+). **Sin listado debajo**: los gastos se listan por edificio y no existe endpoint consolidado; el selector de edificio es el drill-down |
+| `components/gastos/dashboard/GastosDashboard.jsx` | — | idem | Monta el dashboard completo para los dos alcances (`{ edificioId }` o `{ organizacion: true }`): la respuesta del endpoint tiene la misma forma, así que los componentes son los mismos. Traduce `PLAN_INSUFICIENTE` y `ACCESO_DENEGADO` a copy propio con `planActual`/`planRequerido` |
+| `GastosKpis.jsx` | — | idem | Los cinco KPIs de §3.1. Las tarjetas de ordinarias/extraordinarias **son el control del filtro de tipo** |
+| `EvolucionMensualChart.jsx` · `PorRubroChart.jsx` · `PorCategoriaChart.jsx` | — | idem | Recharts 3 (line / bar horizontal con drill-down / pie). Colores de los tokens (`--color-cat-a\|b\|c` para las categorías, los mismos de sus badges; monocromático `--chart-*` para el resto) |
+| `TopProveedores.jsx` | — | idem | Ranking con barra proporcional en HTML, **no un chart**: diez razones sociales largas con tres números por fila no entran en un eje |
+| `hooks/useFiltrosGastos.js` | — | idem | Traduce los search params a los DOS contratos (lista y dashboard) y garantiza la exclusión de los tres modos de período |
+| `lib/planes.js` | — | idem | Jerarquía de planes en el cliente, solo para habilitar/deshabilitar la opción — el gate es del backend |
+
+Divergencias y decisiones de S3-16:
+
+1. **El consolidado NO vive en el tab del edificio, sino en un módulo Reportes nuevo.** §3.2 pone "Todos los edificios" en el selector del dashboard, pero la pantalla del tab tiene un listado debajo que **solo existe por edificio** (`GET /api/edificios/:id/gastos`), y la URL y el breadcrumb dirían un edificio mientras el contenido muestra la organización entera. El selector conserva la opción y **navega** a `/reportes/gastos`, la ruta que [[PRD-07-03 Rutas y Navegacion]] §2.1 ya tenía prevista con su entrada de sidebar. El hub `/reportes` es la casa de los reportes que vienen (morosidad, liquidaciones, [[PRD-04-10 Benchmarking]]): sin él, el primer reporte se quedaría con la URL del módulo.
+2. **Los tres modos de período son un solo control con tres modos, y el rango salió del panel de filtros.** El contrato los rechaza combinados (§3.4, precisión 2) y hasta S3-08b el rango era un filtro más del panel, que convivía con el período: el listado lo toleraba y el dashboard habría respondido 422. Al entrar en modo rango se precarga el mes corriente y el `periodo` se borra solo (la invariante vive en `useFiltrosGastos`, un solo lugar).
+3. **El filtro de tipo mueve la lista y no el dashboard, y la UI lo dice.** Es la consecuencia visible de la precisión 3 de §3.4. Sin el aviso, el KPI total y la fila TOTAL del listado dejan de coincidir sin explicación, que es el reporte de bug fantasma clásico. En el reporte consolidado —que no tiene listado— el filtro directamente no se ofrece.
+4. **Todo lo clickeable de los charts filtra por la URL**, no por estado local: gajo del pie → categoría, fila del ranking → proveedor, barra de rubro → `rubroId` (filtro nuevo en la lista, que ya lo aceptaba en el contrato). La única excepción es el drill-down rubro → subrubros, que es navegación dentro del chart y no un recorte de la pantalla; no pide nada al servidor porque §3.4 ya devuelve el árbol.
+5. **Cada chart es usable sin ver el SVG.** El de rubros y el de categorías llevan su leyenda como lista de botones (que además es la única forma de usar el drill-down con teclado: las barras de un SVG no son focusables) y la evolución publica su serie como tabla `sr-only`. Efecto lateral a tener en cuenta al escribir specs: un `getByRole('row')` de la página entera ahora trae también esas filas, así que las aserciones sobre el listado se acotan a su tabla.
+6. **El gate de plan se muestra, no se esconde.** La opción "Todos los edificios" y la tarjeta del hub aparecen deshabilitadas con el badge "Business" y el motivo: ocultarlas dejaría al plan starter sin saber que la vista existe, y ofrecerlas sin señal sería mandar a un 403.
+7. **`/reportes` va detrás de `RequireRole org_admin`.** Su único reporte es de la administración (§3.4, precisión 9: a un gestor Cerbos le responde 403 sin mirar el plan), así que el gestor vería un hub con una tarjeta que no puede abrir. Se revisa cuando exista un reporte de alcance gestor.
+8. **La ayuda contextual** agrega `gastos/dashboard` (qué plata suma cada modo, por qué la evolución muestra 12 meses, por qué el tipo no mueve los KPIs, rubro ≠ categoría, gasto por UF ≠ expensa) y `reportes/gastos-consolidados` (alcance y por qué no hay listado). El acceso al topic `gastos/carga` se mudó del título del tab —que ahora habla de indicadores— al formulario de carga, que es de lo que ese topic habla.
+9. **recharts entra como dependencia nueva** (~400 kB al bundle, que ya excedía el warning de 500 kB de Vite). El code-splitting del bundle es una tarea propia y no de este slice.
+
+---
+
 ## 4. Frontend: Pantallas
 
 > **Implementado (S3-14):** administración del directorio de proveedores (§1.3) y del árbol de rubros (§1.4), más los dos selectores que el formulario de carga (§4.2) va a consumir en S3-08.
