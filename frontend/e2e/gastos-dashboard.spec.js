@@ -277,6 +277,16 @@ test('el reporte de gastos: alcance por edificio y los tres modos de período ex
     await expect(kpiTotal(page, 'Total histórico')).toContainText('$ 50.000,00');
   });
 
+  await test.step('el header no ofrece el selector de edificio en Reportes', async () => {
+    // S3-22b: el alcance del reporte ya es un selector de esta pantalla; el del
+    // header cambia el contexto de trabajo Y navega, así que acá sacaría al
+    // usuario del reporte que está mirando.
+    await expect(
+      page.getByRole('button', { name: /^Edificio de trabajo:/ }),
+    ).toHaveCount(0);
+    await expect(page.locator('#filtro-edificio')).toBeVisible();
+  });
+
   await test.step('el drill-down al detalle lleva los mismos filtros al tab', async () => {
     // Decisión 3: el detalle es del edificio, y el link se lleva el recorte.
     await page.getByRole('link', { name: /Ver el detalle de Torre Palermo/ }).click();
@@ -309,6 +319,12 @@ test('el tab del edificio es la operación, no el tablero', async ({ page }) => 
     // header + 3 gastos + TOTAL
     const tabla = page.getByRole('table').filter({ hasText: 'Concepto' });
     await expect(tabla.getByRole('row')).toHaveCount(5);
+  });
+
+  await test.step('el header sí ofrece el selector: acá el edificio ES el contexto', async () => {
+    await expect(
+      page.getByRole('button', { name: /^Edificio de trabajo:/ }),
+    ).toBeVisible();
   });
 
   await test.step('y NO tiene ninguno de los componentes del tablero', async () => {

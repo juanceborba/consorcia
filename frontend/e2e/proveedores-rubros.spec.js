@@ -44,6 +44,11 @@ test('directorio de proveedores: alta, búsqueda por CUIT y baja', async ({ page
   await test.step('entrada por el sidebar', async () => {
     await page.getByRole('link', { name: 'Proveedores' }).click();
     await expect(page).toHaveURL(/\/configuracion\/proveedores$/);
+    // S3-22b: el directorio es de la organización, no de un edificio, así que el
+    // header no ofrece el selector de edificio de trabajo.
+    await expect(
+      page.getByRole('button', { name: /^Edificio de trabajo:/ }),
+    ).toHaveCount(0);
     // Proveedor propio del seed: confirma que el badge de origen se pinta.
     const fila = page.getByRole('row', { name: /Ascensores Otis SA/ });
     await expect(fila).toContainText('Propio');
@@ -106,6 +111,10 @@ test('árbol de rubros: visibilidad, subrubros propios y protección del maestro
 
   await page.getByRole('link', { name: 'Rubros' }).click();
   await expect(page).toHaveURL(/\/configuracion\/rubros$/);
+  // S3-22b: el árbol es de la organización; sin selector de edificio en el header.
+  await expect(
+    page.getByRole('button', { name: /^Edificio de trabajo:/ }),
+  ).toHaveCount(0);
 
   // Los toasts de sonner repiten el nombre del rubro: los asserts sobre el árbol
   // se acotan a `main` para no matchear la notificación.

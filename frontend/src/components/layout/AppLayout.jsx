@@ -3,7 +3,7 @@
 // activo en S1) y header con organización, selector de edificio de trabajo
 // y menú de usuario con logout.
 import { useEffect } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { Building2, ChevronsUpDown, LogOut, UserRound } from 'lucide-react';
 import { SIN_ROLES, useAuthStore } from '@/stores/auth.store';
 import { useEdificioStore } from '@/stores/edificio.store';
@@ -27,6 +27,29 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+
+// Pantallas de ALCANCE ORGANIZACIÓN: no trabajan sobre un edificio, así que el
+// selector de edificio del header no se muestra (S3-22b).
+//
+// POR QUÉ: el selector no es decorativo — cambia el contexto de trabajo Y
+// navega. En una pantalla que no depende del edificio eso es peor que inútil:
+// ofrece un control que, o no hace nada visible, o te saca de donde estabas. En
+// Reportes hay además un segundo selector, el del alcance del reporte, y dos
+// controles con el mismo ícono y distinto efecto en la misma pantalla es la
+// receta para elegir el equivocado.
+//
+// Es una lista de prefijos y no un flag por ruta porque el layout no conoce las
+// rutas hijas; se extiende agregando el prefijo del módulo nuevo.
+const RUTAS_SIN_EDIFICIO = [
+  '/configuracion/proveedores', // directorio de la organización (S3-14)
+  '/configuracion/rubros', // árbol de la organización (S3-14)
+  '/reportes', // el alcance vive dentro del reporte (S3-22)
+];
+
+const esPantallaDeOrganizacion = (pathname) =>
+  RUTAS_SIN_EDIFICIO.some(
+    (prefijo) => pathname === prefijo || pathname.startsWith(`${prefijo}/`),
+  );
 
 // Módulos del sidebar (PRD-07-03 §4). "Usuarios" (S4-07) solo se muestra a
 // org_admin: Cerbos no le da al gestor ni lectura de la nómina, así que el
@@ -82,6 +105,10 @@ export default function AppLayout() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  // El selector de edificio solo se muestra donde el edificio es el contexto de
+  // trabajo (ver RUTAS_SIN_EDIFICIO).
+  const mostrarSelectorDeEdificio = !esPantallaDeOrganizacion(pathname);
   // El residente puro no tiene organización activa: /api/edificios y
   // /api/organizaciones/me le responden 403 SIN_ORGANIZACION_ACTIVA. Su
   // contexto sale de sus vínculos (GET /api/me/unidades), así que las queries
@@ -201,56 +228,65 @@ export default function AppLayout() {
             </span>
           )}
 
-          {/* Selector de edificio de trabajo */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={cargando || edificios.length === 0}
-                />
-              }
-            >
-              <Building2 className="size-4" />
-              <span className="max-w-40 truncate">
-                {cargando
-                  ? 'Cargando…'
-                  : (edificioActual?.nombre ?? 'Sin edificios')}
-              </span>
-              <ChevronsUpDown className="size-4 opacity-60" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>
-                  {residente ? 'Mi edificio' : 'Edificio de trabajo'}
-                </DropdownMenuLabel>
-                {edificios.map((edificio) => (
-                  <DropdownMenuItem
-                    key={edificio.id}
-                    onClick={() => {
-                      setEdificioId(edificio.id);
-                      // El residente no tiene acceso al detalle de staff:
-                      // su vista es la lectura de sus propias UFs.
-                      navigate(
-                        residente
-                          ? '/mis-unidades'
-                          : `/edificios/${edificio.id}/unidades`,
-                      );
-                    }}
-                  >
-                    <span
-                      className={cn(
-                        edificio.id === edificioId && 'font-semibold',
-                      )}
+          {/* Selector de edificio de trabajo: solo en las pantallas que
+              trabajan sobre un edificio. */}
+          {mostrarSelectorDeEdificio && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    // El nombre accesible dice QUÉ control es y qué edificio
+                    // tiene puesto: el texto visible es solo el nombre, que sin
+                    // el prefijo no distingue este selector del de organización.
+                    aria-label={`${
+                      residente ? 'Mi edificio' : 'Edificio de trabajo'
+                    }: ${edificioActual?.nombre ?? 'Sin edificios'}`}
+                    disabled={cargando || edificios.length === 0}
+                  />
+                }
+              >
+                <Building2 className="size-4" />
+                <span className="max-w-40 truncate">
+                  {cargando
+                    ? 'Cargando…'
+                    : (edificioActual?.nombre ?? 'Sin edificios')}
+                </span>
+                <ChevronsUpDown className="size-4 opacity-60" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>
+                    {residente ? 'Mi edificio' : 'Edificio de trabajo'}
+                  </DropdownMenuLabel>
+                  {edificios.map((edificio) => (
+                    <DropdownMenuItem
+                      key={edificio.id}
+                      onClick={() => {
+                        setEdificioId(edificio.id);
+                        // El residente no tiene acceso al detalle de staff:
+                        // su vista es la lectura de sus propias UFs.
+                        navigate(
+                          residente
+                            ? '/mis-unidades'
+                            : `/edificios/${edificio.id}/unidades`,
+                        );
+                      }}
                     >
-                      {edificio.nombre}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                      <span
+                        className={cn(
+                          edificio.id === edificioId && 'font-semibold',
+                        )}
+                      >
+                        {edificio.nombre}
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
 
           <div className="ml-auto">
             {/* Menú de usuario */}
