@@ -355,6 +355,8 @@ export const AYUDA_TOPICS = {
       'edificios/esquemas-reparto',
       'gastos/proveedores',
       'gastos/rubros',
+      // S3-09: el destino de todo gasto es la liquidación del período.
+      'liquidaciones',
     ],
     pantallas: ['src/pages/edificio/EdificioGastosTab.jsx'],
     secciones: [
@@ -470,6 +472,103 @@ export const AYUDA_TOPICS = {
           'Usá B cuando un servicio no llega a todas las unidades: el caso típico es el ascensor, que planta baja y locales no usan.',
           'Usá C cuando el edificio tiene sectores con gastos propios (torres, pileta, sector comercial). Escribí el nombre del sector igual en todas las unidades que lo comparten.',
         ],
+      },
+    ],
+  },
+
+  // Concepto de liquidación (S3-09, PRD-04-03 §1/§2). Topic del tab
+  // Liquidaciones: qué es, cuándo se hace, en qué estados vive y quién puede.
+  liquidaciones: {
+    ruta: ['Liquidaciones'],
+    titulo: 'Liquidaciones',
+    relacionados: [
+      'liquidaciones/preview',
+      'gastos/carga',
+      'edificios/unidades/categorias-gastos',
+    ],
+    pantallas: ['src/pages/edificio/EdificioLiquidacionesTab.jsx'],
+    secciones: [
+      {
+        titulo: '¿Qué es liquidar un período?',
+        cuerpo:
+          'Es repartir los gastos de un mes entre las unidades del edificio y dejar registrado cuánto le toca pagar a cada una. La app toma todos los gastos imputados a ese período —incluidas las cuotas de los gastos en cuotas que caen ahí—, los reparte según la categoría de cada gasto y el esquema de reparto que corresponda, y guarda el resultado.',
+      },
+      {
+        titulo: 'Antes de liquidar',
+        items: [
+          'Que estén cargados todos los gastos del período: lo que falte no se puede agregar después sin anular y volver a generar.',
+          'Que ningún gasto quede sin categoría (A, B o C): sin ella no se sabe qué unidades lo pagan.',
+          'Que los coeficientes de las unidades sumen 1,000000: es el único requisito que la app exige de forma bloqueante, porque si no cierran se repartiría más o menos del 100% de cada gasto.',
+        ],
+      },
+      {
+        titulo: 'Los estados de una liquidación',
+        cuerpo:
+          'Una liquidación no se emite de una: pasa por estados, y cada uno dice hasta dónde llegó.',
+        items: [
+          'Borrador: calculada pero no aprobada. Nadie la vio fuera de la administración.',
+          'Aprobada: la administración la dio por buena. Todavía no hay recibos.',
+          'Enviada: con los recibos emitidos y disponibles para las unidades.',
+          'Cobrada: con los cobros imputados.',
+          'Anulada: sin efecto. Es lo único que libera el período para volver a generarlo.',
+        ],
+      },
+      {
+        titulo: 'Un período, una liquidación',
+        cuerpo:
+          'Mientras un período tenga una liquidación que no esté anulada, no se puede generar otra para el mismo mes. Si detectás un error —un gasto que faltaba, una categoría mal puesta— el camino es anular la que existe, corregir y volver a generar. No se sobrescribe: los recibos ya emitidos tienen que seguir diciendo con qué se calcularon (Ley 941).',
+      },
+      {
+        titulo: '¿Quién puede hacer qué?',
+        items: [
+          'Generar y aprobar liquidaciones: solo el administrador de la organización (org_admin).',
+          'Ver las liquidaciones y su detalle por unidad: también el gestor de los edificios que tiene asignados.',
+        ],
+      },
+    ],
+  },
+
+  // Cómo se lee la preview (S3-09, PRD-04-03 §4.1). Topic de la pantalla de
+  // detalle: qué significan las columnas y el desglose por gasto.
+  'liquidaciones/preview': {
+    ruta: ['Liquidaciones', 'Detalle'],
+    titulo: 'Cómo leer una liquidación',
+    relacionados: [
+      'liquidaciones',
+      'edificios/esquemas-reparto',
+      'edificios/unidades/categorias-gastos',
+    ],
+    pantallas: ['src/pages/edificio/LiquidacionPreviewTab.jsx'],
+    secciones: [
+      {
+        titulo: 'Ordinarias y extraordinarias van separadas',
+        cuerpo:
+          'Los gastos habituales del consorcio (sueldos, seguros, limpieza) son expensas ordinarias; las obras y los gastos no recurrentes son extraordinarias. La Ley 941 exige mostrarlas por separado, y la distinción también decide quién las absorbe cuando la unidad está alquilada: las ordinarias suelen ir al inquilino y las extraordinarias al propietario.',
+      },
+      {
+        titulo: 'La tabla por unidad',
+        cuerpo:
+          'Una fila por unidad funcional, con lo que le toca de ordinarias, de extraordinarias y el total. La fila TOTAL del pie suma todas las filas y tiene que coincidir al centavo con el total general de las tarjetas de arriba; si alguna vez no coincide, la app lo avisa y esa liquidación no se aprueba.',
+      },
+      {
+        titulo: 'El desglose de cada unidad',
+        cuerpo:
+          'Tocando una fila se abre el detalle: un renglón por cada gasto del período que esa unidad paga, con la participación que le tocó de ese gasto y el monto. La participación es la porción de ESE gasto, no el coeficiente de la unidad: en un gasto de categoría B o C solo participan las unidades alcanzadas, así que las participaciones se reparten entre ellas y suman 1.',
+      },
+      {
+        titulo: 'Con qué esquema se repartió cada gasto',
+        cuerpo:
+          'Si un gasto se repartió con un esquema del reglamento (por ejemplo, planta baja al 50% del ascensor), el renglón lo dice con el nombre del esquema. Si no dice nada, se repartió en proporción al coeficiente según la categoría del gasto, que es lo normal. Es la forma de verificar antes de aprobar que el reparto es el que manda el reglamento de copropiedad.',
+      },
+      {
+        titulo: 'La variación contra el período anterior',
+        cuerpo:
+          'Cuando el edificio ya tiene una liquidación anterior sin anular, aparece una columna con cuánto varió el total de cada unidad respecto de esa liquidación. Se compara contra la última vigente, que no siempre es el mes inmediato anterior. Una variación grande no es necesariamente un error —una obra aprobada por asamblea sube las expensas— pero es lo primero que conviene mirar.',
+      },
+      {
+        titulo: 'Un borrador todavía no se emitió',
+        cuerpo:
+          'Mientras la liquidación esté en borrador no la vio nadie fuera de la administración y se puede anular sin consecuencias. Revisar el detalle acá es el último momento barato para detectar que una unidad está pagando lo que no le toca: después de aprobar, el número se convierte en un recibo con valor legal.',
       },
     ],
   },

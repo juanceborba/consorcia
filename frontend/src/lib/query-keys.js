@@ -59,6 +59,21 @@ export const queryKeys = {
     ],
     detail: (id) => [...queryKeys.esquemasReparto.all, 'detail', id],
   },
+  // Liquidaciones de un edificio (S3-09). La lista lleva el edificio antes que
+  // los filtros para poder invalidar todas sus páginas con un prefijo; el
+  // `detail` es la preview completa (cabecera + resumen + detalle por UF) y se
+  // usa dos veces en la misma pantalla: para la liquidación que se está viendo
+  // y para la del período anterior, que alimenta la columna de variación.
+  liquidaciones: {
+    all: ['liquidaciones'],
+    porEdificio: (edificioId, filtros) => [
+      ...queryKeys.liquidaciones.all,
+      'edificio',
+      edificioId,
+      filtros,
+    ],
+    detail: (id) => [...queryKeys.liquidaciones.all, 'detail', id],
+  },
   // Contexto propio del usuario logueado (S4-12): no lleva scope de
   // organización porque el endpoint agrega por `usuarioId` (PRD-04-11 §5.5).
   me: {

@@ -6,12 +6,19 @@ import { useAuthStore } from '@/stores/auth.store';
 const API_URL = import.meta.env.VITE_API_URL;
 
 // Error de API con status HTTP y code/message del contrato { error: { code, message } }.
+//
+// S3-09: `detalle` conserva el objeto `error` COMPLETO. Varios errores del
+// contrato viajan con campos extra que la UI necesita para ofrecer la salida
+// (`PERIODO_YA_LIQUIDADO` trae el `liquidacionId` de la que ocupa el período,
+// `COEFICIENTES_NO_CUADRAN` trae `sumaActual` y `delta`). Perderlos obligaba a
+// parsear el `message`, que es copy y puede cambiar.
 export class ApiError extends Error {
-  constructor(status, code, message) {
+  constructor(status, code, message, detalle = null) {
     super(message ?? 'Error inesperado');
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.detalle = detalle;
   }
 }
 
@@ -39,7 +46,12 @@ async function request(path, { method = 'GET', body, reintentado = false } = {})
 
   const data = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new ApiError(res.status, data?.error?.code, data?.error?.message);
+    throw new ApiError(
+      res.status,
+      data?.error?.code,
+      data?.error?.message,
+      data?.error ?? null,
+    );
   }
   return data;
 }

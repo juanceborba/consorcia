@@ -26,6 +26,8 @@ import EdificioDetallePage from '@/pages/EdificioDetallePage';
 import EdificioOverviewTab from '@/pages/edificio/EdificioOverviewTab';
 import EdificioUnidadesTab from '@/pages/edificio/EdificioUnidadesTab';
 import EdificioGastosTab from '@/pages/edificio/EdificioGastosTab';
+import EdificioLiquidacionesTab from '@/pages/edificio/EdificioLiquidacionesTab';
+import LiquidacionPreviewTab from '@/pages/edificio/LiquidacionPreviewTab';
 import EdificioConfiguracionTab from '@/pages/edificio/EdificioConfiguracionTab';
 import ConfiguracionUsuariosPage from '@/pages/configuracion/ConfiguracionUsuariosPage';
 import ProveedoresPage from '@/pages/configuracion/ProveedoresPage';
@@ -93,6 +95,18 @@ const router = createBrowserRouter([
                   // Tab de gastos (S3-07). Ruta hija según la convención de
                   // PRD-07-03 §2.2; ver decisión 1 en EdificioGastosTab.jsx.
                   { path: 'gastos', element: <EdificioGastosTab /> },
+                  // Liquidaciones (S3-09): lista + preview. La preview es una
+                  // ruta propia y no un estado de la lista (decisión 2 de
+                  // EdificioLiquidacionesTab.jsx): se linkea desde el diálogo de
+                  // generación y desde el error de período ya liquidado.
+                  {
+                    path: 'liquidaciones',
+                    element: <EdificioLiquidacionesTab />,
+                  },
+                  {
+                    path: 'liquidaciones/:liquidacionId',
+                    element: <LiquidacionPreviewTab />,
+                  },
                   {
                     path: 'configuracion',
                     element: <EdificioConfiguracionTab />,
