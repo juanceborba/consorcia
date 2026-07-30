@@ -41,7 +41,7 @@
   - _Depende de: S3-02._
 - [x] **S3-08 Form nuevo gasto.** RHF + Zod patrones §6.1: concepto, descripción, monto + moneda, categoría (select que condiciona: B → select de servicios del edificio, C → select de sectores), radio ordinario/extraordinario, fechaGasto (default hoy), período (default mes actual). Edición inline o modal para gastos no liquidados; delete con ConfirmDialog. Comprobante: campo opcional (upload a MinIO si hay endpoint disponible; si no, queda diferido — documentar en el issue).
   - _Depende de: S3-02, S3-07._
-- [ ] **S3-09 Liquidación: generar + preview.** Botón "Generar liquidación" (selector de período) → POST calcular → vista preview según PRD-04-03 §4.1: cards de resumen (ordinarias, extraordinarias, total, cantidad de gastos/UFs), tabla por UF (ordinarias, extraordinarias, total), comparación % vs período anterior si existe liquidación previa. Manejo de 422 `SIN_GASTOS` con CTA a cargar gastos.
+- [x] **S3-09 Liquidación: generar + preview.** Botón "Generar liquidación" (selector de período) → POST calcular → vista preview según PRD-04-03 §4.1: cards de resumen (ordinarias, extraordinarias, total, cantidad de gastos/UFs), tabla por UF (ordinarias, extraordinarias, total), comparación % vs período anterior si existe liquidación previa. Manejo de 422 `SIN_GASTOS` con CTA a cargar gastos.
   - _Depende de: S3-04._
 - [ ] **S3-10 Workflow aprobación + recibos.** Acciones según estado: BORRADOR → Aprobar (ConfirmDialog) / Anular; APROBADA → "Generar recibos" (ConfirmDialog, es la acción "oficial"); ENVIADA → lista de recibos por UF con descarga de PDF. Badge de estado en la lista de liquidaciones (tokens S2-05). Optimistic update con rollback en las transiciones.
   - _Depende de: S3-05, S3-09._

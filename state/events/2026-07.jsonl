@@ -22,3 +22,5 @@
 {"id": "evt-000116", "ts": "2026-07-30T02:03:45Z", "actor": "claude", "type": "status", "task": "S3-19", "to": "done"}
 {"id": "evt-000117", "ts": "2026-07-30T02:10:58Z", "actor": "claude", "type": "claim", "task": "S3-20", "motivo": "S3-20 esquemas de reparto configurables por edificio (issue #68)"}
 {"id": "evt-000118", "ts": "2026-07-30T02:52:25Z", "actor": "human", "type": "status", "task": "S3-20", "to": "done"}
+{"id": "evt-000119", "ts": "2026-07-30T02:59:27Z", "actor": "human", "type": "claim", "task": "S3-09"}
+{"id": "evt-000120", "ts": "2026-07-30T03:12:23Z", "actor": "human", "type": "status", "task": "S3-09", "to": "done"}
