@@ -252,6 +252,11 @@ const gastoSchema = z.object({
 //   Si está liquidado → 409 { error: 'LIQUIDACION_APROBADA' }
 
 // DELETE /api/gastos/:id — Soft delete (deletedAt) → 204
+
+// GET /api/edificios/:edificioId/gastos/dashboard — Agregados del edificio (§3.4, S3-15)
+//   Mismo permiso que la lista (gasto:read) y el MISMO constructor de `where`
+//   (services/gastos-filtros.js): el KPI "Total del período" y la fila TOTAL de la
+//   lista son el mismo número por construcción, no por disciplina.
 ```
 
 ---
@@ -289,22 +294,39 @@ GET /api/edificios/:edificioId/gastos/dashboard
 GET /api/organizaciones/:organizacionId/gastos/dashboard   → consolidado; 403 PLAN_INSUFICIENTE si plan < business
 ```
 
-Query: `?periodo=YYYY-MM` | `?desde=&hasta=` | `?todo=1`.
-
-Las agregaciones se calculan **server-side con Prisma `groupBy` + decimal.js** (cero floats). Respuesta única:
+Query: `?periodo=YYYY-MM` | `?desde=&hasta=` | `?todo=1`, más los filtros de la lista (§2: `categoria`, `proveedorId`, `rubroId`, `createdBy`, `q`). Los montos salen **siempre como string** (cero floats en el borde de salida). Respuesta única:
 
 ```json
 {
+  "filtro": { "modo": "periodo", "periodo": "2026-02", "desde": null, "hasta": null,
+              "edificios": ["..."], "unidades": 20 },
   "kpis": { "total": "...", "totalOrdinarias": "...", "totalExtraordinarias": "...",
             "cantidadGastos": 42, "gastoPorUF": "...", "variacionVsPeriodoAnterior": "+12.4%" },
-  "topProveedores": [{ "proveedorId": "...", "razonSocial": "...", "total": "...", "cantidad": 5 }],
-  "porRubro": [{ "rubroId": "...", "nombre": "Limpieza", "total": "...", "porcentaje": "18.2" }],
+  "topProveedores": [{ "proveedorId": "...", "razonSocial": "...", "total": "...",
+                       "cantidad": 5, "porcentaje": "42.1" }],
+  "porRubro": [{ "rubroId": "...", "nombre": "Limpieza", "total": "...", "porcentaje": "18.2",
+                 "cantidad": 4, "subrubros": [{ "rubroId": "...", "nombre": "Insumos", "total": "...",
+                                                "porcentaje": "6.0", "cantidad": 1 }] }],
   "porCategoria": { "A": "...", "B": "...", "C": "..." },
   "evolucionMensual": [{ "periodo": "2026-02", "total": "..." }]
 }
 ```
 
 > **Fuera de scope:** exportación PDF/Excel y narrativa IA sobre este dashboard (eso es [[PRD-04-08 Dashboard Administrador]], Fase 2).
+
+#### Implementado en S3-15 — precisiones sobre el diseño original
+
+1. **Qué plata suma cada modo.** `?periodo=P` suma **montos imputados a P**: la cuota que le toca al período si el gasto tiene plan de cuotas (§1.1.b), o el gasto entero si no. `?desde=&hasta=` filtra por `fechaGasto` —los mismos nombres y la misma semántica que la lista (§2)— y suma el **monto de factura**; `?todo=1` también. La consecuencia buscada: `kpis.total` es **el mismo número** que la fila TOTAL del listado con el mismo filtro, porque los dos endpoints comparten el constructor del `where` (`backend/src/services/gastos-filtros.js`). En §3 el dashboard y el listado viven en la misma pantalla leyendo la misma URL: dos semánticas para `desde` se verían como una pantalla que se contradice.
+2. **Los tres modos son excluyentes** y combinarlos responde `422 VALIDACION_FALLIDA` en vez de aplicar una precedencia. Sin ningún modo, el default es `todo`.
+3. **`esOrdinario` no es filtro del dashboard**, aunque sí de la lista: el KPI ordinarias/extraordinarias (§3.1) *es* el corte por ese eje, y filtrarlo dejaría el otro subtotal en cero.
+4. **La agregación es con decimal.js sobre el conjunto filtrado, no con `groupBy` de Prisma.** Para `?periodo=` no hay `groupBy` posible: el monto imputado de un gasto en cuotas vive en `gasto_cuotas` y ningún `groupBy` agrupa por una columna del gasto sumando una columna de la relación (la misma razón que ya obligó a sumar en memoria los `totales` de la lista en S3-19). Antes que mantener dos implementaciones de cinco agregados —donde la de `groupBy` daría números distintos justo en los gastos en cuotas—, se trae UNA vez el conjunto con las columnas necesarias y los cinco cortes salen del mismo recorrido, así que reconcilian por construcción: `total = ordinarias + extraordinarias = A + B + C = Σ porRubro`.
+5. **La evolución mensual no usa la ventana del filtro activo.** Con `?periodo=P` son los **12 períodos que terminan en P** (§3.2 "últimos 12 meses"), con una query propia y los demás filtros aplicados: un chart de un punto no es un chart. Su último punto es igual a `kpis.total`. En `?desde=&hasta=` y `?todo=1` la serie se densifica de la imputación más vieja a la más nueva y **suma `kpis.total`** (las cuotas se ven en sus períodos). Un mes sin gastos es un `0.00`, no un hueco.
+6. **`porRubro` viene rollup-eado a rubro raíz con sus `subrubros` adentro.** El gasto siempre apunta a una hoja (§1.1), y el drill-down de §3.3 necesitaba el árbol: devolver las hojas planas obligaría a la UI a reconstruirlo y a pedir un segundo request para bajar un nivel. Un rubro de nivel 1 usado directo aparece como raíz con `subrubros: []`.
+7. **`gastoPorUF` divide por todas las unidades del alcance, sin filtrar por `estado`** — el mismo criterio que la liquidación ([[PRD-04-03 Motor de Liquidación]]: una UF en venta o alquilada paga expensas). Con cero unidades es `null`.
+8. **La variación compara contra una ventana de igual longitud:** el mes anterior en `?periodo=`, el rango de la misma cantidad de días inmediatamente anterior en `?desde=&hasta=`, y `null` en `?todo=1` o cuando la ventana anterior no tiene gastos (un "+∞%" no es información; la UI lo oculta).
+9. **El consolidado es de `org_admin`, no de `gestor`.** Se autoriza contra el recurso `gasto` con `edificio_id: null`: la regla de `org_admin` de `gasto.yaml` sólo compara la organización y matchea, la de `gestor` exige `edificio_id in edificios_asignados` y no, así que un gestor recibe `403 ACCESO_DENEGADO` **sin tocar la policy**. Es el resultado correcto: "todos los edificios de la organización" es justamente la vista que un gestor con edificios asignados no debe ver. El gate de plan corre **después** de Cerbos: a quien no tiene permiso no se le informa qué plan le falta comprar.
+10. **`:organizacionId` acepta el id de la organización activa o el alias `me`**; cualquier otro responde `403 FUERA_DE_ORGANIZACION`. El tenant sale del JWT y nunca del cliente, así que el id de la URL es una aserción que se verifica, no una fuente. El alcance son los **edificios activos** de la organización: uno dado de baja se comporta como inexistente en toda la API, y si sus gastos entraran al consolidado el total no coincidiría con la suma de los tabs visibles.
+11. **La jerarquía de planes** (`starter < pro < business < enterprise`, la de [[PRD-07-03 Rutas y Navegacion]]) se lee de la **DB y no del JWT**: el plan cambia con una suscripción y el access token vive 15 minutos. El error trae `planActual` y `planRequerido` además de `code`/`message`. En el seed, Org A quedó en `business` (para que "Todos los edificios" sea ejercitable en demo) y Org B en `starter` (el caso 403).
 
 ---
 
