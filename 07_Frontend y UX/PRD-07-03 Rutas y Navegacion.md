@@ -510,6 +510,12 @@ export const portalNavigation: NavItem[] = [
 
 ### 4.3 Navegacion contextual (Edificio seleccionado)
 
+> **Implementado (S1-12, segmentado en S3-22).** El selector de edificio de trabajo vive en el header del `AppLayout` (no en el sidebar) y hace dos cosas a la vez: fija el edificio del store (`stores/edificio.store.js`, que alimenta la entrada "Gastos" del sidebar) y **navega** al edificio elegido.
+>
+> Por eso **solo se muestra en las pantallas donde el edificio ES el contexto de trabajo**. Las de alcance organización lo ocultan (`RUTAS_SIN_EDIFICIO` en `AppLayout.jsx`, una lista de prefijos): hoy `/configuracion/proveedores`, `/configuracion/rubros` y `/reportes`. En una pantalla que no depende del edificio el control o no hace nada visible o saca al usuario de donde estaba; y en Reportes, además, el alcance ya tiene su propio selector dentro del reporte (`?edificioId=`, [[PRD-04-02 Gestor de Gastos]] §3.2), así que dos controles con el mismo ícono y distinto efecto competirían en la misma pantalla. Un módulo nuevo de alcance organización se suma agregando su prefijo.
+>
+> Las *quick actions* del boceto de abajo no existen todavía.
+
 ```typescript
 // Cuando un edificio esta seleccionado, el sidebar muestra
 // acciones rapidas del edificio activo
