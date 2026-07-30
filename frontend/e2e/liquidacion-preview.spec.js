@@ -225,17 +225,30 @@ test('liquidación: generarla desde la UI y verificar la preview', async ({
     await expect(filaPB).toBeVisible();
   });
 
-  await test.step('expandir una unidad muestra con qué peso se le repartió cada gasto', async () => {
+  await test.step('expandir una unidad muestra el detalle de gastos agrupado por rubro', async () => {
     const filaPB = page.locator('tbody tr').filter({ hasText: /^PB/ }).first();
     await filaPB.click();
 
-    // Decisión 1 y 2 de la preview: un renglón por gasto, con la participación
-    // normalizada. Sin esquema de reparto, el reparto es por coeficiente y el
-    // renglón no nombra ningún esquema.
+    // Decisión 7 de la preview: el desglose es el borrador del recibo. Los dos
+    // gastos de la precondición son del MISMO rubro pero uno es ordinario y el
+    // otro extraordinario, así que tienen que caer en secciones distintas.
+    await expect(page.getByText(/Detalle de la unidad PB/)).toBeVisible();
     await expect(
-      page.getByText('Cómo se compone el total de esta unidad'),
+      page.getByRole('heading', { name: 'Expensas ordinarias', level: 4 }),
     ).toBeVisible();
-    await expect(page.getByText(/Imputación única · participación 0\./).first()).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Expensas extraordinarias', level: 4 }),
+    ).toBeVisible();
+
+    // Cada ítem se identifica por su concepto, no por un id de gasto.
+    await expect(page.getByText(ORDINARIO, { exact: true })).toBeVisible();
+    await expect(page.getByText(EXTRAORDINARIO, { exact: true })).toBeVisible();
+
+    // Decisión 2: el reparto sigue estando, en la línea secundaria del ítem.
+    // Sin esquema de reparto el peso es el coeficiente y no se nombra ninguno.
+    await expect(
+      page.getByText(/Imputación única · participación 0\./).first(),
+    ).toBeVisible();
   });
 
   await test.step('el período ya liquidado avisa antes de dejar reintentar', async () => {

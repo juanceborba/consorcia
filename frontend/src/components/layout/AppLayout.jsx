@@ -43,6 +43,7 @@ import { cn } from '@/lib/utils';
 const RUTAS_SIN_EDIFICIO = [
   '/configuracion/proveedores', // directorio de la organización (S3-14)
   '/configuracion/rubros', // árbol de la organización (S3-14)
+  '/configuracion/usuarios', // nómina de staff de la organización (S4-07)
   '/reportes', // el alcance vive dentro del reporte (S3-22)
 ];
 

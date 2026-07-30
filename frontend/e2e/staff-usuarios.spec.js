@@ -30,6 +30,11 @@ test('backoffice de staff: invitar, reenviar, editar permisos y desactivar', asy
 
     await page.getByRole('link', { name: 'Usuarios' }).click();
     await expect(page).toHaveURL(/\/configuracion\/usuarios$/);
+    // S3-22b: la nómina es de la organización, no de un edificio, así que el
+    // header no ofrece el selector de edificio de trabajo.
+    await expect(
+      page.getByRole('button', { name: /^Edificio de trabajo:/ }),
+    ).toHaveCount(0);
   });
 
   await test.step('la nómina muestra al staff del seed', async () => {

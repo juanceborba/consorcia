@@ -277,6 +277,21 @@ test('el reporte de gastos: alcance por edificio y los tres modos de período ex
     await expect(kpiTotal(page, 'Total histórico')).toContainText('$ 50.000,00');
   });
 
+  await test.step('el breadcrumb vuelve al hub de reportes', async () => {
+    // Entrar a un reporte sin salida hacia arriba deja al usuario dependiendo
+    // del sidebar, que no dice dónde está parado.
+    const breadcrumb = page.getByRole('navigation', { name: 'Breadcrumb' });
+    await expect(breadcrumb).toContainText('Reportes');
+    await expect(breadcrumb.getByText('Gastos')).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+
+    await breadcrumb.getByRole('link', { name: 'Reportes' }).click();
+    await expect(page).toHaveURL(/\/reportes$/);
+    await page.goBack();
+  });
+
   await test.step('el header no ofrece el selector de edificio en Reportes', async () => {
     // S3-22b: el alcance del reporte ya es un selector de esta pantalla; el del
     // header cambia el contexto de trabajo Y navega, así que acá sacaría al

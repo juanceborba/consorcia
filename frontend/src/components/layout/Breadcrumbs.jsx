@@ -55,6 +55,22 @@ const RUTAS = [
       { label: 'Usuarios' },
     ],
   },
+  // Módulo Reportes (S3-16): el hub es una ruta real, así que desde un reporte
+  // el breadcrumb es la forma de volver a él. Sin esto, entrar a un reporte
+  // dejaba a la pantalla sin ninguna salida hacia arriba que no fuera el
+  // sidebar, que no dice dónde estás parado.
+  {
+    pattern: '/reportes',
+    items: [{ label: 'Inicio', href: '/' }, { label: 'Reportes' }],
+  },
+  {
+    pattern: '/reportes/gastos',
+    items: [
+      { label: 'Inicio', href: '/' },
+      { label: 'Reportes', href: '/reportes' },
+      { label: 'Gastos' },
+    ],
+  },
   // /edificios/:id a secas redirige a /unidades, pero puede renderizar un
   // instante durante el redirect.
   {

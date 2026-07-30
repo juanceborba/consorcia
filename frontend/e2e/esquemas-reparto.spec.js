@@ -205,7 +205,7 @@ test('esquema de reparto: crearlo, asignarlo a un gasto y verlo en la liquidaci�
     ).toBeCloseTo(0.046 / 0.078, 5);
     // Los montos siguen a los pesos y suman el gasto entero.
     expect(
-      Number(pb.montoAsignado) + Number(unoA.montoAsignado),
+      Number(pb.monto) + Number(unoA.monto),
     ).toBeCloseTo(30000, 2);
 
     // Cleanup: una liquidación no se borra (Ley 941), se anula — y anularla
