@@ -1,7 +1,7 @@
 {
-  "app_head": "91f02a84949e8ada45c5a53fc9c16dbf59fd1da9",
+  "app_head": "9429c0e973ab199a67c63a70a724baab48f860ca",
   "prds": {
-    "00_MOC/Estado de Implementación.md": "cbbdfb3208622a14b9a24f0fadb52a6be733f348",
+    "00_MOC/Estado de Implementación.md": "9640bf32ff6d4c757f8d93b1bfa16f4625ea7d04",
     "00_MOC/PRD-00-00 Map of Content.md": "caa8753085d46f26cac4cd6e30d27f25fc01b8c9",
     "01_Visión y Estrategia/PRD-01-01 Visión del Producto.md": "0e8c9407c45b54cc0bae457e40364a300e9f6147",
     "01_Visión y Estrategia/PRD-01-02 Estrategia de MVP y Fases.md": "ab6e28f9840eaaf70a95c6791a4df96231b9b77d",
@@ -23,8 +23,8 @@
     "03_Agentes IA/PRD-03-08 Agente Dashboard.md": "86092d8cb22eb1117c0c7533ca69daf7232032a1",
     "03_Agentes IA/PRD-03-09 Agente Benchmarking.md": "fa6adb0ae11666387ca24ae1ab8d60393e44549b",
     "04_Módulos Core/PRD-04-01 Gestión de Edificios.md": "a242f91da3301b08de7f3e20eb33bbd40afaf346",
-    "04_Módulos Core/PRD-04-02 Gestor de Gastos.md": "cb3750ad36264de0cb72315ca6a233c57d0175d9",
-    "04_Módulos Core/PRD-04-03 Liquidación de Expensas.md": "0d1066b647263ecaa3066260935ac7beffb6eb23",
+    "04_Módulos Core/PRD-04-02 Gestor de Gastos.md": "b0bc29c68847082b46a3da5544e032fb9f73dcc4",
+    "04_Módulos Core/PRD-04-03 Liquidación de Expensas.md": "72552c9a46ca016700779e5810929ef8093489f0",
     "04_Módulos Core/PRD-04-04 Cobranzas.md": "00002d566089b2f59e16fc5a3dd8d423351d1272",
     "04_Módulos Core/PRD-04-05 Portal del Residente.md": "295f312335958665d37ec4e9e508aae818d48d23",
     "04_Módulos Core/PRD-04-06 Kanban de Tareas.md": "a56dc04924eef2ae0d9e6d5223680cec47bf13ee",
@@ -39,7 +39,7 @@
     "05_Integraciones/PRD-05-04 Cerbos RBAC.md": "ca3fa1bc90942ee208321c1b9186f11a17cf9a98",
     "05_Integraciones/PRD-05-05 OCR Service.md": "6e953043a25f429a32386cbbdfaa5327c8dda5dd",
     "05_Integraciones/PRD-05-06 Embeddings y RAG.md": "a28b1e3be8be4d2dc47fbd9c383a0adb05bb157e",
-    "06_Compliance y Legal/PRD-06-01 Ley 941 CABA.md": "026cdf719c5046a80c880e35fdf8ced1a3228eab",
+    "06_Compliance y Legal/PRD-06-01 Ley 941 CABA.md": "68569060d1c23f24993bfadae9fff7a1b2882739",
     "06_Compliance y Legal/PRD-06-02 Ley 14.701 PBA.md": "8fbc4d68096c6bef56b1e07e89671a798ca40fa5",
     "06_Compliance y Legal/PRD-06-03 Ley 25.326.md": "e1b2db2854dbf5fbae6d471a71df485e6731b9c7",
     "06_Compliance y Legal/PRD-06-04 Código Civil y Comercial.md": "10ee616376e8fba756b6e64d63414eb72555075d",
@@ -57,6 +57,6 @@
     "09_Riesgos y Decisiones/PRD-09-01 Decisiones de Arquitectura.md": "6a168e3b953a11416dc126fd467eaaefff1b9abb",
     "AGENTS.md": "3650d0649f584ba27683fc8546b2440542d9e15c"
   },
-  "ultima_corrida": "2026-07-29T23:33:55Z",
-  "vault_head": "a5b2086b779b07592c265accbc7b4c27d1e62f3e"
+  "ultima_corrida": "2026-07-30T01:32:23Z",
+  "vault_head": "7454276e13ff95b1ab5d1bd7a56781f231f41a66"
 }

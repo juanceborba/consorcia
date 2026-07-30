@@ -26,6 +26,14 @@
   - _Depende de: S3-01._
 - [ ] **S3-15 Endpoint dashboard de gastos.** `GET /api/edificios/:id/gastos/dashboard` y `GET /api/organizaciones/:id/gastos/dashboard` (gate plan Business+ → 403 `PLAN_INSUFICIENTE`), query `periodo=YYYY-MM` | `desde&hasta` | `todo=1`, respuesta agregada (KPIs, top 10 proveedores, por rubro, por categoría, evolución mensual) según PRD-04-02 §3.4, con Prisma groupBy + decimal.js (cero floats). Tests contra cálculo manual.
   - _Depende de: S3-02._
+- [ ] **S3-18 Motor de reparto por pesos por unidad (seam).** Refactor interno de calcularDistribucion a distribuir(monto, pesos) con pesosDe(gasto, unidades) derivando los pesos de la categoria A/B/C como hoy (cero cambio funcional). La preview expone el peso normalizado por UF. Diseño: docs/investigacion/esquemas-de-reparto.md
+  - _Depende de: nada._
+- [ ] **S3-19 Cuotas de gastos extraordinarios.** Plan de cuotas + imputacion por periodo, seleccion de gastos del motor por periodo, UI en el form de gasto y rotulo cuota k/N en la lista y el recibo. Brecha 1 del research.
+  - _Depende de: S3-02._
+- [ ] **S3-20 Esquemas de reparto configurables por edificio.** Modelos EsquemaReparto + EsquemaRepartoUnidad + ConfiguracionLiquidacion, resolucion en el motor (esquema del gasto -> del edificio -> default actual), CRUD, UI de configuracion del edificio y override en el gasto, seed y E2E. Resuelve exencion parcial, coeficiente propio por sector, partes iguales y cargo particular a una UF.
+  - _Depende de: S3-18._
+- [ ] **S3-21 Fondo de reserva en la liquidacion.** Porcentaje configurable por edificio, item propio en liquidacion y recibo, y uso del fondo para financiar una extraordinaria. Brecha 4 del research.
+  - _Depende de: S3-04._
 
 ## Frontend — features
 
@@ -76,6 +84,9 @@ S3-02 ──► S3-15
 S3-07 ──► S3-16
 S3-15 ──► S3-16
 S3-16 ──► S3-17
+S3-02 ──► S3-19
+S3-18 ──► S3-20
+S3-04 ──► S3-21
 ```
 
 **Lotes paralelos sugeridos:** Lote A (S3-01), Lote B (S3-12 + S3-13 + S3-03, en paralelo tras A), Lote C (S3-02), Lote D (S3-04→05→06), Lote E (S3-07→08 + S3-14), Lote F (S3-09→10), Lote G (S3-15→16→17), Lote H (S3-11).

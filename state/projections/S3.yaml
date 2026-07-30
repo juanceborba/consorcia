@@ -1,8 +1,8 @@
 # GENERADO por app/state/engine.py — no editar a mano
 sprint: S3
 titulo: "Gastos + motor contable"
-generado: 2026-07-29T23:33:55Z
-total: 17
+generado: 2026-07-30T01:32:23Z
+total: 21
 done: 10
 tareas:
   - id: S3-01
@@ -21,12 +21,12 @@ tareas:
     seccion: Backend
     status: done
     depende_de: [S3-01, S3-12, S3-13]
-    desbloquea: [S3-04, S3-07, S3-08, S3-15]
+    desbloquea: [S3-04, S3-07, S3-08, S3-15, S3-19]
     issue: 32
     lote: A
     fuente: [PRD-04-02]
     claimed_by: null
-    score: 15.2
+    score: 18.2
   - id: S3-03
     titulo: "Motor de distribución (core puro)"
     seccion: Backend
@@ -43,12 +43,12 @@ tareas:
     seccion: Backend
     status: done
     depende_de: [S3-02, S3-03]
-    desbloquea: [S3-05, S3-09]
+    desbloquea: [S3-05, S3-09, S3-21]
     issue: 34
     lote: C
     fuente: [PRD-04-03]
     claimed_by: null
-    score: 9.4
+    score: 12.4
   - id: S3-05
     titulo: "Recibos PDF + QR (Ley 941)"
     seccion: Backend
@@ -192,3 +192,47 @@ tareas:
     fuente: [PRD-04-02, PRD-04-03, PRD-02-05, PRD-02-04, PRD-07-02, PRD-07-03, PRD-07-04]
     claimed_by: null
     score: 4.7
+  - id: S3-18
+    titulo: "Motor de reparto por pesos por unidad (seam)"
+    seccion: Backend
+    status: in-progress
+    depende_de: []
+    desbloquea: [S3-20]
+    issue: 66
+    lote: D
+    fuente: [PRD-02-05]
+    claimed_by: claude
+    score: 7.8
+  - id: S3-19
+    titulo: "Cuotas de gastos extraordinarios"
+    seccion: Backend
+    status: ready
+    depende_de: [S3-02]
+    desbloquea: []
+    issue: 67
+    lote: D
+    fuente: [PRD-04-02, PRD-06-01]
+    claimed_by: null
+    score: 4.9
+  - id: S3-20
+    titulo: "Esquemas de reparto configurables por edificio"
+    seccion: Backend
+    status: stale
+    depende_de: [S3-18]
+    desbloquea: []
+    issue: 68
+    lote: G
+    fuente: [PRD-02-05, PRD-04-01]
+    claimed_by: null
+    score: 5.0
+  - id: S3-21
+    titulo: "Fondo de reserva en la liquidacion"
+    seccion: Backend
+    status: ready
+    depende_de: [S3-04]
+    desbloquea: []
+    issue: 69
+    lote: G
+    fuente: [PRD-06-04]
+    claimed_by: null
+    score: 5.1
