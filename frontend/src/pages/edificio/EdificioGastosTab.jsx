@@ -1,10 +1,10 @@
 // frontend/src/pages/edificio/EdificioGastosTab.jsx — ConsorcIA
 // Tab "Gastos" del detalle de edificio (S3-07), según el mockup de
-// PRD-04-02 §4.1: columnas concepto / proveedor / monto / categoría / tipo /
-// fecha / cargado por / período, totalizador segmentado arriba, filtros por
-// columna y paginación server-side. Sigue los patrones de tabla de S2-08
-// (EdificioUnidadesTab) y las reglas de listados de PRD-07-02 §6.2 (empty state
-// y skeleton siempre).
+// PRD-04-02 §4.1: totalizador segmentado, barra de filtros, tabla (concepto /
+// proveedor / monto / categoría / tipo / fecha / cargado por / período) y
+// paginación server-side. Sigue los patrones de tabla de S2-08
+// (EdificioUnidadesTab) y S3-14 (ProveedoresPage) y las reglas de listados de
+// PRD-07-02 §6.2 (empty state y skeleton siempre).
 //
 // DECISIONES de S3-07:
 //
@@ -55,18 +55,22 @@
 //
 // DECISIONES de S3-08b (mejoras del listado):
 //
-// 7. LOS FILTROS VIVEN EN LA CABECERA DE SU COLUMNA, no en una barra suelta
-//    arriba. Con ocho columnas, una barra deja de decir QUÉ filtra cada control
-//    (el usuario tiene que adivinar si "Todas" es categoría o tipo); debajo del
-//    título de la columna, el control se explica solo. El mecanismo no cambia:
-//    cada uno sigue escribiéndose en la URL (decisión 2). Las columnas sin
-//    filtro posible (monto) quedan con la celda vacía a propósito, para no
-//    prometer un filtro que el endpoint no tiene.
+// 7. LA TABLA PASA A `useReactTable` (@tanstack/react-table, headless) con los
+//    componentes de tabla de shadcn, igual que ProveedoresPage: las columnas se
+//    declaran en un solo lugar en vez de repetirse entre `<TableHead>` y
+//    `<TableCell>`, que con ocho columnas ya se desincronizaba (el pie TOTAL
+//    contaba celdas vacías a mano). El modelo de FILTRADO de react-table NO se
+//    usa: filtra y pagina el backend (decisión 3), y duplicar ese estado en el
+//    cliente sería una segunda fuente de verdad capaz de contradecir a la URL.
 //
-// 8. EL BUSCADOR DE CONCEPTO TIENE DEBOUNCE (300 ms), como el de proveedores de
-//    S3-14: sin él cada tecla dispara una query paginada al backend. El estado
-//    tipeado es local y solo llega a la URL cuando se calma, así que el historial
-//    del browser no se llena de una entrada por letra.
+// 8. LOS FILTROS VIVEN EN UNA TOOLBAR, NO EN LA CABECERA DE LA TABLA. El primer
+//    intento de S3-08b puso un control debajo de cada título de columna: con
+//    siete filtros hay que angostar cada control hasta que deja de leerse
+//    ("Todo⌄"), la tabla se va a scroll horizontal y la cabecera compite
+//    visualmente con los datos, que son lo que la pantalla vino a mostrar. La
+//    toolbar (`GastosFiltros`) invierte la relación — buscador y período a la
+//    vista, el resto en un panel con contador, y chips de lo activo — y deja la
+//    tabla limpia. El mecanismo no cambia: todo sigue en la URL (decisión 2).
 //
 // 9. EL TOTALIZADOR ESTÁ SEGMENTADO en total / ordinarios / extraordinarios, con
 //    los tres números del backend (decisión 8 de S3-02) sobre el MISMO filtro,
@@ -76,24 +80,29 @@
 //    que un administrador hace antes de liquidar. Es el antecesor de los KPI
 //    cards de S3-16, que reemplazan este bloque cuando el tab pase a dashboard.
 //
-// 10. LA COLUMNA "CARGADO POR" Y SU FILTRO SON TRAZABILIDAD, no adorno: varios
-//     gestores cargan gastos del mismo edificio y "quién cargó esto" es la
-//     primera pregunta cuando un monto no cierra. El filtro se ofrece solo al
-//     org_admin porque su combo se alimenta de la nómina de staff
-//     (`/api/organizaciones/me/usuarios`), que al gestor le responde 403 — la
-//     COLUMNA, en cambio, la ve todo el staff.
-import { useEffect, useMemo, useState } from 'react';
+// 10. LA COLUMNA "CARGADO POR" ES TRAZABILIDAD, no adorno: varios gestores
+//     cargan gastos del mismo edificio y "quién cargó esto" es la primera
+//     pregunta cuando un monto no cierra. Se muestra abreviada ("María R.") con
+//     el nombre completo en el `title`, porque el nombre entero se lleva el
+//     ancho de una columna de datos.
+import { useMemo, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  createColumnHelper,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { toast } from 'sonner';
-import { ChevronLeft, ChevronRight, MoreHorizontal, Plus, Receipt, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MoreHorizontal, Plus, Receipt } from 'lucide-react';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import { useGastos } from '@/hooks/useGastos';
 import { SIN_ROLES, useAuthStore } from '@/stores/auth.store';
 import AyudaLink from '@/components/ayuda/AyudaLink';
 import GastoFormDialog from '@/components/gastos/GastoFormDialog';
-import ProveedorSelect from '@/components/gastos/ProveedorSelect';
+import GastosFiltros from '@/components/gastos/GastosFiltros';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
@@ -121,9 +130,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -137,32 +143,10 @@ import {
 // Página del contrato de `listarGastosSchema` (default 50, máx 100).
 const LIMIT = 50;
 
-// Decisión 11: la columna de acciones queda PEGADA al borde derecho. Con nueve
-// columnas y una fila de filtros, la tabla scrollea horizontalmente en pantallas
-// de ~1280px (el contenedor de `Table` ya tiene `overflow-x-auto`), y el menú de
-// la fila es lo último que puede quedar fuera de vista: sin esto, editar un
-// gasto exige scrollear a la derecha en cada fila.
-const CELDA_ACCIONES = 'sticky right-0 bg-background';
-
 // Centinela de "sin filtro de período" (decisión 2).
 const TODOS_LOS_PERIODOS = 'todos';
 
-// Etiquetas CORTAS a propósito (decisión 7): el filtro vive debajo del título de
-// su columna, que ya dice "Categoría" y "Tipo", y ocho controles con etiquetas
-// largas mandan la tabla a scroll horizontal. El significado completo de A/B/C
-// está en el badge de cada fila y en la ayuda contextual.
-const CATEGORIAS = [
-  { value: '', label: 'Todas' },
-  { value: 'A', label: 'A' },
-  { value: 'B', label: 'B' },
-  { value: 'C', label: 'C' },
-];
-
-const TIPOS = [
-  { value: '', label: 'Todos' },
-  { value: 'ordinario', label: 'Ordinario' },
-  { value: 'extraordinario', label: 'Extraord.' },
-];
+const columnHelper = createColumnHelper();
 
 // Badge de la categoría con su detalle: A se reparte a todas las UF, B lleva el
 // servicio y C el sector (invariantes de `incoherenciaCategoria` en el backend).
@@ -182,7 +166,7 @@ function CategoriaGasto({ gasto }) {
 }
 
 // Skeleton de carga inicial (PRD-07-02 §6.2/§6.4): replica la estructura de la
-// pantalla — el totalizador y la tabla —, igual que el de unidades.
+// pantalla — totalizador, filtros y tabla —, igual que el de unidades.
 function GastosSkeleton() {
   return (
     <Card className="animate-pulse">
@@ -196,6 +180,7 @@ function GastosSkeleton() {
             <div key={i} className="h-20 rounded-lg bg-muted" />
           ))}
         </div>
+        <div className="h-9 w-96 rounded bg-muted" />
         <div className="h-10 rounded bg-muted" />
         {Array.from({ length: 5 }, (_, i) => (
           <div key={i} className="h-8 rounded bg-muted" />
@@ -271,7 +256,7 @@ function EmptyState({ hayFiltros, onLimpiar, puedeEscribir, onNuevo }) {
       </p>
       <p className="text-sm text-muted-foreground">
         {hayFiltros
-          ? 'Probá con otro período o quitá los filtros de las columnas.'
+          ? 'Revisá los filtros activos de arriba: se quitan de a uno o todos juntos.'
           : 'Cargá los gastos del período para poder liquidar las expensas.'}
       </p>
       {hayFiltros ? (
@@ -396,26 +381,6 @@ export default function EdificioGastosTab() {
   const q = searchParams.get('q') ?? '';
   const page = Math.max(1, Number(searchParams.get('page')) || 1);
 
-  // Decisión 8: lo tipeado es estado local y llega a la URL con debounce.
-  const [busqueda, setBusqueda] = useState(q);
-  useEffect(() => {
-    if (busqueda === q) return undefined;
-    const timer = setTimeout(() => setFiltro({ q: busqueda }), 300);
-    return () => clearTimeout(timer);
-    // `setFiltro` es estable (solo usa el setter de searchParams) y `q` entra
-    // para no reescribir la URL con lo que ya dice.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busqueda, q]);
-
-  // Decisión 10: la nómina de staff alimenta el filtro "Cargado por" y solo el
-  // org_admin puede leerla.
-  const { data: staff } = useQuery({
-    queryKey: queryKeys.organizaciones.staff(),
-    queryFn: () => api.get('/api/organizaciones/me/usuarios'),
-    enabled: puedeEscribir,
-  });
-  const autores = staff ?? [];
-
   // Un período elegido a mano que no esté entre los últimos 12 (link viejo,
   // filtro compartido) tiene que seguir siendo seleccionable en el combo.
   const opcionesPeriodo =
@@ -456,9 +421,110 @@ export default function EdificioGastosTab() {
   }
 
   function limpiarFiltros() {
-    setBusqueda('');
     setSearchParams(new URLSearchParams());
   }
+
+  // Decisión 7: las columnas se declaran una vez. `meta.className` viaja a la
+  // celda, a su cabecera y al pie, así la alineación no se repite en tres lugares.
+  const columns = useMemo(() => {
+    const definiciones = [
+      columnHelper.accessor('concepto', {
+        header: 'Concepto',
+        cell: (info) => (
+          <span
+            className="block max-w-56 truncate font-medium"
+            title={info.getValue()}
+          >
+            {info.getValue()}
+          </span>
+        ),
+      }),
+      columnHelper.accessor((g) => g.proveedor?.razonSocial ?? '—', {
+        id: 'proveedor',
+        header: 'Proveedor',
+        cell: (info) => (
+          <span className="flex max-w-40 flex-col" title={info.getValue()}>
+            <span className="truncate">{info.getValue()}</span>
+            {info.row.original.proveedor?.activo === false && (
+              <span className="text-xs text-muted-foreground">dado de baja</span>
+            )}
+          </span>
+        ),
+      }),
+      columnHelper.accessor((g) => g, {
+        id: 'monto',
+        header: 'Monto',
+        meta: { className: 'text-right tabular-nums' },
+        cell: (info) => {
+          const gasto = info.getValue();
+          return formatearMonto(gasto.monto, gasto.moneda);
+        },
+      }),
+      columnHelper.accessor((g) => g, {
+        id: 'categoria',
+        header: 'Categoría',
+        cell: (info) => <CategoriaGasto gasto={info.getValue()} />,
+      }),
+      columnHelper.accessor('esOrdinario', {
+        header: 'Tipo',
+        cell: (info) => (info.getValue() ? 'Ordinario' : 'Extraordinario'),
+      }),
+      // dd-mm: el año ya lo fija el filtro de período. El `title` trae la fecha
+      // completa para el caso raro en que el gasto sea de otro año que el período.
+      columnHelper.accessor('fechaGasto', {
+        header: 'Fecha',
+        meta: { className: 'tabular-nums' },
+        cell: (info) => (
+          <span title={(info.getValue() ?? '').slice(0, 10)}>
+            {formatearFechaCorta(info.getValue())}
+          </span>
+        ),
+      }),
+      // Decisión 10: nombre abreviado, completo en el `title`.
+      columnHelper.accessor('creadoPor', {
+        header: 'Cargado por',
+        meta: { className: 'text-muted-foreground' },
+        cell: (info) => (
+          <span title={nombreDeAutor(info.getValue())}>
+            {nombreDeAutorCorto(info.getValue())}
+          </span>
+        ),
+      }),
+      columnHelper.accessor('periodo', {
+        header: 'Período',
+        meta: { className: 'tabular-nums' },
+      }),
+    ];
+
+    if (puedeEscribir) {
+      definiciones.push(
+        columnHelper.display({
+          id: 'acciones',
+          header: () => <span className="sr-only">Acciones</span>,
+          // La columna de acciones queda PEGADA al borde derecho: si la tabla
+          // scrollea horizontalmente en una pantalla chica (el contenedor de
+          // `Table` ya tiene `overflow-x-auto`), el menú de la fila es lo primero
+          // que quedaría fuera de vista.
+          meta: { className: 'sticky right-0 bg-background' },
+          cell: (info) => (
+            <AccionesGasto
+              gasto={info.row.original}
+              onEditar={() => setEditando(info.row.original)}
+              onEliminar={() => setBorrando(info.row.original)}
+            />
+          ),
+        }),
+      );
+    }
+
+    return definiciones;
+  }, [puedeEscribir]);
+
+  const table = useReactTable({
+    data: gastos,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
 
   if (cargando) return <GastosSkeleton />;
   if (error) return <EstadoError />;
@@ -477,6 +543,10 @@ export default function EdificioGastosTab() {
     q !== '' ||
     periodo !== periodoDefault;
   const hayMonedaExtranjera = gastos.some((g) => g.moneda !== 'ARS');
+  // El nombre del proveedor filtrado sale de las filas en pantalla; el chip cae
+  // a "elegido" cuando el filtro combinado deja la lista vacía.
+  const proveedorNombre = gastos.find((g) => g.proveedorId === proveedorId)
+    ?.proveedor?.razonSocial;
 
   return (
     <Card>
@@ -506,17 +576,29 @@ export default function EdificioGastosTab() {
         {/* Decisión 9: el totalizador del filtro activo, segmentado. */}
         <Totalizador totales={totales} />
 
-        {hayFiltros && (
-          <div className="flex justify-end">
-            <Button variant="ghost" size="sm" onClick={limpiarFiltros}>
-              Limpiar filtros
-            </Button>
-          </div>
-        )}
+        {/* Decisión 8: toolbar, no filtros dentro de la tabla. */}
+        <GastosFiltros
+          filtros={{
+            periodo,
+            categoria,
+            tipo,
+            proveedorId,
+            proveedorNombre,
+            createdBy,
+            desde,
+            hasta,
+            q,
+          }}
+          periodos={opcionesPeriodo}
+          todosLosPeriodos={TODOS_LOS_PERIODOS}
+          puedeVerAutores={puedeEscribir}
+          onFiltro={setFiltro}
+          onLimpiar={limpiarFiltros}
+        />
 
-        {gastos.length === 0 && !hayFiltros ? (
+        {gastos.length === 0 ? (
           <EmptyState
-            hayFiltros={false}
+            hayFiltros={hayFiltros}
             onLimpiar={limpiarFiltros}
             puedeEscribir={puedeEscribir}
             onNuevo={() => setAltaOpen(true)}
@@ -525,262 +607,60 @@ export default function EdificioGastosTab() {
           <>
             {/* `refrescando` = está trayendo otra página o el resultado de un
                 filtro nuevo con el anterior en pantalla (keepPreviousData): se
-                atenúa para que el cambio se note. La tabla se renderiza incluso
-                sin filas cuando hay filtros, porque sus cabeceras SON los
-                filtros (decisión 7) y esconderlas dejaría al usuario sin forma
-                de corregir el filtro que vació la lista. */}
+                atenúa para que el cambio se note. */}
             <div className={refrescando ? 'opacity-60 transition-opacity' : undefined}>
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Concepto</TableHead>
-                    <TableHead>Proveedor</TableHead>
-                    <TableHead className="text-right">Monto</TableHead>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Cargado por</TableHead>
-                    <TableHead>Período</TableHead>
-                    {puedeEscribir && (
-                      <TableHead className={CELDA_ACCIONES}>
-                        <span className="sr-only">Acciones</span>
-                      </TableHead>
-                    )}
-                  </TableRow>
-
-                  {/* Decisión 7: un filtro por columna, debajo de su título. */}
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="align-top">
-                      <div className="relative w-full min-w-36">
-                        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                          id="filtro-concepto"
-                          className="h-9 w-full min-w-0 pl-8"
-                          placeholder="Buscar concepto"
-                          autoComplete="off"
-                          aria-label="Filtrar por concepto"
-                          value={busqueda}
-                          onChange={(e) => setBusqueda(e.target.value)}
-                        />
-                      </div>
-                    </TableHead>
-
-                    <TableHead className="align-top">
-                      {/* Reusa el combobox del form de gasto (S3-14): el
-                          directorio se pagina y no cabe en un <select>. Sin
-                          alta inline — crear un proveedor desde un filtro no
-                          tiene sentido. */}
-                      <div className="w-full min-w-40 font-normal">
-                        <ProveedorSelect
-                          id="filtro-proveedor"
-                          value={proveedorId}
-                          permitirAlta={false}
-                          onChange={(valor) => setFiltro({ proveedorId: valor })}
-                        />
-                      </div>
-                    </TableHead>
-
-                    {/* El endpoint no filtra por monto: la celda queda vacía en
-                        vez de prometer un control que no existe. */}
-                    <TableHead />
-
-                    <TableHead className="align-top">
-                      <Select
-                        id="filtro-categoria"
-                        className="h-9 w-20 font-normal"
-                        aria-label="Filtrar por categoría"
-                        value={categoria}
-                        onChange={(e) => setFiltro({ categoria: e.target.value })}
-                      >
-                        {CATEGORIAS.map((c) => (
-                          <option key={c.value} value={c.value}>
-                            {c.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </TableHead>
-
-                    <TableHead className="align-top">
-                      <Select
-                        id="filtro-tipo"
-                        className="h-9 w-28 font-normal"
-                        aria-label="Filtrar por tipo"
-                        value={tipo}
-                        onChange={(e) => setFiltro({ tipo: e.target.value })}
-                      >
-                        {TIPOS.map((t) => (
-                          <option key={t.value} value={t.value}>
-                            {t.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </TableHead>
-
-                    {/* La fecha filtra por rango (`desde`/`hasta` del endpoint):
-                        un solo día casi nunca es lo que se busca. */}
-                    <TableHead className="align-top">
-                      <div className="flex w-30 flex-col gap-1 font-normal">
-                        <Label htmlFor="filtro-desde" className="sr-only">
-                          Desde
-                        </Label>
-                        <Input
-                          id="filtro-desde"
-                          type="date"
-                          className="h-9 w-30 min-w-0 px-1.5"
-                          title="Desde"
-                          value={desde}
-                          onChange={(e) => setFiltro({ desde: e.target.value })}
-                        />
-                        <Label htmlFor="filtro-hasta" className="sr-only">
-                          Hasta
-                        </Label>
-                        <Input
-                          id="filtro-hasta"
-                          type="date"
-                          className="h-9 w-30 min-w-0 px-1.5"
-                          title="Hasta"
-                          value={hasta}
-                          onChange={(e) => setFiltro({ hasta: e.target.value })}
-                        />
-                      </div>
-                    </TableHead>
-
-                    <TableHead className="align-top">
-                      {/* Decisión 10: solo el org_admin lee la nómina. */}
-                      {puedeEscribir && (
-                        <Select
-                          id="filtro-autor"
-                          className="h-9 w-28 font-normal"
-                          aria-label="Filtrar por quién lo cargó"
-                          value={createdBy}
-                          onChange={(e) => setFiltro({ createdBy: e.target.value })}
+                  {table.getHeaderGroups().map((grupo) => (
+                    <TableRow key={grupo.id}>
+                      {grupo.headers.map((header) => (
+                        <TableHead
+                          key={header.id}
+                          className={header.column.columnDef.meta?.className}
                         >
-                          <option value="">Todos</option>
-                          {autores.map((autor) => (
-                            <option key={autor.id} value={autor.id}>
-                              {nombreDeAutor(autor)}
-                            </option>
-                          ))}
-                        </Select>
-                      )}
-                    </TableHead>
-
-                    <TableHead className="align-top">
-                      <Select
-                        id="filtro-periodo"
-                        className="h-9 w-28 font-normal"
-                        aria-label="Filtrar por período"
-                        value={periodo}
-                        onChange={(e) => setFiltro({ periodo: e.target.value })}
-                      >
-                        {opcionesPeriodo.map((p) => (
-                          <option key={p} value={p} title={formatearPeriodo(p)}>
-                            {p}
-                          </option>
-                        ))}
-                        <option value={TODOS_LOS_PERIODOS}>Todos</option>
-                      </Select>
-                    </TableHead>
-
-                    {puedeEscribir && <TableHead className={CELDA_ACCIONES} />}
-                  </TableRow>
+                          {flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  ))}
                 </TableHeader>
 
                 <TableBody>
-                  {gastos.map((gasto) => (
-                    <TableRow key={gasto.id}>
-                      <TableCell className="font-medium">
-                        <span
-                          className="block max-w-48 truncate"
-                          title={gasto.concepto}
+                  {table.getRowModel().rows.map((row) => (
+                    <TableRow key={row.id}>
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell
+                          key={cell.id}
+                          className={cell.column.columnDef.meta?.className}
                         >
-                          {gasto.concepto}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className="flex max-w-36 flex-col"
-                          title={gasto.proveedor?.razonSocial ?? undefined}
-                        >
-                          <span className="truncate">
-                            {gasto.proveedor?.razonSocial ?? '—'}
-                          </span>
-                          {gasto.proveedor?.activo === false && (
-                            <span className="text-xs text-muted-foreground">
-                              dado de baja
-                            </span>
-                          )}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatearMonto(gasto.monto, gasto.moneda)}
-                      </TableCell>
-                      <TableCell>
-                        <CategoriaGasto gasto={gasto} />
-                      </TableCell>
-                      <TableCell
-                        title={gasto.esOrdinario ? 'Ordinario' : 'Extraordinario'}
-                      >
-                        {gasto.esOrdinario ? 'Ordinario' : 'Extraord.'}
-                      </TableCell>
-                      {/* dd-mm: el año ya lo fija el filtro de período. El
-                          título trae la fecha completa para el caso raro en que
-                          el gasto sea de otro año que el período. */}
-                      <TableCell
-                        className="tabular-nums"
-                        title={(gasto.fechaGasto ?? '').slice(0, 10)}
-                      >
-                        {formatearFechaCorta(gasto.fechaGasto)}
-                      </TableCell>
-                      <TableCell
-                        className="text-muted-foreground"
-                        title={nombreDeAutor(gasto.creadoPor)}
-                      >
-                        {nombreDeAutorCorto(gasto.creadoPor)}
-                      </TableCell>
-                      <TableCell className="tabular-nums">
-                        {gasto.periodo}
-                      </TableCell>
-                      {puedeEscribir && (
-                        <TableCell className={CELDA_ACCIONES}>
-                          <AccionesGasto
-                            gasto={gasto}
-                            onEditar={() => setEditando(gasto)}
-                            onEliminar={() => setBorrando(gasto)}
-                          />
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </TableCell>
-                      )}
+                      ))}
                     </TableRow>
                   ))}
-
-                  {/* Con filtros que no matchean, la tabla se queda con sus
-                      cabeceras (que son los filtros) y el vacío se explica acá. */}
-                  {gastos.length === 0 && (
-                    <TableRow className="hover:bg-transparent">
-                      <TableCell
-                        colSpan={puedeEscribir ? 9 : 8}
-                        className="py-10 text-center text-sm text-muted-foreground"
-                      >
-                        Ningún gasto coincide con los filtros de las columnas.
-                      </TableCell>
-                    </TableRow>
-                  )}
                 </TableBody>
 
-                {/* Decisión 4: el TOTAL es del filtro completo (backend). */}
+                {/* Decisión 4: el TOTAL es del filtro completo (backend). Las
+                    celdas del pie se generan de las columnas visibles, así que
+                    agregar una columna no lo descoloca. */}
                 <TableFooter>
                   <TableRow className="hover:bg-transparent">
-                    <TableCell className="font-semibold">TOTAL</TableCell>
-                    <TableCell />
-                    <TableCell className="text-right font-semibold tabular-nums">
-                      {formatearMonto(totales?.monto ?? '0.00')}
-                    </TableCell>
-                    <TableCell />
-                    <TableCell />
-                    <TableCell />
-                    <TableCell />
-                    <TableCell />
-                    {puedeEscribir && <TableCell className={CELDA_ACCIONES} />}
+                    {table.getVisibleLeafColumns().map((columna, indice) => (
+                      <TableCell
+                        key={columna.id}
+                        className={`font-semibold ${
+                          columna.columnDef.meta?.className ?? ''
+                        }`}
+                      >
+                        {indice === 0 ? 'TOTAL' : null}
+                        {columna.id === 'monto'
+                          ? formatearMonto(totales?.monto ?? '0.00')
+                          : null}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 </TableFooter>
               </Table>
