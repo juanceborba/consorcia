@@ -20,7 +20,11 @@ from pathlib import Path
 
 STATE_DIR = Path(__file__).resolve().parent
 APP_DIR = STATE_DIR.parent
-VAULT_DIR = APP_DIR.parent / "vault"
+# El vault vive DENTRO del repo desde 2026-07-30 (`app/vault`, incorporado con
+# `git subtree`): antes era un repo aparte al lado de `app/` y sus PRDs —las
+# specs canónicas— no tenían respaldo remoto. Se resuelve relativo a este
+# archivo y no al cwd, igual que el resto de las rutas del motor.
+VAULT_DIR = APP_DIR / "vault"
 EVENTS_DIR = STATE_DIR / "events"
 PROJ_DIR = STATE_DIR / "projections"
 CACHE_PATH = STATE_DIR / "cache.json"

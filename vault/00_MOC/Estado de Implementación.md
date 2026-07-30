@@ -12,7 +12,7 @@ outcomes:
 
 # Estado de Implementación
 
-> GENERADO por app/state/engine.py — no editar a mano. Última corrida: 2026-07-30T19:49:41Z.
+> GENERADO por app/state/engine.py — no editar a mano. Última corrida: 2026-07-30T20:21:54Z.
 
 ## Resumen por sprint
 
@@ -25,6 +25,6 @@ outcomes:
 
 ## Tareas ready
 
-- **S3-11** (score 4.1) Tests E2E + smoke + docs — fuente: [[PRD-04-02 Gestor de Gastos]], [[PRD-04-03 Liquidación de Expensas]], [[PRD-02-05 Motor Contable]], [[PRD-02-04 Base de Datos]], [[PRD-07-02 Diseño de Componentes]], [[PRD-07-03 Rutas y Navegacion]], [[PRD-07-04 Estado Global]]
+- **S3-11** (score 4.1) Tests E2E + smoke + docs — fuente: [[PRD-04-02 Gestor de Gastos]], [[PRD-04-03 Liquidación de Expensas]], [[PRD-02-05 Motor Contable]], [[PRD-02-04 Base de Datos]], [[PRD-07-02 Diseño de Componentes]], [[PRD-07-03 Rutas y Navegacion]], [[PRD-07-04 Estado Global]]
 
-_Última corrida del motor: 2026-07-30T19:49:41Z_
+_Última corrida del motor: 2026-07-30T20:21:54Z_

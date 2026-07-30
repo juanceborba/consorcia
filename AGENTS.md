@@ -2,7 +2,7 @@
 
 ## Qué es esto
 
-Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas viven en un vault de Obsidian **fuera de este repo**: `../../vault` (PRDs en español, `PRD-XX-YY Título.md`). Antes de implementar un módulo, leé su PRD.
+Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas viven en un vault de Obsidian **dentro de este repo**: `vault/` (PRDs en español, `PRD-XX-YY Título.md`). Antes de implementar un módulo, leé su PRD. Hasta 2026-07-30 era un repo git aparte al lado de `app/`; se incorporó con `git subtree` porque no tenía remoto y las specs vivían en un solo disco. **Los commits del vault ya no van aparte**: es el mismo repo (pero conviene seguir separando el commit de PRDs del de código, por legibilidad del historial).
 
 ## Estado del proyecto
 
@@ -48,7 +48,7 @@ La verdad del estado vive en `state/` (event-sourced, ver `state/README.md`): lo
 
 ## Regla de sincronización con el vault
 
-Si el código diverge de un PRD (puertos, endpoints, schema, roles), **actualizá el PRD del vault en la misma tarea** — el PRD refleja lo que existe, no el diseño original. Convenciones del vault en `../../vault/AGENTS.md`. Errores del contrato API: `{ error: { code, message } }`.
+Si el código diverge de un PRD (puertos, endpoints, schema, roles), **actualizá el PRD del vault en la misma tarea** — el PRD refleja lo que existe, no el diseño original. Convenciones del vault en `vault/AGENTS.md`. Errores del contrato API: `{ error: { code, message } }`.
 
 ## Regla de frescura de la ayuda contextual
 
