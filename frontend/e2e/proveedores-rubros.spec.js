@@ -60,7 +60,10 @@ test('directorio de proveedores: alta, búsqueda por CUIT y baja', async ({ page
       'page',
     );
     // Proveedor propio del seed: confirma que el badge de origen se pinta.
-    const fila = page.getByRole('row', { name: /Ascensores Otis SA/ });
+    // S3-22b: el seed crea los proveedores demo. Hasta entonces este assert
+    // apuntaba a "Ascensores Otis SA", que nadie creaba —venía de una DB de
+    // desarrollo cargada a mano— y el spec estaba rojo desde S3-14.
+    const fila = page.getByRole('row', { name: /Ascensores del Plata/ });
     await expect(fila).toContainText('Propio');
   });
 
