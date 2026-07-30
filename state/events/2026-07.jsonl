@@ -26,3 +26,5 @@
 {"id": "evt-000120", "ts": "2026-07-30T03:12:23Z", "actor": "human", "type": "status", "task": "S3-09", "to": "done"}
 {"id": "evt-000121", "ts": "2026-07-30T03:21:25Z", "actor": "claude", "type": "claim", "task": "S3-10", "motivo": "Workflow aprobación + recibos: UI de acciones por estado y descarga de recibos"}
 {"id": "evt-000122", "ts": "2026-07-30T03:29:41Z", "actor": "claude", "type": "status", "task": "S3-10", "to": "done", "motivo": "Acciones por estado en la preview (aprobar/generar recibos/anular con ConfirmDialog + optimistic), card de recibos por UF con descarga de PDF, topic de ayuda liquidaciones/recibos, E2E liquidacion-aprobacion.spec.js"}
+{"id": "evt-000123", "ts": "2026-07-30T12:12:47Z", "actor": "claude", "type": "claim", "task": "S3-06"}
+{"id": "evt-000124", "ts": "2026-07-30T12:46:52Z", "actor": "claude", "type": "status", "task": "S3-06", "to": "done"}
