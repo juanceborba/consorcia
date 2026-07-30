@@ -102,9 +102,15 @@ cobrar una expensa (caja ↔ CxC), registrar la factura de un proveedor (egreso 
 
 ### 3.2 ¿Servicio open source o tabla propia?
 
+> **Actualizado (2026-07-30):** la decisión final está en `docs/decisiones/ADR-001-ledger-del-edificio.md`
+> y no es "tablas propias" sino **pgledger** —doble partida en PostgreSQL puro, que corre DENTRO de
+> nuestra base y por lo tanto en nuestras transacciones—. La tabla de abajo es la evaluación
+> original; el ADR incorpora pgledger y explica por qué gana.
+
 | Opción | Licencia | Stack que suma | Veredicto |
 |---|---|---|---|
-| **Ledger propio en Postgres** | — | Ninguno | ✅ **Recomendado para el MVP** |
+| **[pgledger](https://github.com/pgr0ss/pgledger)** | MIT | Ninguno (es SQL en nuestra base) | ✅ **Elegido** (ADR-001) |
+| Ledger propio en Postgres | — | Ninguno | Plan B: el mismo lugar, escribiendo nosotros la doble partida |
 | [TigerBeetle](https://github.com/tigerbeetle/tigerbeetle) | Apache-2.0 | Otra DB (no SQL), su propio backup/operación | Overkill: está hecho para millones de transferencias por segundo. Montos como enteros de precisión fija, esquema rígido de `accounts`/`transfers`, sin multi-tenancy ni consultas ad-hoc → los reportes de Ley 941 los seguimos armando nosotros |
 | [Formance Ledger](https://github.com/formancehq/ledger) | MIT | Servicio Go + su Postgres | Muy capaz (Numscript, multi-posting atómico), pero **producción solo soportada vía operador de Kubernetes** — el stack es docker-compose |
 | [Blnk](https://github.com/blnkfinance/blnk) | Apache-2.0 | Servicio Go + Postgres + Redis | El más cercano en forma (self-host con compose, balances, inflight, conciliación). Proyecto joven (~485 ★) y de todos modos hay que mapear organización/edificio/UF a su modelo |
