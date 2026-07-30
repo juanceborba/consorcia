@@ -120,12 +120,15 @@ import { autorizar } from '../middleware/rbac.middleware.js';
 import { validarBody, validarQuery } from '../middleware/validation.middleware.js';
 import {
   crearGastoSchema,
+  dashboardGastosSchema,
   editarGastoSchema,
   listarGastosSchema,
   incoherenciaCategoria,
   incoherenciaCuotas,
 } from '../schemas/gasto.schema.js';
 import { rubroUsable } from '../services/rubros.js';
+import { whereDeGastos } from '../services/gastos-filtros.js';
+import { dashboardDeGastos } from '../services/gastos-dashboard.js';
 import { planDeCuotas, LiquidacionError } from '../core/liquidacion.engine.js';
 
 // ---------------------------------------------------------------------------
@@ -365,13 +368,11 @@ function segmentarPorCategoria(filas) {
 }
 
 // ─── Decisión 11: el período de un gasto en cuotas ───
-
-// Un gasto "pertenece" a un período si se imputa entero ahí (sin plan de cuotas)
-// o si alguna de sus cuotas cae en ese período. Va en `AND` y no en `OR` para no
-// pisar el `OR` del buscador `q`.
-const filtroDePeriodo = (periodo) => ({
-  AND: [{ OR: [{ periodo, cuotas: { none: {} } }, { cuotas: { some: { periodo } } }] }],
-});
+//
+// S3-15: `filtroDePeriodo` y la construcción del `where` completo se mudaron a
+// `services/gastos-filtros.js` para que el dashboard lea EXACTAMENTE el mismo
+// conjunto que esta lista (el KPI "Total del período" y la fila TOTAL de la
+// pantalla son el mismo número: ver la cabecera de ese módulo).
 
 // La imputación de un gasto a un período: la cuota que le toca, o el gasto
 // entero. Espejo de `imputacionDelPeriodo` del motor, sobre la fila ya
@@ -548,49 +549,13 @@ gastosDeEdificioRouter.get(
   validarQuery(listarGastosSchema),
   async (req, res, next) => {
     try {
-      const {
-        periodo,
-        categoria,
-        esOrdinario,
-        proveedorId,
-        rubroId,
-        createdBy,
-        desde,
-        hasta,
-        q,
-        page,
-        limit,
-      } = req.filtros;
+      const { periodo, page, limit } = req.filtros;
 
-      const where = {
+      // Decisión 11: un gasto en cuotas pertenece a los N períodos de su plan.
+      const where = whereDeGastos(req.filtros, {
         organizacionId: req.organizacionId,
         edificioId: req.edificio.id,
-        // Los soft-deleted no se listan nunca (siguen en la DB por Ley 941).
-        deletedAt: null,
-        // Decisión 11: un gasto en cuotas pertenece a los N períodos de su plan.
-        ...(periodo ? filtroDePeriodo(periodo) : {}),
-        ...(categoria ? { categoria } : {}),
-        ...(esOrdinario !== undefined ? { esOrdinario } : {}),
-        ...(proveedorId ? { proveedorId } : {}),
-        ...(rubroId ? { rubroId } : {}),
-        ...(createdBy ? { createdBy } : {}),
-        ...(desde || hasta
-          ? {
-              fechaGasto: {
-                ...(desde ? { gte: desde } : {}),
-                ...(hasta ? { lte: hasta } : {}),
-              },
-            }
-          : {}),
-        ...(q
-          ? {
-              OR: [
-                { concepto: { contains: q, mode: 'insensitive' } },
-                { descripcion: { contains: q, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      };
+      });
 
       const [totales, gastos] = await Promise.all([
         totalesDelFiltro(where, periodo),
@@ -630,6 +595,31 @@ gastosDeEdificioRouter.get(
         },
         totales,
       });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+// GET /dashboard — agregados del edificio (S3-15, PRD-04-02 §3.4)
+//
+// Mismo permiso que la lista (`gasto:read`): el dashboard no muestra nada que la
+// lista no muestre, solo lo suma. El gestor lo ve para SUS edificios asignados —
+// `validarEdificio` ya lo filtró y la policy lo revalida.
+gastosDeEdificioRouter.get(
+  '/dashboard',
+  requireAuth,
+  tenant,
+  validarEdificio,
+  autorizar('gasto', 'read', recursoDeEdificio),
+  validarQuery(dashboardGastosSchema),
+  async (req, res, next) => {
+    try {
+      const dashboard = await dashboardDeGastos(req.filtros, {
+        organizacionId: req.organizacionId,
+        edificioId: req.edificio.id,
+      });
+      return res.json(dashboard);
     } catch (err) {
       return next(err);
     }

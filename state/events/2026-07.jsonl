@@ -28,3 +28,5 @@
 {"id": "evt-000122", "ts": "2026-07-30T03:29:41Z", "actor": "claude", "type": "status", "task": "S3-10", "to": "done", "motivo": "Acciones por estado en la preview (aprobar/generar recibos/anular con ConfirmDialog + optimistic), card de recibos por UF con descarga de PDF, topic de ayuda liquidaciones/recibos, E2E liquidacion-aprobacion.spec.js"}
 {"id": "evt-000123", "ts": "2026-07-30T12:12:47Z", "actor": "claude", "type": "claim", "task": "S3-06"}
 {"id": "evt-000124", "ts": "2026-07-30T12:46:52Z", "actor": "claude", "type": "status", "task": "S3-06", "to": "done"}
+{"id": "evt-000125", "ts": "2026-07-30T14:07:02Z", "actor": "claude", "type": "claim", "task": "S3-15", "motivo": "Endpoint dashboard de gastos: agregados por edificio y consolidado org (Business+)"}
+{"id": "evt-000126", "ts": "2026-07-30T14:21:29Z", "actor": "claude", "type": "status", "task": "S3-15", "to": "done", "motivo": "GET /api/edificios/:id/gastos/dashboard + consolidado GET /api/organizaciones/:id/gastos/dashboard (Business+), whereDeGastos compartido con la lista, imputacion por cuotas, porRubro con drill-down, 18 tests contra calculo manual"}

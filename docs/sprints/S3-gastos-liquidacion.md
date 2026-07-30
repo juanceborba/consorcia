@@ -24,7 +24,7 @@
   - _Depende de: S3-01._
 - [x] **S3-13 Rubros: seed maestro + endpoints.** Seed del árbol maestro (los 10 rubros del PRD-04-02 §1.4), `GET /api/rubros` con merge maestro+visibilidad+propios, CRUD de propios (`POST /api/rubros`, `PUT /api/rubros/:id`), toggle visibilidad (`PUT /api/rubros/:id/visibilidad`), protección de borrado (`DELETE` solo propios sin gastos; con gastos → `activo=false`). Policies `rubro.yaml`. Tests del merge (ocultar maestro, agregar propio, subrubro propio colgando de rubro maestro).
   - _Depende de: S3-01._
-- [ ] **S3-15 Endpoint dashboard de gastos.** `GET /api/edificios/:id/gastos/dashboard` y `GET /api/organizaciones/:id/gastos/dashboard` (gate plan Business+ → 403 `PLAN_INSUFICIENTE`), query `periodo=YYYY-MM` | `desde&hasta` | `todo=1`, respuesta agregada (KPIs, top 10 proveedores, por rubro, por categoría, evolución mensual) según PRD-04-02 §3.4, con Prisma groupBy + decimal.js (cero floats). Tests contra cálculo manual.
+- [x] **S3-15 Endpoint dashboard de gastos.** `GET /api/edificios/:id/gastos/dashboard` y `GET /api/organizaciones/:id/gastos/dashboard` (gate plan Business+ → 403 `PLAN_INSUFICIENTE`), query `periodo=YYYY-MM` | `desde&hasta` | `todo=1`, respuesta agregada (KPIs, top 10 proveedores, por rubro, por categoría, evolución mensual) según PRD-04-02 §3.4, con Prisma groupBy + decimal.js (cero floats). Tests contra cálculo manual.
   - _Depende de: S3-02._
 - [x] **S3-18 Motor de reparto por pesos por unidad (seam).** Refactor interno de calcularDistribucion a distribuir(monto, pesos) con pesosDe(gasto, unidades) derivando los pesos de la categoria A/B/C como hoy (cero cambio funcional). La preview expone el peso normalizado por UF. Diseño: docs/investigacion/esquemas-de-reparto.md
   - _Depende de: nada._

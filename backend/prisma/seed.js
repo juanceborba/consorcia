@@ -149,6 +149,15 @@ async function limpiarOrganizacionDemo(cuit) {
   // propios en ítems GLOBALES/MAESTROS de plataforma visibles para todo el
   // mundo. Los gastos y liquidaciones se borran antes porque referencian
   // proveedor y rubro con FK RESTRICT.
+  // Recibos y cobros ANTES de las liquidaciones y las unidades: los dos las
+  // referencian con FK RESTRICT. Los emite `POST /liquidaciones/:id/enviar`
+  // (S3-05), así que cualquier prueba manual o spec que haya llegado a ENVIADA
+  // deja filas acá y el reseed fallaba con
+  // `P2003 recibos_liquidacion_id_fkey`. Los PDFs quedan en MinIO/disco: son
+  // huérfanos inertes, y borrar objetos de storage desde el seed sería salirse de
+  // su alcance (la limpieza de storage la hace el after() de recibos.test.js).
+  await prisma.recibo.deleteMany({ where: { organizacionId: orgId } });
+  await prisma.cobro.deleteMany({ where: { organizacionId: orgId } });
   await prisma.liquidacionDetalle.deleteMany({
     where: { liquidacion: { organizacionId: orgId } },
   });
@@ -249,7 +258,11 @@ async function main() {
       nombre: 'Administración Demo S.A.',
       cuit: CUIT_ORG_A,
       matriculaRPA: '12.345-A',
-      plan: 'pro',
+      // S3-15: Business+ es el gate del consolidado de gastos de toda la
+      // organización (PRD-04-02 §3.2). Org A lo tiene para que la opción "Todos
+      // los edificios" sea ejercitable en demo y en los E2E de S3-17; Org B se
+      // queda en `starter`, que es el caso 403 `PLAN_INSUFICIENTE`.
+      plan: 'business',
     },
   });
   const orgB = await prisma.organizacion.create({

@@ -189,22 +189,64 @@ const booleanoDeQuery = z.preprocess((v) => {
   return v;
 }, z.boolean());
 
+// Los filtros que el dashboard (§3.4) comparte con la lista (§2). Se declaran
+// una vez porque S3-16 los lee de la MISMA URL para las dos vistas: si el
+// dashboard aceptara un subconjunto, filtrar por rubro movería la lista y dejaría
+// los KPIs quietos.
+const filtrosComunes = {
+  periodo: periodoSchema.optional(),
+  categoria: z.enum(['A', 'B', 'C']).optional(),
+  proveedorId: z.string().uuid('proveedorId inválido').optional(),
+  rubroId: z.string().uuid('rubroId inválido').optional(),
+  createdBy: z.string().uuid('createdBy inválido').optional(),
+  desde: z.coerce.date({ invalid_type_error: 'desde: fecha inválida' }).optional(),
+  hasta: z.coerce.date({ invalid_type_error: 'hasta: fecha inválida' }).optional(),
+  q: z.string().trim().min(1).max(100).optional(),
+};
+
+const rangoCoherente = (f) => !(f.desde && f.hasta) || f.desde <= f.hasta;
+
 export const listarGastosSchema = z
   .object({
-    periodo: periodoSchema.optional(),
-    categoria: z.enum(['A', 'B', 'C']).optional(),
+    ...filtrosComunes,
     esOrdinario: booleanoDeQuery.optional(),
-    proveedorId: z.string().uuid('proveedorId inválido').optional(),
-    rubroId: z.string().uuid('rubroId inválido').optional(),
-    // Quién cargó el gasto (S3-08b): filtro de columna de la lista.
-    createdBy: z.string().uuid('createdBy inválido').optional(),
-    desde: z.coerce.date({ invalid_type_error: 'desde: fecha inválida' }).optional(),
-    hasta: z.coerce.date({ invalid_type_error: 'hasta: fecha inválida' }).optional(),
-    q: z.string().trim().min(1).max(100).optional(),
     page: z.coerce.number().int().positive().default(1),
     limit: z.coerce.number().int().positive().max(100).default(50),
   })
-  .refine((f) => !(f.desde && f.hasta) || f.desde <= f.hasta, {
+  .refine(rangoCoherente, {
     path: ['desde'],
     message: 'desde: no puede ser posterior a hasta',
   });
+
+// Query del dashboard (§3.4): `?periodo=` | `?desde=&hasta=` | `?todo=1`, más los
+// filtros comunes con la lista.
+//
+// DECISIONES:
+//
+// 1. Los tres modos son EXCLUYENTES y se rechaza la combinación con 422 en vez de
+//    elegir uno por precedencia. `?periodo=2026-07&todo=1` no tiene una lectura
+//    obvia, y un dashboard que devuelve un total distinto al que el usuario cree
+//    haber pedido es peor que un error.
+// 2. Sin ningún modo, el default es `todo`: es lo que hace la lista sin filtros y
+//    lo que hace que un `GET` pelado del endpoint sea útil en vez de un 422. La
+//    pantalla arranca en "últimos 12 meses" (§3.2), pero eso lo manda la UI.
+// 3. `esOrdinario` NO es filtro del dashboard: el KPI ordinarias/extraordinarias
+//    (§3.1) es justamente el corte por ese eje, y filtrarlo dejaría el otro
+//    subtotal en cero mostrando un desglose que no desglosa nada.
+export const dashboardGastosSchema = z
+  .object({
+    ...filtrosComunes,
+    todo: booleanoDeQuery.optional(),
+  })
+  .refine(rangoCoherente, {
+    path: ['desde'],
+    message: 'desde: no puede ser posterior a hasta',
+  })
+  .refine(
+    (f) => [f.periodo !== undefined, f.desde !== undefined || f.hasta !== undefined, f.todo === true]
+      .filter(Boolean).length <= 1,
+    {
+      path: ['periodo'],
+      message: 'elegir UN modo de período: periodo, desde/hasta o todo=1',
+    }
+  );
