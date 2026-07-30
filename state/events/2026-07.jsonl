@@ -18,3 +18,5 @@
 {"id": "evt-000112", "ts": "2026-07-30T01:32:13Z", "actor": "human", "type": "import_task", "task": "S3-21", "data": {"sprint": "S3", "seccion": "Backend", "titulo": "Fondo de reserva en la liquidacion", "alcance": "Porcentaje configurable por edificio, item propio en liquidacion y recibo, y uso del fondo para financiar una extraordinaria. Brecha 4 del research.", "depende_de": ["S3-04"], "issue": 69, "lote": "G", "fuente": ["PRD-06-04"], "prioridad": 2}}
 {"id": "evt-000113", "ts": "2026-07-30T01:32:23Z", "actor": "claude", "type": "claim", "task": "S3-18"}
 {"id": "evt-000114", "ts": "2026-07-30T01:36:57Z", "actor": "claude", "type": "status", "task": "S3-18", "to": "done", "motivo": "motor a pesos por unidad, sin cambio funcional (commit pendiente de sha, issue #66)"}
+{"id": "evt-000115", "ts": "2026-07-30T01:46:43Z", "actor": "claude", "type": "claim", "task": "S3-19"}
+{"id": "evt-000116", "ts": "2026-07-30T02:03:45Z", "actor": "claude", "type": "status", "task": "S3-19", "to": "done"}

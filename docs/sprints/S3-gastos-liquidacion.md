@@ -28,7 +28,7 @@
   - _Depende de: S3-02._
 - [x] **S3-18 Motor de reparto por pesos por unidad (seam).** Refactor interno de calcularDistribucion a distribuir(monto, pesos) con pesosDe(gasto, unidades) derivando los pesos de la categoria A/B/C como hoy (cero cambio funcional). La preview expone el peso normalizado por UF. Diseño: docs/investigacion/esquemas-de-reparto.md
   - _Depende de: nada._
-- [ ] **S3-19 Cuotas de gastos extraordinarios.** Plan de cuotas + imputacion por periodo, seleccion de gastos del motor por periodo, UI en el form de gasto y rotulo cuota k/N en la lista y el recibo. Brecha 1 del research.
+- [x] **S3-19 Cuotas de gastos extraordinarios.** Plan de cuotas + imputacion por periodo, seleccion de gastos del motor por periodo, UI en el form de gasto y rotulo cuota k/N en la lista y el recibo. Brecha 1 del research.
   - _Depende de: S3-02._
 - [ ] **S3-20 Esquemas de reparto configurables por edificio.** Modelos EsquemaReparto + EsquemaRepartoUnidad + ConfiguracionLiquidacion, resolucion en el motor (esquema del gasto -> del edificio -> default actual), CRUD, UI de configuracion del edificio y override en el gasto, seed y E2E. Resuelve exencion parcial, coeficiente propio por sector, partes iguales y cargo particular a una UF.
   - _Depende de: S3-18._

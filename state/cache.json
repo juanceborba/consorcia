@@ -1,7 +1,7 @@
 {
-  "app_head": "128b00937ce25ac65a43bf6873701f8d7e43c863",
+  "app_head": "1d1095e0014c3f2a14a689c28431f7904baf8356",
   "prds": {
-    "00_MOC/Estado de Implementación.md": "06ecd888e64dfe4cb23dc3ded214a79bb4a01d8e",
+    "00_MOC/Estado de Implementación.md": "37bdfc0ac5f2b274ae78a84d3c1ba27ee8068bc7",
     "00_MOC/PRD-00-00 Map of Content.md": "caa8753085d46f26cac4cd6e30d27f25fc01b8c9",
     "01_Visión y Estrategia/PRD-01-01 Visión del Producto.md": "0e8c9407c45b54cc0bae457e40364a300e9f6147",
     "01_Visión y Estrategia/PRD-01-02 Estrategia de MVP y Fases.md": "ab6e28f9840eaaf70a95c6791a4df96231b9b77d",
@@ -23,7 +23,7 @@
     "03_Agentes IA/PRD-03-08 Agente Dashboard.md": "86092d8cb22eb1117c0c7533ca69daf7232032a1",
     "03_Agentes IA/PRD-03-09 Agente Benchmarking.md": "fa6adb0ae11666387ca24ae1ab8d60393e44549b",
     "04_Módulos Core/PRD-04-01 Gestión de Edificios.md": "a242f91da3301b08de7f3e20eb33bbd40afaf346",
-    "04_Módulos Core/PRD-04-02 Gestor de Gastos.md": "b0bc29c68847082b46a3da5544e032fb9f73dcc4",
+    "04_Módulos Core/PRD-04-02 Gestor de Gastos.md": "40d75e467d052a98f77924b8653a36b7ee52cd5d",
     "04_Módulos Core/PRD-04-03 Liquidación de Expensas.md": "72552c9a46ca016700779e5810929ef8093489f0",
     "04_Módulos Core/PRD-04-04 Cobranzas.md": "00002d566089b2f59e16fc5a3dd8d423351d1272",
     "04_Módulos Core/PRD-04-05 Portal del Residente.md": "295f312335958665d37ec4e9e508aae818d48d23",
@@ -57,6 +57,6 @@
     "09_Riesgos y Decisiones/PRD-09-01 Decisiones de Arquitectura.md": "6a168e3b953a11416dc126fd467eaaefff1b9abb",
     "AGENTS.md": "3650d0649f584ba27683fc8546b2440542d9e15c"
   },
-  "ultima_corrida": "2026-07-30T01:36:57Z",
+  "ultima_corrida": "2026-07-30T02:03:45Z",
   "vault_head": "7454276e13ff95b1ab5d1bd7a56781f231f41a66"
 }
