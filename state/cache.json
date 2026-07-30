@@ -1,7 +1,7 @@
 {
-  "app_head": "ddf961e24736c584f1069c025e31a993c1ca2c1e",
+  "app_head": "104fb04211e9d07dcc1d85ef1fb804946061f6b4",
   "prds": {
-    "00_MOC/Estado de Implementación.md": "23a6690b84aed89ddea9ec6e073e39d563dc66ee",
+    "00_MOC/Estado de Implementación.md": "153489906f5bc967473c7fa1a4855bba6e6949df",
     "00_MOC/PRD-00-00 Map of Content.md": "caa8753085d46f26cac4cd6e30d27f25fc01b8c9",
     "01_Visión y Estrategia/PRD-01-01 Visión del Producto.md": "0e8c9407c45b54cc0bae457e40364a300e9f6147",
     "01_Visión y Estrategia/PRD-01-02 Estrategia de MVP y Fases.md": "ab6e28f9840eaaf70a95c6791a4df96231b9b77d",
@@ -57,6 +57,6 @@
     "09_Riesgos y Decisiones/PRD-09-01 Decisiones de Arquitectura.md": "6a168e3b953a11416dc126fd467eaaefff1b9abb",
     "AGENTS.md": "3650d0649f584ba27683fc8546b2440542d9e15c"
   },
-  "ultima_corrida": "2026-07-30T15:39:27Z",
-  "vault_head": "4c7e8b339a44652c7861f9f4a681e45f2108ff61"
+  "ultima_corrida": "2026-07-30T16:12:35Z",
+  "vault_head": "a50603db7252e0512d06162f3a5984a1ef6e6d88"
 }
