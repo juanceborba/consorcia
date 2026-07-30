@@ -118,6 +118,7 @@ import {
   validarParaLiquidacion,
   errorCoeficientes,
 } from '../services/coeficientes.js';
+import { SELECT_DETALLE, itemDeDetalle, agruparItems } from '../core/detalle-agrupado.js';
 import { resolutorDeEsquemas } from '../services/esquemas-reparto.js';
 import { emitirRecibos, serializarRecibo, ReciboError } from '../services/recibos.js';
 
@@ -183,6 +184,8 @@ const estadoInvalido = (accion, estadoActual) => ({
   },
 });
 
+// Una sola definición del árbol del detalle, compartida con la emisión de
+// recibos (`core/detalle-agrupado.js`): la preview y el PDF muestran lo mismo.
 const dinero = (valor) => new Decimal(valor).toFixed(2);
 const coeficiente = (valor) => new Decimal(valor).toFixed(6);
 
@@ -237,24 +240,26 @@ const recursoLiquidacion = (req) => ({
 // El detalle se agrega en memoria con decimal.js sobre los `LiquidacionDetalle`
 // persistidos, separando ordinarias de extraordinarias por `gasto.esOrdinario`
 // (Ley 941: la separación es obligatoria y tiene que poder mostrarse por UF).
+//
+// Cada UF sale con dos vistas del MISMO dato, y las dos las arma
+// `core/detalle-agrupado.js` para que no puedan divergir entre sí ni contra el
+// PDF del recibo (decisión 1 de ese módulo):
+//
+//   `pesos`     — la lista plana, un renglón por gasto con la participación
+//                 aplicada. Es la vista de AUDITORÍA del reparto: es lo que el
+//                 administrador recorre para ver que ninguna UF paga lo que no
+//                 le toca (S3-18).
+//   `secciones` — el árbol ordinarias/extraordinarias → rubro → subrubro con
+//                 subtotales. Es la vista del PROPIETARIO: la que se dibuja en
+//                 la preview y la que imprime el recibo.
+//
+// Van las dos porque responden preguntas distintas y ninguna se deriva barato
+// de la otra en el cliente; los ítems del árbol son los mismos objetos de
+// `pesos`, así que no hay dos verdades, hay dos índices sobre una.
 async function preview(liquidacion) {
   const detalles = await prisma.liquidacionDetalle.findMany({
     where: { organizacionId: liquidacion.organizacionId, liquidacionId: liquidacion.id },
-    select: {
-      unidadId: true,
-      gastoId: true,
-      // S3-19: el rótulo "cuota k/N" sale del SNAPSHOT del detalle, no del plan
-      // vigente: si el plan se editó después, el recibo emitido sigue diciendo lo
-      // que decía cuando se emitió.
-      cuotaNumero: true,
-      cuotasTotal: true,
-      // S3-20: con qué esquema se calculó este peso, también del snapshot.
-      esquemaNombre: true,
-      coeficienteAplicado: true,
-      montoAsignado: true,
-      unidad: { select: { id: true, numero: true, tipo: true, m2: true, coeficiente: true } },
-      gasto: { select: { id: true, esOrdinario: true } },
-    },
+    select: SELECT_DETALLE,
   });
 
   const porUnidad = new Map();
@@ -288,20 +293,7 @@ async function preview(liquidacion) {
     if (d.gasto.esOrdinario) fila.ordinarias = fila.ordinarias.plus(monto);
     else fila.extraordinarias = fila.extraordinarias.plus(monto);
     // Solo los pesos que participan: un 0 en una UF no alcanzada es ruido.
-    if (new Decimal(d.coeficienteAplicado).gt(0)) {
-      fila.pesos.push({
-        gastoId: d.gastoId,
-        pesoAplicado: coeficiente(d.coeficienteAplicado),
-        // S3-20: null = el peso es el coeficiente según la categoría. Con nombre,
-        // es el esquema del reglamento que lo fijó, y es lo que le permite al
-        // administrador verificar el reparto ANTES de aprobar.
-        esquemaNombre: d.esquemaNombre,
-        montoAsignado: monto.toFixed(2),
-        // S3-19: null en un gasto de imputación única.
-        cuotaNumero: d.cuotaNumero,
-        cuotasTotal: d.cuotasTotal,
-      });
-    }
+    if (new Decimal(d.coeficienteAplicado).gt(0)) fila.pesos.push(itemDeDetalle(d));
   }
 
   const unidades = [...porUnidad.values()]
@@ -311,6 +303,7 @@ async function preview(liquidacion) {
       ordinarias: u.ordinarias.toFixed(2),
       extraordinarias: u.extraordinarias.toFixed(2),
       total: u.ordinarias.plus(u.extraordinarias).toFixed(2),
+      secciones: agruparItems(u.pesos),
     }));
 
   return {

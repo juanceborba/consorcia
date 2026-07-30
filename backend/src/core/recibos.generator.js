@@ -99,31 +99,75 @@ function titulo(doc, texto) {
   doc.moveDown(0.5);
 }
 
-// Una sección "EXPENSAS ORDINARIAS/EXTRAORDINARIAS": ítems por gasto + subtotal.
-function seccion(doc, encabezado, items, subtotal) {
-  const izquierda = doc.page.margins.left;
+// Un renglón "etiqueta ......... importe" con sangría. El importe se ancla al
+// margen derecho para que las tres jerarquías (rubro, subrubro, ítem) queden en
+// la misma columna: el propietario lee la columna, no el renglón.
+function renglon(doc, { etiqueta, monto, sangria = 0, negrita = false, size = 9 }) {
+  const izquierda = doc.page.margins.left + sangria;
   const derecha = doc.page.width - doc.page.margins.right;
+  const y = doc.y;
+  doc.fontSize(size).font(negrita ? 'Helvetica-Bold' : 'Helvetica');
+  doc.text(etiqueta, izquierda, y, { width: derecha - izquierda - 110 });
+  if (monto !== null && monto !== undefined) {
+    doc.text(pesos(monto), derecha - 110, y, { width: 110, align: 'right' });
+  }
+  // pdfkit recuerda la última `x`: se vuelve al margen para que el bloque
+  // siguiente no herede la sangría ni el ancho angosto.
+  doc.font('Helvetica').text('', doc.page.margins.left, doc.y);
+}
+
+// Una sección "EXPENSAS ORDINARIAS/EXTRAORDINARIAS" (Ley 941 §3.2), con su
+// detalle agrupado por rubro y subrubro y el subtotal de la sección.
+//
+// `grupo` es una sección de `agruparItems` o `undefined`: LAS DOS SECCIONES SE
+// IMPRIMEN SIEMPRE, aunque la UF no tenga extraordinarias en el período. La
+// separación es un requisito del recibo, no un accidente de los datos — que
+// falte el título obligaría al propietario a deducir que no hubo obras.
+function seccion(doc, encabezado, grupo, subtotal) {
+  const izquierda = doc.page.margins.left;
+  const rubros = grupo?.rubros ?? [];
 
   titulo(doc, encabezado);
 
-  doc.fontSize(9).font('Helvetica');
-  if (items.length === 0) {
-    doc.text('Sin conceptos en el período.', izquierda, doc.y);
+  if (rubros.length === 0) {
+    doc.fontSize(9).font('Helvetica').text('Sin conceptos en el período.', izquierda, doc.y);
   }
-  for (const item of items) {
-    const y = doc.y;
-    doc.text(item.concepto, izquierda, y, { width: derecha - izquierda - 110 });
-    doc.text(pesos(item.monto), derecha - 110, y, { width: 110, align: 'right' });
+
+  for (const rubro of rubros) {
+    renglon(doc, { etiqueta: rubro.nombre, monto: rubro.total, negrita: true });
+
+    for (const sub of rubro.subrubros) {
+      // Decisión 3 del agrupador: sin subrubro no hay nivel que imprimir. Y el
+      // subtotal del subrubro solo aparece cuando SUMA algo: con un único ítem
+      // repetiría el importe del renglón de abajo.
+      if (sub.nombre) {
+        renglon(doc, {
+          etiqueta: sub.nombre,
+          monto: sub.items.length > 1 ? sub.total : null,
+          sangria: 14,
+          size: 8.5,
+        });
+      }
+      for (const item of sub.items) {
+        renglon(doc, {
+          etiqueta: item.conceptoImpreso,
+          monto: item.monto,
+          sangria: sub.nombre ? 28 : 14,
+          size: 8.5,
+        });
+      }
+    }
+    doc.moveDown(0.2);
   }
 
   doc.moveDown(0.3);
-  const y = doc.y;
-  doc.fontSize(10).font('Helvetica-Bold');
-  doc.text(`Subtotal ${encabezado.toLowerCase()}`, izquierda, y, {
-    width: derecha - izquierda - 110,
+  renglon(doc, {
+    etiqueta: `Subtotal ${encabezado.toLowerCase()}`,
+    monto: subtotal,
+    negrita: true,
+    size: 10,
   });
-  doc.text(pesos(subtotal), derecha - 110, y, { width: 110, align: 'right' });
-  doc.font('Helvetica').text('', izquierda, doc.y).moveDown(1);
+  doc.moveDown(1);
 }
 
 /**
@@ -138,8 +182,9 @@ function seccion(doc, encabezado, items, subtotal) {
  * @param {object} datos.consorcio           { nombre, direccion, ciudad, provincia }
  * @param {object} datos.unidad              { numero, tipo, m2, coeficiente }
  * @param {string[]} datos.propietarios      Nombres de los titulares de la UF
- * @param {{concepto: string, monto: string}[]} datos.ordinarias
- * @param {{concepto: string, monto: string}[]} datos.extraordinarias
+ * @param {object[]} datos.secciones         El detalle agrupado de la UF, tal
+ *   como lo devuelve `agruparItems` (`core/detalle-agrupado.js`): el MISMO
+ *   árbol que muestra la preview de la liquidación.
  * @param {string} datos.totalOrdinarias     Total de la UF
  * @param {string} datos.totalExtraordinarias
  * @param {string} datos.totalGeneral
@@ -218,8 +263,16 @@ export async function generarReciboPDF(datos) {
   doc.moveDown(1);
 
   // ─── Separación ordinarias / extraordinarias (Ley 941 §3.2) ───
-  seccion(doc, 'EXPENSAS ORDINARIAS', datos.ordinarias, datos.totalOrdinarias);
-  seccion(doc, 'EXPENSAS EXTRAORDINARIAS', datos.extraordinarias, datos.totalExtraordinarias);
+  // `secciones` viene de `agruparItems` y omite las que no tienen ítems; acá se
+  // busca cada una por id justamente porque el recibo las imprime siempre.
+  const porId = new Map((datos.secciones ?? []).map((s) => [s.id, s]));
+  seccion(doc, 'EXPENSAS ORDINARIAS', porId.get('ordinarias'), datos.totalOrdinarias);
+  seccion(
+    doc,
+    'EXPENSAS EXTRAORDINARIAS',
+    porId.get('extraordinarias'),
+    datos.totalExtraordinarias
+  );
 
   // ─── Total a pagar ───
   doc.moveTo(izquierda, doc.y).lineTo(derecha, doc.y).stroke();

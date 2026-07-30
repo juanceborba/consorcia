@@ -270,7 +270,43 @@ describe('liquidaciones (S3-04)', () => {
     );
     // Y el peso de cada gasto es el que explica su monto asignado.
     for (const p of departamento.pesos) {
-      assert.ok(new Decimal(p.montoAsignado).gt(0));
+      assert.ok(new Decimal(p.monto).gt(0));
+    }
+
+    // S3-09: la MISMA información, agrupada como la lee el propietario
+    // (ordinarias/extraordinarias → rubro → subrubro). Es lo que dibuja la
+    // preview y lo que imprime el recibo, así que tiene que cerrar al centavo
+    // con el total de la UF y contener exactamente los mismos ítems.
+    const items = departamento.secciones.flatMap((s) =>
+      s.rubros.flatMap((r) => r.subrubros.flatMap((sub) => sub.items))
+    );
+    assert.equal(items.length, departamento.pesos.length);
+    const sumaSecciones = departamento.secciones.reduce(
+      (acc, s) => acc.plus(s.total),
+      new Decimal(0)
+    );
+    assert.equal(sumaSecciones.toFixed(2), departamento.total);
+
+    // Los subtotales de cada nivel suman su contenido: son los números que el
+    // propietario chequea contra su total.
+    for (const s of departamento.secciones) {
+      const sumaRubros = s.rubros.reduce((acc, r) => acc.plus(r.total), new Decimal(0));
+      assert.equal(sumaRubros.toFixed(2), s.total);
+      for (const r of s.rubros) {
+        const sumaSubs = r.subrubros.reduce((acc, sub) => acc.plus(sub.total), new Decimal(0));
+        assert.equal(sumaSubs.toFixed(2), r.total);
+        for (const sub of r.subrubros) {
+          const sumaItems = sub.items.reduce((acc, i) => acc.plus(i.monto), new Decimal(0));
+          assert.equal(sumaItems.toFixed(2), sub.total);
+        }
+      }
+    }
+
+    // Cada ítem lleva el gasto identificado, no solo su id: es lo que el
+    // propietario lee en el recibo.
+    for (const i of items) {
+      assert.ok(i.concepto, 'el ítem nombra el gasto');
+      assert.equal(typeof i.esOrdinario, 'boolean');
     }
   });
 

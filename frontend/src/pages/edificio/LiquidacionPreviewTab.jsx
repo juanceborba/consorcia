@@ -50,6 +50,19 @@
 //    histórica del edificio (PRD-03-*, S6). La comparación contra el período
 //    anterior de la decisión 3 es la parte de esa idea que se puede sostener hoy
 //    con datos ciertos.
+//
+// 7. EL DESGLOSE DE UNA UF ES EL BORRADOR DEL RECIBO, no una lista de pesos. La
+//    fila expandida muestra los GASTOS CONCRETOS del período con el importe que
+//    le toca a esa unidad, agrupados como los tiene que leer el propietario:
+//    ordinarias / extraordinarias primero (Ley 941) y rubro → subrubro adentro,
+//    con subtotal en cada nivel. El dato del reparto (participación, esquema,
+//    cuota) no se pierde pero baja a la línea secundaria del ítem: sigue siendo
+//    lo que el administrador verifica antes de aprobar, y no es lo que le
+//    explica el importe al dueño. El agrupado NO se hace acá: llega servido en
+//    `unidades[].secciones` desde `core/detalle-agrupado.js`, que es el mismo
+//    módulo que usa el generador del recibo — así el PDF que recibe el
+//    propietario imprime exactamente el detalle que se verificó en esta
+//    pantalla, y no dos lecturas parecidas del mismo cálculo.
 import { useMemo, useState } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -62,6 +75,7 @@ import {
   estadoDeLiquidacion,
   formatearVariacion,
   liquidacionAnterior,
+  rotuloDeImputacion,
   variacionPorcentual,
   variantDeVariacion,
 } from '@/lib/liquidacion';
@@ -114,39 +128,119 @@ function CardTotal({ titulo, monto, detalle, variacion }) {
   );
 }
 
-// Desglose del reparto de una UF: en qué se le fue cada peso (decisión 1).
-function DesgloseDeUnidad({ pesos, colSpan }) {
+// Un ítem del desglose: el gasto concreto que el propietario va a leer.
+// El concepto es lo que se destaca; el reparto (participación, esquema, cuota)
+// va en la línea secundaria porque es lo que verifica el administrador, no lo
+// que le explica el importe al dueño (decisión 7).
+function ItemDeGasto({ item }) {
+  return (
+    <li className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-medium">{item.concepto}</p>
+        <p className="text-[11px] text-muted-foreground">
+          {item.proveedorNombre ? `${item.proveedorNombre} · ` : ''}
+          {rotuloDeImputacion(item)}
+          {' · '}
+          {/* Decisión 2: participación, no coeficiente. */}
+          participación {item.pesoAplicado}
+          {/* S3-20: null = repartido por coeficiente según la categoría. */}
+          {item.esquemaNombre ? ` · esquema "${item.esquemaNombre}"` : ''}
+        </p>
+      </div>
+      <span className="shrink-0 text-xs font-medium tabular-nums">
+        {formatearMonto(item.monto)}
+      </span>
+    </li>
+  );
+}
+
+// Desglose del reparto de una UF (decisiones 1 y 7): los gastos concretos del
+// período agrupados por ordinarias/extraordinarias → rubro → subrubro, con el
+// subtotal de cada nivel. El árbol llega armado del backend en `u.secciones`
+// (`core/detalle-agrupado.js`), que es el mismo que imprime el PDF del recibo.
+function DesgloseDeUnidad({ unidad, colSpan }) {
+  const secciones = unidad.secciones ?? [];
+
   return (
     <TableRow className="bg-muted/40 hover:bg-muted/40">
       <TableCell colSpan={colSpan} className="p-0">
-        <div className="px-6 py-3">
-          <p className="mb-2 text-xs text-muted-foreground">
-            Cómo se compone el total de esta unidad: un renglón por gasto del
-            período, con la porción de ese gasto que le tocó.
+        <div className="flex flex-col gap-4 px-6 py-4">
+          <p className="text-xs text-muted-foreground">
+            Detalle de la unidad {unidad.numero}: los gastos del período con el
+            importe que le corresponde pagar, agrupados por rubro. Es lo mismo
+            que va a ver el propietario en su recibo.
           </p>
-          <ul className="flex flex-col gap-1 text-xs">
-            {pesos.map((p) => (
-              <li
-                key={`${p.gastoId}-${p.cuotaNumero ?? 'unica'}`}
-                className="flex flex-wrap items-baseline justify-between gap-2"
-              >
-                <span className="text-muted-foreground">
-                  {/* S3-19: el rótulo de la cuota sale del snapshot del detalle. */}
-                  {p.cuotaNumero
-                    ? `Cuota ${p.cuotaNumero}/${p.cuotasTotal}`
-                    : 'Imputación única'}
-                  {' · '}
-                  {/* Decisión 2: participación, no coeficiente. */}
-                  participación {p.pesoAplicado}
-                  {/* S3-20: null = repartido por coeficiente según la categoría. */}
-                  {p.esquemaNombre ? ` · esquema "${p.esquemaNombre}"` : ''}
+
+          {secciones.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              Esta unidad no fue alcanzada por ningún gasto del período.
+            </p>
+          )}
+
+          {secciones.map((seccion) => (
+            <section key={seccion.id} className="flex flex-col gap-2">
+              <header className="flex items-baseline justify-between gap-2 border-b pb-1">
+                <h4 className="text-xs font-semibold uppercase tracking-wide">
+                  {seccion.titulo}
+                </h4>
+                <span className="text-xs font-semibold tabular-nums">
+                  {formatearMonto(seccion.total)}
                 </span>
-                <span className="font-medium tabular-nums">
-                  {formatearMonto(p.montoAsignado)}
-                </span>
-              </li>
-            ))}
-          </ul>
+              </header>
+
+              <div className="flex flex-col gap-3">
+                {seccion.rubros.map((rubro) => (
+                  <div key={rubro.id} className="flex flex-col gap-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-xs font-medium">{rubro.nombre}</span>
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {formatearMonto(rubro.total)}
+                      </span>
+                    </div>
+
+                    {rubro.subrubros.map((sub) => (
+                      <div key={sub.id} className="pl-3">
+                        {/* Decisión B del lib: sin subrubro no se dibuja el nivel.
+                            Y el subtotal del subrubro solo aparece cuando SUMA
+                            algo: con un único ítem repetiría el importe del
+                            renglón de abajo, que es ruido en la pantalla que el
+                            propietario usa para chequear su total. */}
+                        {sub.nombre && (
+                          <div className="flex items-baseline justify-between gap-2 border-l pl-2 text-[11px] text-muted-foreground">
+                            <span>{sub.nombre}</span>
+                            {sub.items.length > 1 && (
+                              <span className="tabular-nums">
+                                {formatearMonto(sub.total)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <ul
+                          className={`flex flex-col divide-y ${sub.nombre ? 'border-l pl-2' : ''}`}
+                        >
+                          {sub.items.map((item) => (
+                            <ItemDeGasto
+                              key={`${item.gastoId}-${item.cuotaNumero ?? 'unica'}`}
+                              item={item}
+                            />
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+
+          <div className="flex items-baseline justify-between gap-2 border-t pt-2">
+            <span className="text-xs font-semibold">
+              Total unidad {unidad.numero}
+            </span>
+            <span className="text-sm font-semibold tabular-nums">
+              {formatearMonto(unidad.total)}
+            </span>
+          </div>
         </div>
       </TableCell>
     </TableRow>
@@ -350,7 +444,8 @@ export default function LiquidacionPreviewTab() {
           <CardTitle>Detalle por unidad</CardTitle>
           <CardDescription>
             Lo que le toca pagar a cada unidad funcional. Tocá una fila para ver
-            cómo se compone.
+            el detalle de gastos que va a recibir el propietario, agrupado por
+            rubro y separado en ordinarias y extraordinarias.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -418,7 +513,7 @@ export default function LiquidacionPreviewTab() {
                   abierta && (
                     <DesgloseDeUnidad
                       key={`${u.unidadId}-desglose`}
-                      pesos={u.pesos}
+                      unidad={u}
                       colSpan={columnas}
                     />
                   ),

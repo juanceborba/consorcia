@@ -157,6 +157,21 @@ export function liquidacionAnterior(liquidaciones, periodo) {
   );
 }
 
+// Rótulo de la imputación de un ítem: "Cuota 3/12" o "Imputación única" (S3-19).
+//
+// DECISIÓN: EL AGRUPADO DEL DETALLE NO ESTÁ ACÁ. El árbol ordinarias /
+// extraordinarias → rubro → subrubro con sus subtotales lo arma el backend
+// (`core/detalle-agrupado.js`) y llega servido en `unidades[].secciones`. Esta
+// pantalla lo tuvo un tiempo y fue un error: el PDF del recibo tiene que
+// imprimir exactamente el mismo detalle, y dos implementaciones del mismo
+// agrupado divergen en cuanto una de las dos cambia. Acá solo quedan los
+// rótulos, que sí son vocabulario de la interfaz.
+export function rotuloDeImputacion(item) {
+  return item?.cuotaNumero
+    ? `Cuota ${item.cuotaNumero}/${item.cuotasTotal}`
+    : 'Imputación única';
+}
+
 // Variación porcentual de `actual` contra `anterior`, ambos strings de la API.
 // Devuelve un Number redondeado a un decimal, o null si no hay base (decisión 3).
 export function variacionPorcentual(actual, anterior) {

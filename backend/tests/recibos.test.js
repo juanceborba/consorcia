@@ -379,6 +379,36 @@ describe('recibos (S3-05)', () => {
     assert.ok(texto.includes(pesos(recibo.totalGeneral)), 'el total de la UF aparece en el PDF');
     assert.ok(texto.includes(pesos(recibo.totalOrdinarias)), 'el subtotal de ordinarias');
     assert.ok(texto.includes(pesos(recibo.totalExtraordinarias)), 'el subtotal de extraordinarias');
+
+    // S3-09: el PDF imprime EL MISMO detalle agrupado que muestra la preview
+    // (`core/detalle-agrupado.js`). Se compara contra la preview de la propia
+    // liquidación en vez de contra literales del seed: lo que esta aserción
+    // protege es justamente que las dos salidas no puedan divergir.
+    const { data: preview } = await apiFetch(
+      baseUrl,
+      `/api/liquidaciones/${liquidacionEnviada.id}`,
+      { token: admin.accessToken }
+    );
+    const uf = preview.unidades.find((u) => u.numero === '1A');
+    assert.ok(uf.secciones.length > 0, 'la preview de la UF trae su detalle agrupado');
+
+    for (const seccion of uf.secciones) {
+      for (const rubro of seccion.rubros) {
+        assert.ok(texto.includes(rubro.nombre), `el rubro "${rubro.nombre}" se imprime`);
+        for (const sub of rubro.subrubros) {
+          if (sub.nombre) {
+            assert.ok(texto.includes(sub.nombre), `el subrubro "${sub.nombre}" se imprime`);
+          }
+          for (const item of sub.items) {
+            assert.ok(
+              texto.includes(item.conceptoImpreso),
+              `el concepto "${item.conceptoImpreso}" se imprime`
+            );
+            assert.ok(texto.includes(pesos(item.monto)), 'el importe del ítem se imprime');
+          }
+        }
+      }
+    }
   });
 
   it('el QR del recibo lleva matrícula, período, UF, totales, fecha y verificación', async () => {
@@ -422,8 +452,52 @@ describe('recibos (S3-05)', () => {
       },
       unidad: { numero: '1A', tipo: 'departamento', m2: '50.00', coeficiente: '0.100000' },
       propietarios: ['Test, Ana'],
-      ordinarias: [{ concepto: 'Sueldos', monto: '100.00' }],
-      extraordinarias: [{ concepto: 'Obra', monto: '50.00' }],
+      // El detalle llega agrupado (`core/detalle-agrupado.js`): el generador ya
+      // no arma la jerarquía, la imprime.
+      secciones: [
+        {
+          id: 'ordinarias',
+          titulo: 'Expensas ordinarias',
+          total: '100.00',
+          rubros: [
+            {
+              id: 'r-personal',
+              nombre: 'Personal',
+              total: '100.00',
+              subrubros: [
+                {
+                  id: 's-sueldos',
+                  nombre: 'Sueldos y cargas',
+                  total: '100.00',
+                  items: [
+                    { gastoId: 'g1', conceptoImpreso: 'Sueldos', monto: '100.00' },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: 'extraordinarias',
+          titulo: 'Expensas extraordinarias',
+          total: '50.00',
+          rubros: [
+            {
+              id: 'r-obras',
+              nombre: 'Obras',
+              total: '50.00',
+              subrubros: [
+                {
+                  id: '__directo__',
+                  nombre: null,
+                  total: '50.00',
+                  items: [{ gastoId: 'g2', conceptoImpreso: 'Obra', monto: '50.00' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
       totalOrdinarias: '100.00',
       totalExtraordinarias: '50.00',
       totalGeneral: '150.00',
