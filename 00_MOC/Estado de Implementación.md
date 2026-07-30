@@ -12,7 +12,7 @@ outcomes:
 
 # Estado de Implementación
 
-> GENERADO por app/state/engine.py — no editar a mano. Última corrida: 2026-07-30T15:39:27Z.
+> GENERADO por app/state/engine.py — no editar a mano. Última corrida: 2026-07-30T16:57:42Z.
 
 ## Resumen por sprint
 
@@ -20,13 +20,12 @@ outcomes:
 | --- | --- | --- | --- | --- | --- | --- |
 | S1 | Fundación visible | 14 | 14 | 0 | 0 | 0 |
 | S2 | Edificios y unidades | 12 | 12 | 0 | 0 | 0 |
-| S3 | Gastos + motor contable | 21 | 18 | 3 | 0 | 0 |
+| S3 | Gastos + motor contable | 22 | 19 | 2 | 0 | 1 |
 | S4 | Usuarios e identidad | 11 | 11 | 0 | 0 | 0 |
 
 ## Tareas ready
 
 - **S3-21** (score 5.1) Fondo de reserva en la liquidacion — fuente: [[PRD-06-04 Código Civil y Comercial]]
-- **S3-17** (score 4.7) Tests E2E dashboard + smoke — fuente: [[PRD-04-02 Gestor de Gastos]], [[PRD-04-03 Liquidación de Expensas]], [[PRD-02-05 Motor Contable]], [[PRD-02-04 Base de Datos]], [[PRD-07-02 Diseño de Componentes]], [[PRD-07-03 Rutas y Navegacion]], [[PRD-07-04 Estado Global]]
 - **S3-11** (score 4.1) Tests E2E + smoke + docs — fuente: [[PRD-04-02 Gestor de Gastos]], [[PRD-04-03 Liquidación de Expensas]], [[PRD-02-05 Motor Contable]], [[PRD-02-04 Base de Datos]], [[PRD-07-02 Diseño de Componentes]], [[PRD-07-03 Rutas y Navegacion]], [[PRD-07-04 Estado Global]]
 
-_Última corrida del motor: 2026-07-30T15:39:27Z_
+_Última corrida del motor: 2026-07-30T16:57:42Z_

@@ -138,14 +138,16 @@ outcomes:
 >
 > | Ruta | Guard | Página | Notas |
 > |------|-------|--------|-------|
-> | `/reportes` | `RequireStaff` + `RequireRole org_admin` | `pages/reportes/ReportesPage.jsx` | Hub: grilla de reportes del negocio. Hoy uno solo, "Gastos consolidados" |
-> | `/reportes/gastos` | idem | `pages/reportes/ReporteGastosPage.jsx` | Dashboard de gastos de **toda la organización** (Business+). Un reporte no disponible por plan se muestra deshabilitado con el motivo, no oculto |
+> | `/reportes` | `RequireStaff` | `pages/reportes/ReportesPage.jsx` | Hub: grilla de reportes del negocio. Hoy uno solo, "Gastos" |
+> | `/reportes/gastos` | `RequireStaff` | `pages/reportes/ReporteGastosPage.jsx` | El **tablero de gastos** de PRD-04-02 §3, con el alcance como filtro de la URL (`?edificioId=`): un edificio, o **toda la organización** (Business+ y org_admin). Lo que se muestra deshabilitado con el motivo es esa opción del selector, no el reporte |
 >
 > Diferencias con §2.1 de este documento:
 >
 > - El hijo del hub es `/reportes/gastos` (una ruta por reporte, con su propia página), **no** el `/reportes/:reportId` genérico: cada reporte tiene su alcance, su gate de plan y sus controles, y un router por id obligaría a un registry de configuraciones antes de tener dos casos que lo justifiquen. Cuando existan varios se evalúa el patrón dinámico.
-> - Entra al sidebar como módulo de primer nivel ("Reportes"), **sin `featureFlag`** (no hay infra de flags): lo que lo gobierna es el rol de la ruta y el plan de cada tarjeta.
+> - Entra al sidebar como módulo de primer nivel ("Reportes"), **sin `featureFlag`** (no hay infra de flags) y **sin restricción de rol desde S3-22**: el tablero se abre con el alcance de un edificio, que es lo que cualquier staff ya lee en su tab; lo que gobierna el alcance consolidado es el gate del backend (plan + Cerbos), que la UI anticipa deshabilitando la opción.
 > - **Esto reemplaza a la reserva de `/gastos` top-level** que anotó S3-07 (ver arriba): la vista consolidada de gastos no es una sección `/gastos` sino el primer reporte del módulo Reportes. La entrada "Gastos" del sidebar sigue apuntando al tab del edificio de trabajo.
+>
+> **Corregido (S3-22):** el tablero vive SOLO acá. S3-16 lo había montado además arriba del listado en `/edificios/:id/gastos`, porque [[PRD-04-02 Gestor de Gastos]] §3 definía el dashboard *como* ese tab; el resultado fusionaba la pantalla de operación (cargar/editar/listar gastos) con la de análisis. Ahora el tab es solo operativo —toolbar, totalizador segmentado del filtro y listado— y `/reportes/gastos` es la única casa de los KPIs y los cuatro gráficos, con el alcance en `?edificioId=` (un edificio o "todos"). El drill-down entre las dos pantallas es un link en cada sentido, y los dos comparten los search params (`hooks/useFiltrosGastos.js`).
 >
 > **Implementado (S3-14):** configuración de la organización que alimenta la carga de gastos ([[PRD-04-02 Gestor de Gastos]] §1.3/§1.4).
 >

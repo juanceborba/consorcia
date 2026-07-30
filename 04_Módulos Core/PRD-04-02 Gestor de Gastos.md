@@ -263,7 +263,9 @@ const gastoSchema = z.object({
 
 ## 3. Dashboard de Gastos
 
-El dashboard es la **entrada al módulo** (el tab `gastos` del detalle de edificio): un reporte interactivo construido de forma **incremental**, posterior al CRUD. Debajo de los componentes analíticos vive el listado de gastos (§4.1), alimentado por los mismos filtros.
+El dashboard de gastos es un **reporte interactivo**, construido de forma **incremental** y posterior al CRUD. Vive en el módulo Reportes (`/reportes/gastos`, [[PRD-07-03 Rutas y Navegacion]] §2.1) y **no** en el tab `gastos` del edificio, que es la pantalla operativa del §4 (cargar, editar y listar gastos).
+
+> **Corrección de S3-22.** Este párrafo decía: *"El dashboard es la entrada al módulo (el tab `gastos` del detalle de edificio)… Debajo de los componentes analíticos vive el listado de gastos (§4.1)"*. S3-16 lo implementó así y el resultado fusionó dos funcionalidades distintas en una sola UI —la operación de carga y el análisis—, dejando el tab de trabajo detrás de cinco paneles. La separación es: **Reportes → Gastos** analiza (KPIs y los cuatro gráficos de §3.3, con el alcance como filtro) y **el tab del edificio** opera (§4.1: filtros, totalizador segmentado del filtro activo y listado con su alta/edición). Las dos pantallas comparten los mismos search params, así que el drill-down en cualquiera de los dos sentidos conserva el recorte.
 
 ### 3.1 KPIs
 
@@ -275,7 +277,7 @@ El dashboard es la **entrada al módulo** (el tab `gastos` del detalle de edific
 
 ### 3.2 Filtros (todo reactivo)
 
-- **Selector de edificio.** La opción **"Todos los edificios"** (consolidado a nivel organización) está disponible **solo en plan Business+** (ver [[PRD-04-08 Dashboard Administrador]]).
+- **Selector de edificio (el alcance del reporte, en la URL como `?edificioId=`).** Un edificio, o **"Todos los edificios"** (consolidado a nivel organización), disponible **solo en plan Business+** y para `org_admin` (ver [[PRD-04-08 Dashboard Administrador]] y la precisión 9 de §3.4). El default es el consolidado cuando el usuario puede pedirlo y el primer edificio cuando no: abrir la pantalla en el alcance que va a responder 403 sería un error evitable.
 - **Selector de período:** últimos 12 meses / fecha desde-hasta / todo el período.
 - Cada cambio de filtro actualiza KPIs, charts y el listado sin recargar.
 
@@ -285,7 +287,7 @@ El dashboard es la **entrada al módulo** (el tab `gastos` del detalle de edific
 - **Distribución por rubro** con drill-down a subrubros.
 - **Distribución por categoría** A/B/C.
 - **Evolución mensual** del gasto.
-- **Listado de gastos** (§4.1) debajo, compartiendo los filtros.
+- **Sin listado debajo** (S3-22): el listado de §4.1 es del tab del edificio. Un link "Ver el detalle" lleva ahí con los mismos filtros puestos.
 
 ### 3.4 Endpoints
 
@@ -316,7 +318,7 @@ Query: `?periodo=YYYY-MM` | `?desde=&hasta=` | `?todo=1`, más los filtros de la
 
 #### Implementado en S3-15 — precisiones sobre el diseño original
 
-1. **Qué plata suma cada modo.** `?periodo=P` suma **montos imputados a P**: la cuota que le toca al período si el gasto tiene plan de cuotas (§1.1.b), o el gasto entero si no. `?desde=&hasta=` filtra por `fechaGasto` —los mismos nombres y la misma semántica que la lista (§2)— y suma el **monto de factura**; `?todo=1` también. La consecuencia buscada: `kpis.total` es **el mismo número** que la fila TOTAL del listado con el mismo filtro, porque los dos endpoints comparten el constructor del `where` (`backend/src/services/gastos-filtros.js`). En §3 el dashboard y el listado viven en la misma pantalla leyendo la misma URL: dos semánticas para `desde` se verían como una pantalla que se contradice.
+1. **Qué plata suma cada modo.** `?periodo=P` suma **montos imputados a P**: la cuota que le toca al período si el gasto tiene plan de cuotas (§1.1.b), o el gasto entero si no. `?desde=&hasta=` filtra por `fechaGasto` —los mismos nombres y la misma semántica que la lista (§2)— y suma el **monto de factura**; `?todo=1` también. La consecuencia buscada: `kpis.total` es **el mismo número** que la fila TOTAL del listado con el mismo filtro, porque los dos endpoints comparten el constructor del `where` (`backend/src/services/gastos-filtros.js`). El dashboard y el listado son dos pantallas (S3-22) que leen los MISMOS search params, así que dos semánticas para `desde` se verían como dos pantallas que se contradicen sobre la misma dirección.
 2. **Los tres modos son excluyentes** y combinarlos responde `422 VALIDACION_FALLIDA` en vez de aplicar una precedencia. Sin ningún modo, el default es `todo`.
 3. **`esOrdinario` no es filtro del dashboard**, aunque sí de la lista: el KPI ordinarias/extraordinarias (§3.1) *es* el corte por ese eje, y filtrarlo dejaría el otro subtotal en cero.
 4. **La agregación es con decimal.js sobre el conjunto filtrado, no con `groupBy` de Prisma.** Para `?periodo=` no hay `groupBy` posible: el monto imputado de un gasto en cuotas vive en `gasto_cuotas` y ningún `groupBy` agrupa por una columna del gasto sumando una columna de la relación (la misma razón que ya obligó a sumar en memoria los `totales` de la lista en S3-19). Antes que mantener dos implementaciones de cinco agregados —donde la de `groupBy` daría números distintos justo en los gastos en cuotas—, se trae UNA vez el conjunto con las columnas necesarias y los cinco cortes salen del mismo recorrido, así que reconcilian por construcción: `total = ordinarias + extraordinarias = A + B + C = Σ porRubro`.
@@ -334,9 +336,9 @@ Query: `?periodo=YYYY-MM` | `?desde=&hasta=` | `?todo=1`, más los filtros de la
 
 | Ruta / componente | Guard | Archivo | Notas |
 |---|---|---|---|
-| `/edificios/:id/gastos` | `RequireStaff` | `pages/edificio/EdificioGastosTab.jsx` | El tab pasa a **dashboard + listado en la misma pantalla**: toolbar arriba, KPIs, cuatro paneles y la tabla de §4.1 abajo, todos sobre el mismo filtro. Los KPI cards **reemplazan** al totalizador segmentado y a las tarjetas por categoría de S3-08b (eran sus antecesores anunciados) |
-| `/reportes` | `RequireStaff` + `RequireRole org_admin` | `pages/reportes/ReportesPage.jsx` | **Hub del módulo Reportes** ([[PRD-07-03 Rutas y Navegacion]] §2.1): grilla de reportes del negocio. Hoy una sola tarjeta, "Gastos consolidados" |
-| `/reportes/gastos` | idem | `pages/reportes/ReporteGastosPage.jsx` | El consolidado de la organización (§3.4, Business+). **Sin listado debajo**: los gastos se listan por edificio y no existe endpoint consolidado; el selector de edificio es el drill-down |
+| `/edificios/:id/gastos` | `RequireStaff` | `pages/edificio/EdificioGastosTab.jsx` | ~~El tab pasa a dashboard + listado en la misma pantalla~~ **revertido en S3-22**: el tab es la pantalla operativa (toolbar, **totalizador segmentado** del filtro y la tabla de §4.1, con su alta/edición) |
+| `/reportes` | `RequireStaff` (org_admin hasta S3-22) | `pages/reportes/ReportesPage.jsx` | **Hub del módulo Reportes** ([[PRD-07-03 Rutas y Navegacion]] §2.1): grilla de reportes del negocio. Hoy una sola tarjeta, "Gastos" |
+| `/reportes/gastos` | `RequireStaff` | `pages/reportes/ReporteGastosPage.jsx` | El tablero completo, con el **alcance como filtro** (`?edificioId=`): un edificio o toda la organización (§3.4, Business+ y org_admin). **Sin listado debajo** en ningún alcance: los gastos se listan por edificio y un link lleva a ese detalle con los mismos filtros |
 | `components/gastos/dashboard/GastosDashboard.jsx` | — | idem | Monta el dashboard completo para los dos alcances (`{ edificioId }` o `{ organizacion: true }`): la respuesta del endpoint tiene la misma forma, así que los componentes son los mismos. Traduce `PLAN_INSUFICIENTE` y `ACCESO_DENEGADO` a copy propio con `planActual`/`planRequerido` |
 | `GastosKpis.jsx` | — | idem | Los cinco KPIs de §3.1. Las tarjetas de ordinarias/extraordinarias **son el control del filtro de tipo** |
 | `EvolucionMensualChart.jsx` · `PorRubroChart.jsx` · `PorCategoriaChart.jsx` | — | idem | Recharts 3 (line / bar horizontal con drill-down / pie). Colores de los tokens (`--color-cat-a\|b\|c` para las categorías, los mismos de sus badges; monocromático `--chart-*` para el resto) |
@@ -355,6 +357,15 @@ Divergencias y decisiones de S3-16:
 7. **`/reportes` va detrás de `RequireRole org_admin`.** Su único reporte es de la administración (§3.4, precisión 9: a un gestor Cerbos le responde 403 sin mirar el plan), así que el gestor vería un hub con una tarjeta que no puede abrir. Se revisa cuando exista un reporte de alcance gestor.
 8. **La ayuda contextual** agrega `gastos/dashboard` (qué plata suma cada modo, por qué la evolución muestra 12 meses, por qué el tipo no mueve los KPIs, rubro ≠ categoría, gasto por UF ≠ expensa) y `reportes/gastos-consolidados` (alcance y por qué no hay listado). El acceso al topic `gastos/carga` se mudó del título del tab —que ahora habla de indicadores— al formulario de carga, que es de lo que ese topic habla.
 9. **recharts entra como dependencia nueva** (~400 kB al bundle, que ya excedía el warning de 500 kB de Vite). El code-splitting del bundle es una tarea propia y no de este slice.
+
+#### Corregido en S3-22 — el tablero y el tab operativo son dos pantallas
+
+S3-16 siguió el §3 original al pie de la letra y montó el dashboard arriba del listado en el tab del edificio. Eso fusionó dos funcionalidades que el producto quiere separadas: la pantalla con la que se **cargan** gastos y la que se usa para **analizarlos**. Qué cambia:
+
+1. **El tab `/edificios/:id/gastos` pierde los KPIs y los cuatro charts** y recupera el **totalizador segmentado** de S3-08b (total / ordinarios / extraordinarios, del `totales` del propio endpoint del listado, así que reconcilia con la fila TOTAL sin un segundo request). Las tarjetas por categoría A/B/C **no** vuelven: ese corte es analítico y su lugar es el chart de distribución; el filtro por categoría sigue en el panel. Vuelve a ser una sola tarjeta con el conteo en el título y el acceso a ayuda del topic `gastos/carga`.
+2. **`/reportes/gastos` gana el selector de alcance** (`?edificioId=`, decisión 1): un edificio o "Todos los edificios". Antes ese selector **navegaba** al tab —única forma de ver un edificio solo cuando el tablero vivía allá—; ahora cambia el endpoint sin salir de la pantalla, porque la respuesta tiene la misma forma para los dos alcances. El default es el consolidado si el usuario puede pedirlo, y el primer edificio si no.
+3. **El guard de `/reportes` baja a `RequireStaff`** (era `RequireRole org_admin`): con alcance por edificio el reporte le sirve al gestor, que lee exactamente los mismos gastos que en su tab. Lo que sigue siendo de `org_admin` + Business es "Todos los edificios", y ese gate lo aplica el backend sin cambios (precisión 9 de §3.4); la UI lo anticipa deshabilitando la opción con el motivo. En el hub, el badge "Business" pasó a hablar del **alcance** y ya no deshabilita la tarjeta: con el tablero fuera del tab, bloquear la tarjeta entera dejaba al plan starter sin ninguna analítica de gastos.
+4. **La ayuda contextual se fusiona**: el topic `gastos/dashboard` desaparece y su contenido vive en `reportes/gastos` (que absorbe también a `reportes/gastos-consolidados`), con una sección nueva sobre el alcance. El tab vuelve a apuntar a `gastos/carga`.
 
 ---
 
