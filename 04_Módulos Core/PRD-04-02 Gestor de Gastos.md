@@ -47,8 +47,54 @@ Ver [[PRD-02-04 Base de Datos]] para el schema Prisma completo.
 | `esOrdinario` | Boolean | true=ordinario | Default true |
 | `comprobanteUrl` | String? | URL en MinIO/S3 | — |
 | `fechaGasto` | DateTime | Fecha real del gasto | No futuro |
-| `periodo` | String | "YYYY-MM" | Regex `^\d{4}-\d{2}$` |
+| `periodo` | String | "YYYY-MM" | Regex `^\d{4}-\d{2}$`. Con plan de cuotas, es el período de la **primera** cuota |
 | `createdBy` | UUID | Admin que cargó | FK → usuarios |
+
+### 1.1.b Plan de cuotas (S3-19, implementado)
+
+Un gasto **extraordinario** puede imputarse en N cuotas mensuales en vez de caer
+entero en un período (brecha 1 del research
+`docs/investigacion/ordinarias-extraordinarias-y-categorias.md`; el mockup de
+[[PRD-06-01 Ley 941 CABA]] §3.2 ya dibuja "Pintura fachada (cuota 3/6)").
+
+El `Gasto` sigue siendo **la factura**: su `monto` es el total del comprobante.
+Las **imputaciones** son filas de `GastoCuota`:
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `gastoId` | UUID | FK → gastos, `ON DELETE CASCADE` |
+| `numero` / `cuotasTotal` | Int | La cuota k de N (CHECK `1 ≤ numero ≤ cuotasTotal`, `cuotasTotal ≥ 2`) |
+| `periodo` | String | "YYYY-MM" al que se imputa **esta** cuota |
+| `monto` | Decimal(12,2) | Lo que se reparte en ese período |
+
+Únicos: `(organizacionId, gastoId, numero)` y `(organizacionId, gastoId, periodo)`
+— dos cuotas del mismo gasto en el mismo período romperían la unicidad de
+`LiquidacionDetalle`.
+
+**Reglas (todas con test automático):**
+
+1. **Σ cuotas = `gasto.monto` exacto.** La cuota base se trunca al centavo y el
+   resto va en la última cuota. Cero tolerancia, igual que el reparto por UF.
+2. **La API recibe solo `cuotasTotal`**; los períodos y los montos los deriva
+   `planDeCuotas(monto, cuotasTotal, periodo)` en el motor. El cliente no puede
+   mandar un plan que no sume el total.
+3. **Solo extraordinarios.** `cuotasTotal` en un gasto ordinario → `422
+   VALIDACION_FALLIDA`: una ordinaria es el gasto corriente del período.
+4. **Un gasto en cuotas pertenece a los N períodos de su plan.** `?periodo=P`
+   devuelve los gastos de imputación única de P **más** los que tienen una cuota
+   en P; la fila trae `montoImputado` + `cuota: { numero, cuotasTotal }` y los
+   `totales` suman **imputados** (así el total del filtro es el mismo número que
+   va a repartir la liquidación de P). Sin `?periodo=`, la fila es la factura.
+5. **Editar `monto`, `periodo` o `cuotasTotal` regenera el plan completo**;
+   `cuotasTotal: null` lo borra (vuelve a imputación única). Un gasto con
+   cualquier cuota en una liquidación congelante sigue dando `409
+   LIQUIDACION_APROBADA`.
+6. **El rótulo "cuota k/N" es un snapshot** en `LiquidacionDetalle`
+   (`gastoCuotaId`, `cuotaNumero`, `cuotasTotal`): editar el plan después no
+   reescribe un recibo ya emitido.
+
+Un gasto **sin** cuotas se comporta exactamente como antes de S3-19: es el
+default y no hay nada que configurar para liquidar.
 
 ### 1.2 Categorías de Gasto
 
