@@ -512,7 +512,7 @@ export const portalNavigation: NavItem[] = [
 
 > **Implementado (S1-12, segmentado en S3-22).** El selector de edificio de trabajo vive en el header del `AppLayout` (no en el sidebar) y hace dos cosas a la vez: fija el edificio del store (`stores/edificio.store.js`, que alimenta la entrada "Gastos" del sidebar) y **navega** al edificio elegido.
 >
-> Por eso **solo se muestra en las pantallas donde el edificio ES el contexto de trabajo**. Las de alcance organización lo ocultan (`RUTAS_SIN_EDIFICIO` en `AppLayout.jsx`, una lista de prefijos): hoy `/configuracion/proveedores`, `/configuracion/rubros` y `/reportes`. En una pantalla que no depende del edificio el control o no hace nada visible o saca al usuario de donde estaba; y en Reportes, además, el alcance ya tiene su propio selector dentro del reporte (`?edificioId=`, [[PRD-04-02 Gestor de Gastos]] §3.2), así que dos controles con el mismo ícono y distinto efecto competirían en la misma pantalla. Un módulo nuevo de alcance organización se suma agregando su prefijo.
+> Por eso **solo se muestra en las pantallas donde el edificio ES el contexto de trabajo**. Las de alcance organización lo ocultan (`RUTAS_SIN_EDIFICIO` en `AppLayout.jsx`, una lista de prefijos): hoy `/configuracion/proveedores`, `/configuracion/rubros`, `/configuracion/usuarios` y `/reportes`. En una pantalla que no depende del edificio el control o no hace nada visible o saca al usuario de donde estaba; y en Reportes, además, el alcance ya tiene su propio selector dentro del reporte (`?edificioId=`, [[PRD-04-02 Gestor de Gastos]] §3.2), así que dos controles con el mismo ícono y distinto efecto competirían en la misma pantalla. Un módulo nuevo de alcance organización se suma agregando su prefijo.
 >
 > Las *quick actions* del boceto de abajo no existen todavía.
 
@@ -541,7 +541,7 @@ interface EdificioContextNav {
 
 ## 5. Breadcrumbs Dinamicos
 
-> **Implementado (S2-11):** `frontend/src/components/layout/Breadcrumbs.jsx` (integrado en `AppLayout`, sobre el `<Outlet />`) usa una config estatica con patrones `matchPath` para las rutas actuales: `/` (Inicio), `/edificios`, `/edificios/nuevo` y `/edificios/:id/overview|unidades|configuracion`. Dos divergencias con el diseño original de esta seccion:
+> **Implementado (S2-11):** `frontend/src/components/layout/Breadcrumbs.jsx` (integrado en `AppLayout`, sobre el `<Outlet />`) usa una config estatica con patrones `matchPath` para las rutas actuales: `/` (Inicio), `/edificios`, `/edificios/nuevo`, `/edificios/:id/overview|unidades|gastos|configuracion`, `/configuracion/usuarios` (S4-07) y, desde S3-22, el módulo Reportes (`/reportes` y `/reportes/gastos`, con "Reportes" como link al hub: es la salida hacia arriba de un reporte, que si no dependía del sidebar). Dos divergencias con el diseño original de esta seccion:
 >
 > - El segmento dinamico `:id` se resuelve al nombre del edificio **desde el cache de TanStack Query** (lista de `useEdificios` o detalle ya cargado en `EdificioDetallePage`), **sin fetch extra** — el hook de §5.2 (fetch por breadcrumb) no se implementó. Fallback: "Edificio" mientras el dato no esta disponible.
 > - "Inicio" apunta a `/` (el dashboard); no existe ruta `/dashboard` en el router actual.
