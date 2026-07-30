@@ -31,6 +31,8 @@ import LiquidacionPreviewTab from '@/pages/edificio/LiquidacionPreviewTab';
 import EdificioConfiguracionTab from '@/pages/edificio/EdificioConfiguracionTab';
 import ConfiguracionUsuariosPage from '@/pages/configuracion/ConfiguracionUsuariosPage';
 import ProveedoresPage from '@/pages/configuracion/ProveedoresPage';
+import ReportesPage from '@/pages/reportes/ReportesPage';
+import ReporteGastosPage from '@/pages/reportes/ReporteGastosPage';
 import RubrosPage from '@/pages/configuracion/RubrosPage';
 import './index.css';
 
@@ -74,6 +76,16 @@ const router = createBrowserRouter([
                     path: '/configuracion/usuarios',
                     element: <ConfiguracionUsuariosPage />,
                   },
+                  // Módulo Reportes (S3-16): hub + reportes del negocio, con el
+                  // alcance de toda la organización (PRD-07-03 §2.1). Detrás de
+                  // RequireRole igual que Usuarios: el primer reporte
+                  // —gastos consolidados— es de org_admin por diseño (a un gestor
+                  // Cerbos le responde 403 sin mirar el plan, precisión 9 de
+                  // PRD-04-02 §3.4), así que el hub le mostraría una sola tarjeta
+                  // que no puede abrir. Se revisa cuando exista un reporte de
+                  // alcance gestor.
+                  { path: '/reportes', element: <ReportesPage /> },
+                  { path: '/reportes/gastos', element: <ReporteGastosPage /> },
                 ],
               },
               // Directorio de proveedores y árbol de rubros (S3-14,

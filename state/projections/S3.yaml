@@ -1,9 +1,9 @@
 # GENERADO por app/state/engine.py — no editar a mano
 sprint: S3
 titulo: "Gastos + motor contable"
-generado: 2026-07-30T14:21:29Z
+generado: 2026-07-30T15:39:27Z
 total: 21
-done: 17
+done: 18
 tareas:
   - id: S3-01
     titulo: "Ajustes de schema + policies Cerbos"
@@ -173,7 +173,7 @@ tareas:
   - id: S3-16
     titulo: "Dashboard de gastos (UI)"
     seccion: "Frontend — features"
-    status: ready
+    status: done
     depende_de: [S3-07, S3-15]
     desbloquea: [S3-17]
     issue: 64
@@ -184,7 +184,7 @@ tareas:
   - id: S3-17
     titulo: "Tests E2E dashboard + smoke"
     seccion: "Frontend — features"
-    status: stale
+    status: ready
     depende_de: [S3-16]
     desbloquea: []
     issue: 65

@@ -275,6 +275,12 @@ export default function GastoFormDialog({
         onSubmit={handleSubmit((valores) => mutation.mutate(valores))}
         className="flex flex-col gap-4"
       >
+        {/* El acceso a la ayuda de "cargar un gasto" vive acá desde S3-16: hasta
+            entonces estaba en el título del tab, que ahora es un dashboard y su
+            ayuda habla de los indicadores. El topic explica los datos de ESTE
+            formulario, así que este es su lugar. */}
+        <AyudaLink topic="gastos/carga">Cómo se carga un gasto</AyudaLink>
+
         <Campo
           id="gasto-concepto"
           label="Concepto *"

@@ -47,7 +47,7 @@
   - _Depende de: S3-05, S3-09._
 - [x] **S3-14 UI gestión proveedores y rubros.** Lista de proveedores con buscador (razón social/CUIT), alta/edición, badge Global/Propio; árbol de rubros con toggles de visibilidad y alta/edición de propios. Actualizar S3-08 (form gasto): selector de proveedor con autocomplete + alta inline, selector rubro→subrubro en cascada.
   - _Depende de: S3-12, S3-13._
-- [ ] **S3-16 Dashboard de gastos (UI).** El tab `gastos` del detalle de edificio pasa a ser dashboard (PRD-04-02 §3): barra de filtros (edificio incl. "Todos" si Business+, período 12 meses/desde-hasta/todo), KPI cards, charts Recharts (evolución line, por rubro bar con drill-down, por categoría pie), top 10 proveedores; debajo la lista de S3-07 compartiendo filtros vía URL/search params + store.
+- [x] **S3-16 Dashboard de gastos (UI).** El tab `gastos` del detalle de edificio pasa a ser dashboard (PRD-04-02 §3): barra de filtros (edificio incl. "Todos" si Business+, período 12 meses/desde-hasta/todo), KPI cards, charts Recharts (evolución line, por rubro bar con drill-down, por categoría pie), top 10 proveedores; debajo la lista de S3-07 compartiendo filtros vía URL/search params + store.
   - _Depende de: S3-07, S3-15._
 - [ ] **S3-17 Tests E2E dashboard + smoke.** Playwright: filtros reactivos actualizan KPIs y lista; consolidado 403 en plan starter. Extender `scripts/smoke.sh`.
   - _Depende de: S3-16._

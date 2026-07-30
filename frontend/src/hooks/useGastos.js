@@ -23,6 +23,10 @@ function armarQuery({
   categoria,
   esOrdinario,
   proveedorId,
+  // S3-16: el filtro por rubro se pone clickeando una barra del chart de
+  // distribución por rubro, y tiene que mover la lista igual que los demás (los
+  // dos leen los mismos search params).
+  rubroId,
   createdBy,
   desde,
   hasta,
@@ -35,6 +39,7 @@ function armarQuery({
   if (categoria) params.set('categoria', categoria);
   if (esOrdinario !== undefined) params.set('esOrdinario', String(esOrdinario));
   if (proveedorId) params.set('proveedorId', proveedorId);
+  if (rubroId) params.set('rubroId', rubroId);
   if (createdBy) params.set('createdBy', createdBy);
   if (desde) params.set('desde', desde);
   if (hasta) params.set('hasta', hasta);

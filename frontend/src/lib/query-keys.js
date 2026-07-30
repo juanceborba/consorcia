@@ -25,6 +25,17 @@ export const queryKeys = {
       edificioId,
       filtros,
     ],
+    // Agregados del dashboard (S3-15, consumidos por S3-16). El `alcance` es
+    // 'edificio:<id>' o 'organizacion': son dos endpoints distintos y con la
+    // misma key se pisarían al alternar entre el tab del edificio y el reporte
+    // consolidado. Comparten el prefijo `dashboard` para que un alta de gasto
+    // los invalide juntos (`queryKeys.gastos.all` ya lo hace hoy).
+    dashboard: (alcance, filtros) => [
+      ...queryKeys.gastos.all,
+      'dashboard',
+      alcance,
+      filtros,
+    ],
   },
   // Directorio de proveedores de la organización activa (S3-12/14). No lleva el
   // id de la organización: el endpoint la saca del JWT y el cambio de

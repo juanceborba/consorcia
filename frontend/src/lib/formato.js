@@ -35,6 +35,23 @@ export function formatearMonto(monto, moneda = 'ARS') {
   return formateadorDeMoneda(moneda).format(Number(monto));
 }
 
+// Monto abreviado para los EJES de los charts (S3-16): "$ 1,5 M", "$ 450 k".
+// Un eje con "$ 1.450.000,00" en cada tick se lleva un tercio del ancho del
+// gráfico y obliga a rotar las etiquetas. El número exacto está en el tooltip y
+// en los KPIs, que es donde se lo va a buscar: el eje es una referencia de
+// escala, no un dato que se lea al centavo.
+export function formatearMontoCorto(monto) {
+  const valor = Number(monto);
+  if (!Number.isFinite(valor)) return '—';
+  const abs = Math.abs(valor);
+  const signo = valor < 0 ? '-' : '';
+  const compacto = (n, sufijo) =>
+    `${signo}$ ${n.toLocaleString('es-AR', { maximumFractionDigits: 1 })}${sufijo}`;
+  if (abs >= 1_000_000) return compacto(abs / 1_000_000, ' M');
+  if (abs >= 1_000) return compacto(abs / 1_000, ' k');
+  return compacto(abs, '');
+}
+
 // "2026-07" → "julio 2026". El período es un String 'YYYY-MM' en la DB
 // (PRD-02-04), así que se parsea a mano en vez de pasarlo por `new Date()`,
 // que lo interpretaría como UTC y podría correrlo un mes según el huso.
@@ -57,6 +74,14 @@ export function formatearPeriodo(periodo) {
   const [anio, mes] = periodo.split('-');
   const nombre = MESES[Number(mes) - 1];
   return nombre ? `${nombre} ${anio}` : periodo;
+}
+
+// "2026-07" → "jul 26", para los ejes de 12 puntos de la evolución mensual
+// (S3-16): el mes completo con el año ("septiembre 2026") no entra en un tick.
+export function formatearPeriodoCorto(periodo) {
+  const [anio, mes] = String(periodo).split('-');
+  const nombre = MESES[Number(mes) - 1];
+  return nombre ? `${nombre.slice(0, 3)} ${anio.slice(2)}` : periodo;
 }
 
 // Fecha corta "dd-mm" para las tablas donde el año ya está implícito en el

@@ -30,3 +30,5 @@
 {"id": "evt-000124", "ts": "2026-07-30T12:46:52Z", "actor": "claude", "type": "status", "task": "S3-06", "to": "done"}
 {"id": "evt-000125", "ts": "2026-07-30T14:07:02Z", "actor": "claude", "type": "claim", "task": "S3-15", "motivo": "Endpoint dashboard de gastos: agregados por edificio y consolidado org (Business+)"}
 {"id": "evt-000126", "ts": "2026-07-30T14:21:29Z", "actor": "claude", "type": "status", "task": "S3-15", "to": "done", "motivo": "GET /api/edificios/:id/gastos/dashboard + consolidado GET /api/organizaciones/:id/gastos/dashboard (Business+), whereDeGastos compartido con la lista, imputacion por cuotas, porRubro con drill-down, 18 tests contra calculo manual"}
+{"id": "evt-000127", "ts": "2026-07-30T15:14:14Z", "actor": "claude", "type": "claim", "task": "S3-16", "motivo": "S3-16 Dashboard de gastos UI + modulo Reportes"}
+{"id": "evt-000128", "ts": "2026-07-30T15:39:27Z", "actor": "claude", "type": "status", "task": "S3-16", "to": "done", "motivo": "Dashboard de gastos UI + modulo Reportes (hub + gastos consolidados)"}

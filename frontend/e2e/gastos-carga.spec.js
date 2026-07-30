@@ -141,26 +141,40 @@ test('carga de un gasto: combobox de proveedor con alta inline, cascada de rubro
     await expect(fila).toContainText('B: ascensor');
   });
 
-  await test.step('el totalizador se recalcula con el filtro y segmenta por tipo', async () => {
+  await test.step('los KPIs se recalculan con el filtro y segmentan por tipo', async () => {
     // El buscador de concepto tiene debounce y pega al backend: con la lista
-    // recortada a un solo gasto ordinario de $1.500,50, los tres números del
-    // totalizador tienen que decir exactamente eso (son del filtro activo, no de
-    // la página) y reconciliar: total = ordinarios + extraordinarios.
+    // recortada a un solo gasto ordinario de $1.500,50, los KPIs tienen que decir
+    // exactamente eso (son del filtro activo, no de la página) y reconciliar:
+    // total = ordinarias + extraordinarias.
+    //
+    // S3-16: las filas se cuentan DENTRO de la tabla del detalle. Los charts del
+    // dashboard publican su serie como tabla `sr-only` (la alternativa accesible
+    // del SVG), así que un `getByRole('row')` de toda la página trae esas también.
     await page.locator('#filtro-concepto').fill(CONCEPTO);
-    await expect(page.getByRole('row')).toHaveCount(3); // header + fila + TOTAL
+    const tablaDetalle = page.getByRole('table').filter({ hasText: 'Concepto' });
+    await expect(tablaDetalle.getByRole('row')).toHaveCount(3); // header + fila + TOTAL
     await expect(fila).toBeVisible();
     await expect(page).toHaveURL(/q=/);
 
-    const tarjeta = (titulo) =>
-      page.getByText(titulo, { exact: true }).locator('..');
-    await expect(tarjeta('Total del filtro')).toContainText('$ 1.500,50');
-    await expect(tarjeta('Ordinarios')).toContainText('$ 1.500,50');
-    await expect(tarjeta('Extraordinarios')).toContainText('$ 0,00');
+    // El KPI del total es una región con nombre; los de tipo son botones (además
+    // de mostrar el subtotal, filtran la lista: decisión 1 de GastosKpis).
+    await expect(
+      page.getByRole('group', { name: 'Total del período' }),
+    ).toContainText('$ 1.500,50');
+    await expect(
+      page.getByRole('button', { name: 'Filtrar la lista por gastos ordinarios' }),
+    ).toContainText('$ 1.500,50');
+    await expect(
+      page.getByRole('button', {
+        name: 'Filtrar la lista por gastos extraordinarios',
+      }),
+    ).toContainText('$ 0,00');
   });
 
-  await test.step('las tarjetas por categoría suman lo mismo que el total y filtran', async () => {
-    // El gasto quedó en categoría B: la tarjeta de B lo tiene y las otras dos
-    // están en cero (el eje A/B/C es independiente del ordinario/extraordinario).
+  await test.step('la distribución por categoría suma lo mismo que el total y filtra', async () => {
+    // El gasto quedó en categoría B: la leyenda del chart de categorías lo tiene
+    // en B y las otras dos en cero (el eje A/B/C es independiente del
+    // ordinario/extraordinario), y es también el control del filtro.
     const tarjetaB = page.getByRole('button', { name: 'Filtrar por categoría B' });
     await expect(tarjetaB).toContainText('$ 1.500,50');
     await expect(
@@ -248,8 +262,9 @@ test('el gestor lee los gastos pero no los carga', async ({ page }) => {
 
   await irAGastosDeTorrePalermo(page);
 
-  // `CardTitle` es un div, no un heading: se busca por texto.
-  await expect(page.getByText(/^Gastos \(\d+\)$/)).toBeVisible();
+  // `CardTitle` es un div, no un heading: se busca por texto. S3-16: el conteo
+  // pasó al título de la tarjeta del listado (arriba, el tab es el dashboard).
+  await expect(page.getByText(/^Detalle de gastos \(\d+\)$/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Nuevo gasto' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Cargar el primer gasto' })).toHaveCount(0);
 

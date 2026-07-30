@@ -56,6 +56,16 @@ const MODULOS = [
   // escritura, que las pantallas ocultan por rol.
   { nombre: 'Proveedores', path: '/configuracion/proveedores', activo: true },
   { nombre: 'Rubros', path: '/configuracion/rubros', activo: true },
+  // Módulo Reportes (S3-16, PRD-07-03 §4.1). Con `roles` por el mismo motivo que
+  // "Usuarios": su único reporte hoy es el consolidado de gastos, que es de
+  // org_admin (a un gestor Cerbos le responde 403), así que el gestor vería un
+  // hub con una tarjeta que no puede abrir.
+  {
+    nombre: 'Reportes',
+    path: '/reportes',
+    activo: true,
+    roles: ['org_admin', 'superadmin'],
+  },
   {
     nombre: 'Usuarios',
     path: '/configuracion/usuarios',

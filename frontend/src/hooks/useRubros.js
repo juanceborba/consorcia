@@ -21,3 +21,29 @@ export function useRubros({ incluirOcultos = false, enabled = true } = {}) {
 
   return { arbol: data?.data ?? [], cargando: isLoading, error: error ?? null };
 }
+
+/**
+ * Nombre legible de un rubro del árbol, sea raíz o subrubro. Los chips de filtro
+ * de S3-16 solo tienen el id (es lo que viaja en la URL) y mostrar un UUID no es
+ * mostrar nada; el subrubro se nombra con su raíz adelante ("Mantenimiento ›
+ * Plomería") porque un "Insumos" suelto no dice de qué.
+ */
+export function nombreDeRubro(arbol, rubroId) {
+  if (!rubroId) return null;
+  for (const raiz of arbol) {
+    if (raiz.id === rubroId) return raiz.nombre;
+    const hijo = (raiz.subrubros ?? []).find((h) => h.id === rubroId);
+    if (hijo) return `${raiz.nombre} › ${hijo.nombre}`;
+  }
+  return null;
+}
+
+/**
+ * El nombre del rubro filtrado, para el chip. La query solo se dispara cuando hay
+ * un rubro en el filtro: el árbol es un request que la pantalla de gastos no
+ * necesita hasta que alguien clickea una barra del chart.
+ */
+export function useNombreDeRubro(rubroId) {
+  const { arbol } = useRubros({ enabled: Boolean(rubroId) });
+  return nombreDeRubro(arbol, rubroId);
+}

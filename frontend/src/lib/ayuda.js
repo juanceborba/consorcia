@@ -357,8 +357,12 @@ export const AYUDA_TOPICS = {
       'gastos/rubros',
       // S3-09: el destino de todo gasto es la liquidación del período.
       'liquidaciones',
+      // S3-16: el tab donde se cargan los gastos es ahora un dashboard.
+      'gastos/dashboard',
     ],
-    pantallas: ['src/pages/edificio/EdificioGastosTab.jsx'],
+    // S3-16: el acceso vive en el formulario de carga. El tab pasó a dashboard y
+    // su ícono de ayuda abre `gastos/dashboard`, que habla de los indicadores.
+    pantallas: ['src/components/gastos/GastoFormDialog.jsx'],
     secciones: [
       {
         titulo: '¿Qué es un gasto?',
@@ -415,6 +419,102 @@ export const AYUDA_TOPICS = {
         titulo: 'Eliminar no borra del sistema',
         cuerpo:
           'Al eliminar un gasto deja de contarse en las liquidaciones, pero el registro se conserva: la Ley 941 exige guardar la documentación del consorcio.',
+      },
+    ],
+  },
+
+  // Dashboard de gastos del edificio (S3-16, PRD-04-02 §3). Explica lo que un
+  // administrador no puede deducir mirando los números: qué plata suma cada modo
+  // de período, por qué la evolución muestra 12 meses cuando filtró uno, y por
+  // qué el filtro de tipo mueve la tabla pero no los KPIs. Son las tres preguntas
+  // que genera la pantalla.
+  'gastos/dashboard': {
+    ruta: ['Gastos', 'Tablero de gastos'],
+    titulo: 'Tablero de gastos',
+    relacionados: [
+      'gastos/carga',
+      'gastos/rubros',
+      'edificios/unidades/categorias-gastos',
+      'reportes/gastos-consolidados',
+      'liquidaciones',
+    ],
+    pantallas: ['src/pages/edificio/EdificioGastosTab.jsx'],
+    secciones: [
+      {
+        titulo: 'Los filtros mandan sobre toda la pantalla',
+        cuerpo:
+          'Lo que elegís arriba se aplica a los indicadores, a los cuatro gráficos y a la lista de abajo al mismo tiempo. Por eso el total de arriba y el TOTAL del pie de la tabla son siempre el mismo número. Los filtros quedan en la dirección de la página: podés guardarla o mandarla y se abre con el mismo recorte.',
+      },
+      {
+        titulo: 'Un período, un rango de fechas, o todo',
+        cuerpo:
+          'Son tres formas excluyentes de recortar el tiempo y no se combinan. Elegir un período muestra lo IMPUTADO a ese mes: si un gasto se cobra en cuotas, entra la cuota de ese mes y no la factura entera. Un rango de fechas filtra por la fecha del gasto y suma la factura completa. "Todos los períodos" no recorta nada.',
+        items: [
+          'Período = en qué liquidación entra el gasto.',
+          'Fecha del gasto = cuándo se hizo (la de la factura).',
+          'Al elegir un rango, el filtro de período se saca solo: son dos preguntas distintas.',
+        ],
+      },
+      {
+        titulo: 'Por qué la evolución muestra 12 meses',
+        cuerpo:
+          'El gráfico de evolución no usa la ventana del filtro: con un período elegido muestra los 12 meses que terminan en ese período, y el último punto es el total de arriba. Un gráfico de un solo punto no diría nada. Con un rango o con todo el histórico, la serie va del primer mes imputado al último y la suma de sus puntos es el total.',
+      },
+      {
+        titulo: 'Ordinarias y extraordinarias: el filtro solo mueve la lista',
+        cuerpo:
+          'Las tarjetas de ordinarias y extraordinarias son el desglose completo del total, así que filtrar por tipo las dejaría con un lado en cero. Al clickear una, lo que se filtra es la lista de abajo; los indicadores y los gráficos siguen mostrando el total. Cuando ese filtro está puesto, la pantalla lo avisa.',
+      },
+      {
+        titulo: 'Rubro no es lo mismo que categoría',
+        cuerpo:
+          'El rubro (Mantenimiento › Plomería) dice EN QUÉ se gastó y sirve para analizar; la categoría A/B/C dice QUIÉNES lo pagan. Los dos gráficos son cortes independientes de la misma plata: un gasto de "Mantenimiento" puede ser de categoría A o B.',
+        items: [
+          'Clickeá un rubro con subrubros para ver su desglose.',
+          'Clickeá un subrubro (o un rubro sin subrubros) para filtrar todo por él.',
+          'Clickeá una categoría o un proveedor para filtrar por ellos.',
+        ],
+      },
+      {
+        titulo: 'Gasto por UF es un promedio, no la expensa',
+        cuerpo:
+          'Divide el total del filtro por todas las unidades del edificio, incluidas las que están en venta o alquiladas (todas pagan expensas). Sirve como referencia de magnitud: lo que paga cada unidad sale del reparto real de la liquidación, que usa el coeficiente de cada UF y las categorías de cada gasto.',
+      },
+      {
+        titulo: 'La variación compara contra una ventana igual',
+        cuerpo:
+          'El porcentaje al lado del total compara contra el período anterior, o contra un rango de la misma cantidad de días inmediatamente anterior. Si no hay con qué comparar —el mes previo sin gastos, o "todos los períodos"— no se muestra: un porcentaje sin base no es información.',
+      },
+    ],
+  },
+
+  // Reporte de gastos consolidados (S3-16). Topic del módulo Reportes: lo que
+  // hay que entender acá es el ALCANCE (toda la administración, solo edificios
+  // activos) y por qué no hay listado debajo de los gráficos.
+  'reportes/gastos-consolidados': {
+    ruta: ['Reportes', 'Gastos consolidados'],
+    titulo: 'Gastos consolidados',
+    relacionados: ['gastos/dashboard', 'gastos/rubros', 'gastos/proveedores'],
+    pantallas: ['src/pages/reportes/ReporteGastosPage.jsx'],
+    secciones: [
+      {
+        titulo: 'Qué abarca',
+        cuerpo:
+          'Los gastos de TODOS los edificios activos de la administración, sumados. Es la misma información que la pestaña Gastos de cada edificio, con el alcance ampliado: los mismos indicadores, los mismos gráficos y los mismos filtros.',
+        items: [
+          'Un edificio dado de baja no entra, para que el total coincida con la suma de los edificios que ves.',
+          'El gasto por UF divide por todas las unidades de todos esos edificios.',
+        ],
+      },
+      {
+        titulo: 'Por qué no hay lista de gastos abajo',
+        cuerpo:
+          'Cada gasto pertenece a un edificio y se administra desde su pestaña Gastos. Este reporte es la mirada agregada: cuando un número te llame la atención, elegí el edificio en el selector de arriba y se abre su detalle con los mismos filtros puestos.',
+      },
+      {
+        titulo: 'Quién lo ve',
+        cuerpo:
+          'Es un reporte de la administración: lo ve el administrador de la organización, no un gestor con edificios asignados (su alcance son esos edificios). Además requiere plan Business o superior; con un plan menor, la pantalla lo indica y los gastos siguen disponibles edificio por edificio.',
       },
     ],
   },

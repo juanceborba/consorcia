@@ -95,8 +95,32 @@
 //     pregunta cuando un monto no cierra. Se muestra abreviada ("María R.") con
 //     el nombre completo en el `title`, porque el nombre entero se lleva el
 //     ancho de una columna de datos.
+//
+// DECISIONES de S3-16 (el tab pasa a ser dashboard, PRD-04-02 §3):
+//
+// 12. EL DASHBOARD VA ARRIBA Y LA LISTA ABAJO, EN LA MISMA PANTALLA, leyendo los
+//     MISMOS search params (`useFiltrosGastos`). Es lo que pide §3 ("el dashboard
+//     es la entrada al módulo… debajo vive el listado") y lo que hace que
+//     `kpis.total` sea el mismo número que la fila TOTAL de la tabla: los dos
+//     endpoints comparten el constructor del `where` en el backend
+//     (`services/gastos-filtros.js`, precisión 1 de §3.4). Cualquier filtro que
+//     mueva uno mueve al otro, con la excepción documentada del tipo.
+//
+// 13. LOS KPIs REEMPLAZAN AL TOTALIZADOR Y A LAS TARJETAS POR CATEGORÍA de
+//     S3-08b, que eran sus antecesores anunciados: los mismos números salen ahora
+//     del endpoint del dashboard junto con el gasto por UF, la cantidad y la
+//     variación, y el corte por categoría pasó al chart de distribución (que
+//     además conserva el copy de "quién paga"). Mantener las dos versiones sería
+//     mostrar dos veces la misma plata con dos requests distintos.
+//
+// 14. EL SELECTOR DE EDIFICIO NAVEGA CONSERVANDO LOS FILTROS. Cambiar de edificio
+//     con "julio + categoría B" puesto lleva el mismo recorte al edificio nuevo:
+//     el uso real es comparar el mismo período entre dos consorcios. La opción
+//     "Todos los edificios" sale del tab y va al reporte consolidado
+//     (`/reportes/gastos`), que es otro endpoint y otro alcance — el listado no
+//     existe consolidado, así que no podía vivir en esta pantalla.
 import { useMemo, useState } from 'react';
-import { useOutletContext, useSearchParams } from 'react-router';
+import { useNavigate, useOutletContext, useSearchParams } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   createColumnHelper,
@@ -108,11 +132,19 @@ import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, MoreHorizontal, Plus, Receipt } from 'lucide-react';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
+import { useEdificios } from '@/hooks/useEdificios';
+import { useFiltrosGastos } from '@/hooks/useFiltrosGastos';
 import { useGastos } from '@/hooks/useGastos';
+import { useNombreDeRubro } from '@/hooks/useRubros';
+import { useOrganizacion } from '@/hooks/useOrganizacion';
 import { SIN_ROLES, useAuthStore } from '@/stores/auth.store';
+import { motivoConsolidado, permiteConsolidado } from '@/lib/planes';
 import AyudaLink from '@/components/ayuda/AyudaLink';
 import GastoFormDialog from '@/components/gastos/GastoFormDialog';
-import GastosFiltros from '@/components/gastos/GastosFiltros';
+import GastosDashboard from '@/components/gastos/dashboard/GastosDashboard';
+import GastosFiltros, {
+  TODOS_LOS_EDIFICIOS,
+} from '@/components/gastos/GastosFiltros';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
@@ -127,8 +159,6 @@ import {
   formatearPeriodo,
   nombreDeAutor,
   nombreDeAutorCorto,
-  periodoActual,
-  ultimosPeriodos,
 } from '@/lib/formato';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -150,21 +180,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-// Página del contrato de `listarGastosSchema` (default 50, máx 100).
-const LIMIT = 50;
-
-// Centinela de "sin filtro de período" (decisión 2).
-const TODOS_LOS_PERIODOS = 'todos';
-
-// Decisión 11: las tres categorías del dominio, con el reparto que implica cada
-// una (PRD-04-02 §1.2 y art. 2049 CCyC último párrafo). El copy de "quién paga"
-// es lo que hace que la tarjeta se entienda sin ir a la ayuda: el eje A/B/C
-// decide QUIÉNES pagan, no si el gasto es ordinario o extraordinario.
-const CATEGORIAS_DOMINIO = [
-  { value: 'A', titulo: 'Generales', quienPaga: 'las pagan todas las UF' },
-  { value: 'B', titulo: 'Servicios', quienPaga: 'solo las UF con el servicio' },
-  { value: 'C', titulo: 'Sectores', quienPaga: 'solo las UF del sector' },
-];
+// El período, la paginación y el centinela de "todos los períodos" viven en
+// `useFiltrosGastos` desde S3-16: el dashboard y la lista los comparten.
 
 const columnHelper = createColumnHelper();
 
@@ -185,129 +202,16 @@ function CategoriaGasto({ gasto }) {
   );
 }
 
-// Skeleton de carga inicial (PRD-07-02 §6.2/§6.4): replica la estructura de la
-// pantalla — totalizador, filtros y tabla —, igual que el de unidades.
+// Skeleton de la TABLA (PRD-07-02 §6.2/§6.4). Desde S3-16 cubre solo el listado:
+// la toolbar ya está en pantalla (no depende de esta query) y el dashboard trae
+// su propio skeleton, así que un skeleton de la pantalla entera taparía lo que ya
+// se puede usar.
 function GastosSkeleton() {
   return (
-    <Card className="animate-pulse">
-      <CardHeader>
-        <div className="h-6 w-32 rounded bg-muted" />
-        <div className="h-4 w-48 rounded bg-muted" />
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="grid gap-3 sm:grid-cols-3">
-          {Array.from({ length: 3 }, (_, i) => (
-            <div key={i} className="h-20 rounded-lg bg-muted" />
-          ))}
-        </div>
-        <div className="h-9 w-96 rounded bg-muted" />
-        <div className="h-10 rounded bg-muted" />
-        {Array.from({ length: 5 }, (_, i) => (
-          <div key={i} className="h-8 rounded bg-muted" />
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-// Decisión 11: las tres categorías, con el filtro que las aísla en la lista. El
-// `onFiltro` hace que la tarjeta sea también el atajo para ver esos gastos, que
-// es lo que uno quiere hacer justo después de leer el número.
-function TarjetasPorCategoria({ totales, categoriaActiva, onFiltro }) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-3">
-      {CATEGORIAS_DOMINIO.map((categoria) => {
-        const segmento = totales?.porCategoria?.[categoria.value];
-        const activa = categoriaActiva === categoria.value;
-        return (
-          <button
-            key={categoria.value}
-            type="button"
-            aria-pressed={activa}
-            // El nombre accesible por defecto sería todo el contenido de la
-            // tarjeta ("B SERVICIOS $ 45.000,00 1 gasto · …"): se declara qué
-            // hace el control, que es filtrar.
-            aria-label={`Filtrar por categoría ${categoria.value}`}
-            className={`flex flex-col gap-1 rounded-lg border p-4 text-left transition-colors hover:bg-accent/50 ${
-              activa ? 'border-ring ring-3 ring-ring/30' : ''
-            }`}
-            onClick={() =>
-              onFiltro({ categoria: activa ? '' : categoria.value })
-            }
-          >
-            <span className="flex items-center gap-2">
-              <Badge variant={`categoria${categoria.value}`}>
-                {categoria.value}
-              </Badge>
-              <span className="text-xs font-medium text-muted-foreground uppercase">
-                {categoria.titulo}
-              </span>
-            </span>
-            <span className="text-lg font-semibold tabular-nums">
-              {formatearMonto(segmento?.monto ?? '0.00')}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {segmento?.cantidad === 1
-                ? '1 gasto'
-                : `${segmento?.cantidad ?? 0} gastos`}
-              {' · '}
-              {categoria.quienPaga}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// Decisión 9: total del filtro, partido en ordinarios y extraordinarios. Los
-// tres números son del backend sobre el mismo `where`, así que la suma cierra.
-function Totalizador({ totales }) {
-  const segmentos = [
-    {
-      clave: 'total',
-      titulo: 'Total del filtro',
-      monto: totales?.monto ?? '0.00',
-      cantidad: totales?.cantidad ?? 0,
-      detalle: 'Ordinarios + extraordinarios',
-    },
-    {
-      clave: 'ordinarios',
-      titulo: 'Ordinarios',
-      monto: totales?.ordinarios?.monto ?? '0.00',
-      cantidad: totales?.ordinarios?.cantidad ?? 0,
-      detalle: 'Expensas del mes a mes',
-    },
-    {
-      clave: 'extraordinarios',
-      titulo: 'Extraordinarios',
-      monto: totales?.extraordinarios?.monto ?? '0.00',
-      cantidad: totales?.extraordinarios?.cantidad ?? 0,
-      detalle: 'Se liquidan aparte',
-    },
-  ];
-
-  return (
-    <div className="grid gap-3 sm:grid-cols-3">
-      {segmentos.map((segmento) => (
-        <div
-          key={segmento.clave}
-          className={`flex flex-col gap-1 rounded-lg border p-4 ${
-            segmento.clave === 'total' ? 'bg-muted/40' : ''
-          }`}
-        >
-          <p className="text-xs font-medium text-muted-foreground uppercase">
-            {segmento.titulo}
-          </p>
-          <p className="text-xl font-semibold tabular-nums">
-            {formatearMonto(segmento.monto)}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {segmento.cantidad === 1 ? '1 gasto' : `${segmento.cantidad} gastos`}
-            {' · '}
-            {segmento.detalle}
-          </p>
-        </div>
+    <div className="flex animate-pulse flex-col gap-2">
+      <div className="h-10 rounded bg-muted" />
+      {Array.from({ length: 5 }, (_, i) => (
+        <div key={i} className="h-8 rounded bg-muted" />
       ))}
     </div>
   );
@@ -410,7 +314,8 @@ function EstadoError() {
 
 export default function EdificioGastosTab() {
   const { edificio } = useOutletContext();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   // Decisión 6: el gestor solo lee (policy `gasto.yaml`).
@@ -439,64 +344,48 @@ export default function EdificioGastosTab() {
     },
   });
 
-  // El default del período es el mes corriente; los períodos ofrecidos son los
-  // últimos 12 (PRD-04-02 §3.2). Se memoiza para que un re-render no genere una
-  // lista nueva (y una key de query nueva) a medianoche o en cada paginación.
-  const periodos = useMemo(() => ultimosPeriodos(12), []);
-  const periodoDefault = periodos[0] ?? periodoActual();
-
-  const periodo = searchParams.get('periodo') ?? periodoDefault;
-  const categoria = searchParams.get('categoria') ?? '';
-  const tipo = searchParams.get('tipo') ?? '';
-  const proveedorId = searchParams.get('proveedorId') ?? '';
-  const createdBy = searchParams.get('createdBy') ?? '';
-  const desde = searchParams.get('desde') ?? '';
-  const hasta = searchParams.get('hasta') ?? '';
-  const q = searchParams.get('q') ?? '';
-  const page = Math.max(1, Number(searchParams.get('page')) || 1);
-
-  // Un período elegido a mano que no esté entre los últimos 12 (link viejo,
-  // filtro compartido) tiene que seguir siendo seleccionable en el combo.
-  const opcionesPeriodo =
-    periodo === TODOS_LOS_PERIODOS || periodos.includes(periodo)
-      ? periodos
-      : [periodo, ...periodos];
-
-  const filtros = {
-    periodo: periodo === TODOS_LOS_PERIODOS ? undefined : periodo,
-    categoria: categoria || undefined,
-    esOrdinario: tipo === '' ? undefined : tipo === 'ordinario',
-    proveedorId: proveedorId || undefined,
-    createdBy: createdBy || undefined,
-    desde: desde || undefined,
-    hasta: hasta || undefined,
-    q: q || undefined,
-    page,
-    limit: LIMIT,
-  };
+  // Decisión 12: los filtros son los MISMOS para el dashboard y para la lista, y
+  // viven en la URL (`useFiltrosGastos` traduce una vez a los dos contratos).
+  const {
+    valores,
+    modoPeriodo,
+    opcionesPeriodo,
+    filtrosLista,
+    filtrosDashboard,
+    hayFiltros,
+    setFiltro,
+    limpiar: limpiarFiltros,
+  } = useFiltrosGastos();
 
   const { gastos, pagination, totales, cargando, refrescando, error } = useGastos(
     edificio.id,
-    filtros,
+    filtrosLista,
   );
 
-  // Todo cambio de filtro vuelve a la página 1: quedarse en la 3 tras filtrar
-  // deja la tabla vacía sin que el usuario entienda por qué.
-  function setFiltro(cambios) {
-    setSearchParams((previos) => {
-      const next = new URLSearchParams(previos);
-      for (const [clave, valor] of Object.entries(cambios)) {
-        if (valor === '' || valor === undefined) next.delete(clave);
-        else next.set(clave, String(valor));
-      }
-      if (!('page' in cambios)) next.delete('page');
-      return next;
-    });
+  // Decisión 14: el selector de edificio navega y se lleva los filtros puestos.
+  const { edificios } = useEdificios();
+  const { organizacion } = useOrganizacion();
+  const contextoDePlan = { plan: organizacion?.plan, roles };
+  const consolidado = {
+    disponible: permiteConsolidado(contextoDePlan),
+    motivo: motivoConsolidado(contextoDePlan),
+  };
+
+  function irAEdificio(valor) {
+    const query = searchParams.toString();
+    const sufijo = query ? `?${query}` : '';
+    if (valor === TODOS_LOS_EDIFICIOS) {
+      navigate(`/reportes/gastos${sufijo}`);
+      return;
+    }
+    if (valor && valor !== edificio.id) {
+      navigate(`/edificios/${valor}/gastos${sufijo}`);
+    }
   }
 
-  function limpiarFiltros() {
-    setSearchParams(new URLSearchParams());
-  }
+  // El chip del rubro necesita un nombre: en la URL solo viaja el id (lo pone el
+  // click en una barra del chart).
+  const rubroNombre = useNombreDeRubro(valores.rubroId);
 
   // Decisión 7: las columnas se declaran una vez. `meta.className` viaja a la
   // celda, a su cabecera y al pie, así la alineación no se repite en tres lugares.
@@ -624,85 +513,89 @@ export default function EdificioGastosTab() {
     getCoreRowModel: getCoreRowModel(),
   });
 
-  if (cargando) return <GastosSkeleton />;
-  if (error) return <EstadoError />;
-
   const total = pagination?.total ?? 0;
   const totalPages = pagination?.totalPages ?? 1;
-  // "Con filtros" a los efectos del empty state: cualquier recorte por sobre el
-  // default (el período corriente solo no cuenta como filtro elegido).
-  const hayFiltros =
-    categoria !== '' ||
-    tipo !== '' ||
-    proveedorId !== '' ||
-    createdBy !== '' ||
-    desde !== '' ||
-    hasta !== '' ||
-    q !== '' ||
-    periodo !== periodoDefault;
   const hayMonedaExtranjera = gastos.some((g) => g.moneda !== 'ARS');
   // El nombre del proveedor filtrado sale de las filas en pantalla; el chip cae
   // a "elegido" cuando el filtro combinado deja la lista vacía.
-  const proveedorNombre = gastos.find((g) => g.proveedorId === proveedorId)
+  const proveedorNombre = gastos.find((g) => g.proveedorId === valores.proveedorId)
     ?.proveedor?.razonSocial;
 
+  // Rótulo del alcance temporal, el mismo que leen los KPIs.
+  const rotuloPeriodo =
+    modoPeriodo === 'todo'
+      ? 'Todos los períodos'
+      : modoPeriodo === 'rango'
+        ? `Gastos del ${valores.desde || '…'} al ${valores.hasta || '…'}`
+        : formatearPeriodo(valores.periodo);
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-1">
-          Gastos ({total})
-          <AyudaLink variant="icon" topic="gastos/carga" />
-        </CardTitle>
-        <CardDescription>
-          {periodo === TODOS_LOS_PERIODOS
-            ? 'Todos los períodos'
-            : formatearPeriodo(periodo)}
-          {' · '}
-          {total === 1 ? '1 gasto' : `${total} gastos`}
-        </CardDescription>
-        {puedeEscribir && (
-          <CardAction>
-            <Button onClick={() => setAltaOpen(true)}>
-              <Plus className="size-4" />
-              Nuevo gasto
-            </Button>
-          </CardAction>
-        )}
-      </CardHeader>
+    <div className="flex flex-col gap-4">
+      {/* Decisión 12: la toolbar manda sobre TODA la pantalla, así que va arriba
+          del dashboard y no adentro de la tarjeta del listado. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-1">
+            Gastos
+            <AyudaLink variant="icon" topic="gastos/dashboard" />
+          </CardTitle>
+          <CardDescription>
+            {rotuloPeriodo}
+            {' · '}
+            {total === 1 ? '1 gasto' : `${total} gastos`}
+          </CardDescription>
+          {puedeEscribir && (
+            <CardAction>
+              <Button onClick={() => setAltaOpen(true)}>
+                <Plus className="size-4" />
+                Nuevo gasto
+              </Button>
+            </CardAction>
+          )}
+        </CardHeader>
 
-      <CardContent className="flex flex-col gap-4">
-        {/* Decisión 9: el totalizador del filtro activo, segmentado por tipo. */}
-        <Totalizador totales={totales} />
+        <CardContent>
+          {/* Decisión 8: toolbar, no filtros dentro de la tabla. */}
+          <GastosFiltros
+            valores={valores}
+            modoPeriodo={modoPeriodo}
+            periodos={opcionesPeriodo}
+            puedeVerAutores={puedeEscribir}
+            edificios={edificios}
+            edificioSeleccionado={edificio.id}
+            consolidado={consolidado}
+            onEdificio={irAEdificio}
+            proveedorNombre={proveedorNombre}
+            rubroNombre={rubroNombre}
+            onFiltro={setFiltro}
+            onLimpiar={limpiarFiltros}
+          />
+        </CardContent>
+      </Card>
 
-        {/* Decisión 11: el MISMO total partido por el otro eje (A/B/C). Cada
-            tarjeta filtra la lista por su categoría. */}
-        <TarjetasPorCategoria
-          totales={totales}
-          categoriaActiva={categoria}
-          onFiltro={setFiltro}
-        />
+      {/* Decisión 13: los KPIs y los charts, sobre el mismo filtro que la lista. */}
+      <GastosDashboard
+        alcance={{ edificioId: edificio.id }}
+        filtros={filtrosDashboard}
+        modoPeriodo={modoPeriodo}
+        valores={valores}
+        onFiltro={setFiltro}
+      />
 
-        {/* Decisión 8: toolbar, no filtros dentro de la tabla. */}
-        <GastosFiltros
-          filtros={{
-            periodo,
-            categoria,
-            tipo,
-            proveedorId,
-            proveedorNombre,
-            createdBy,
-            desde,
-            hasta,
-            q,
-          }}
-          periodos={opcionesPeriodo}
-          todosLosPeriodos={TODOS_LOS_PERIODOS}
-          puedeVerAutores={puedeEscribir}
-          onFiltro={setFiltro}
-          onLimpiar={limpiarFiltros}
-        />
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Detalle de gastos ({total})</CardTitle>
+          <CardDescription>
+            El TOTAL del pie es del filtro completo, no de la página
+          </CardDescription>
+        </CardHeader>
 
-        {gastos.length === 0 ? (
+        <CardContent className="flex flex-col gap-4">
+        {cargando ? (
+          <GastosSkeleton />
+        ) : error ? (
+          <EstadoError />
+        ) : gastos.length === 0 ? (
           <EmptyState
             hayFiltros={hayFiltros}
             onLimpiar={limpiarFiltros}
@@ -783,14 +676,14 @@ export default function EdificioGastosTab() {
             {totalPages > 1 && (
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">
-                  Página {page} de {totalPages}
+                  Página {valores.page} de {totalPages}
                 </p>
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={page <= 1}
-                    onClick={() => setFiltro({ page: page - 1 })}
+                    disabled={valores.page <= 1}
+                    onClick={() => setFiltro({ page: valores.page - 1 })}
                   >
                     <ChevronLeft className="size-4" />
                     Anterior
@@ -798,8 +691,8 @@ export default function EdificioGastosTab() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={page >= totalPages}
-                    onClick={() => setFiltro({ page: page + 1 })}
+                    disabled={valores.page >= totalPages}
+                    onClick={() => setFiltro({ page: valores.page + 1 })}
                   >
                     Siguiente
                     <ChevronRight className="size-4" />
@@ -809,7 +702,7 @@ export default function EdificioGastosTab() {
             )}
           </>
         )}
-      </CardContent>
+        </CardContent>
 
       {/* Alta y edición comparten el diálogo; se montan por separado para que
           `gasto` no cambie de null a un objeto sobre el mismo form abierto. */}
@@ -844,6 +737,7 @@ export default function EdificioGastosTab() {
           />
         </>
       )}
-    </Card>
+      </Card>
+    </div>
   );
 }

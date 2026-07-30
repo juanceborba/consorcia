@@ -1,7 +1,10 @@
 // frontend/src/components/gastos/GastosFiltros.jsx — ConsorcIA
-// Barra de filtros del listado de gastos (S3-08b, PRD-04-02 §4.1). Patrón de
-// toolbar de data-table: lo frecuente a la vista, el resto en un panel, y lo
-// que está activo resumido en chips.
+// Barra de filtros del módulo de gastos (S3-08b, extendida en S3-16). Desde
+// S3-16 alimenta las DOS vistas de PRD-04-02 §3: el dashboard y el listado, que
+// leen los mismos search params (ver `hooks/useFiltrosGastos.js`).
+//
+// Patrón de toolbar de data-table: lo frecuente a la vista, el resto en un panel,
+// y lo que está activo resumido en chips.
 //
 // POR QUÉ NO UN FILTRO POR COLUMNA DENTRO DE LA TABLA (primer intento de
 // S3-08b): siete controles metidos en una fila de cabeceras obligan a angostar
@@ -12,12 +15,12 @@
 //
 // DECISIONES:
 //
-// 1. QUÉ QUEDA A LA VISTA: el buscador de concepto y el período. Son los dos
-//    filtros que se usan en casi toda sesión (el período es el eje del módulo:
-//    todo el dominio de expensas se piensa por mes). Los otros cinco
-//    —proveedor, categoría, tipo, rango de fecha y quién lo cargó— viven en el
-//    panel "Filtros", con un contador en el botón para que nunca haya un filtro
-//    activo escondido sin señal.
+// 1. QUÉ QUEDA A LA VISTA: el edificio, el buscador de concepto y el período. Son
+//    los del encabezado de §3.2 y los que se usan en casi toda sesión (el período
+//    es el eje del módulo: todo el dominio de expensas se piensa por mes). Los
+//    otros cuatro —proveedor, categoría, tipo y quién lo cargó— viven en el panel
+//    "Filtros", con un contador en el botón para que nunca haya un filtro activo
+//    escondido sin señal.
 //
 // 2. LOS CHIPS SON LA RED DE SEGURIDAD del panel. Un filtro que no se ve es un
 //    filtro que se olvida, y "la lista no muestra el gasto que cargué" es el
@@ -33,12 +36,31 @@
 // 4. EL FILTRO "CARGADO POR" SOLO PARA EL ORG_ADMIN: su combo se alimenta de la
 //    nómina de staff (`/api/organizaciones/me/usuarios`), que al gestor le
 //    responde 403. La COLUMNA la ve todo el staff; el filtro, no.
+//
+// 5. (S3-16) EL RANGO DE FECHAS ES UN MODO DEL SELECTOR DE PERÍODO, no un filtro
+//    del panel. Los tres modos de §3.2 —últimos 12 meses / desde-hasta / todo el
+//    período— son EXCLUYENTES en el contrato del dashboard, que responde 422 si
+//    llegan combinados. Mientras el rango vivió en el panel (S3-08b) se podía
+//    elegir junto con un período, algo que el listado toleraba y el dashboard no.
+//    Presentarlos como un control con tres modos hace que la exclusión se lea en
+//    la UI, no solo en el error de la API. Al entrar en modo rango se precarga el
+//    mes corriente completo: un rango vacío no es un modo, es un formulario a
+//    medio llenar.
+//
+// 6. (S3-16) EL SELECTOR DE EDIFICIO NAVEGA, NO FILTRA. Los gastos son de un
+//    edificio (`/api/edificios/:id/gastos`) y el consolidado es otro endpoint en
+//    otra pantalla (`/reportes/gastos`, Business+), así que el selector emite el
+//    destino y la pantalla decide la navegación conservando los search params. La
+//    opción "Todos los edificios" se muestra DESHABILITADA cuando el plan no la
+//    incluye, con el motivo en el `title`: esconderla dejaría al plan starter sin
+//    saber que la vista existe, y ofrecerla sin gate sería mandar a un 403.
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { SlidersHorizontal, Search, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
-import { formatearPeriodo, nombreDeAutor } from '@/lib/formato';
+import { formatearPeriodo, nombreDeAutor, periodoActual } from '@/lib/formato';
+import { TODOS_LOS_PERIODOS } from '@/hooks/useFiltrosGastos';
 import ProveedorSelect from '@/components/gastos/ProveedorSelect';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -64,6 +86,26 @@ export const TIPOS = [
   { value: 'ordinario', label: 'Ordinario' },
   { value: 'extraordinario', label: 'Extraordinario' },
 ];
+
+// Valores del selector de edificio que no son un id (decisión 6).
+export const TODOS_LOS_EDIFICIOS = 'todos';
+
+// Modo rango del selector de período (decisión 5).
+const MODO_RANGO = 'rango';
+
+// Decisión 5: el mes corriente completo, para que el modo rango arranque con
+// algo que devuelve datos. `toISOString().slice(0,10)` sobre una fecha local
+// correría el día en UTC-3, así que se arma a mano.
+function mesCorrienteEnFechas(hoy = new Date()) {
+  const iso = (fecha) =>
+    `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(
+      fecha.getDate(),
+    ).padStart(2, '0')}`;
+  return {
+    desde: iso(new Date(hoy.getFullYear(), hoy.getMonth(), 1)),
+    hasta: iso(hoy),
+  };
+}
 
 // Campo del panel: label arriba, control abajo. Local al componente, como en el
 // resto de los formularios del dominio (no hay wrapper compartido todavía).
@@ -97,15 +139,27 @@ function ChipFiltro({ etiqueta, valor, onQuitar }) {
 }
 
 export default function GastosFiltros({
-  filtros,
+  valores,
+  modoPeriodo,
   periodos,
-  todosLosPeriodos,
   puedeVerAutores,
+  // El filtro de tipo solo aparece donde hay un listado que lo aplique: el
+  // dashboard lo ignora por contrato (precisión 3 de §3.4), así que en el reporte
+  // consolidado —que no tiene listado— sería un control que no mueve nada.
+  mostrarTipo = true,
+  // Decisión 6: contexto del selector de edificio.
+  edificios = [],
+  edificioSeleccionado,
+  consolidado = { disponible: false, motivo: undefined },
+  onEdificio,
+  // Nombres legibles de los filtros que en la URL son un UUID.
+  proveedorNombre,
+  rubroNombre,
   onFiltro,
   onLimpiar,
 }) {
-  const { periodo, categoria, tipo, proveedorId, createdBy, desde, hasta, q } =
-    filtros;
+  const { periodo, categoria, tipo, proveedorId, rubroId, createdBy, desde, hasta, q } =
+    valores;
 
   // Decisión 3: lo único local es el texto en curso.
   const [busqueda, setBusqueda] = useState(q);
@@ -129,38 +183,49 @@ export default function GastosFiltros({
   });
   const autores = staff ?? [];
 
-  // Nombre del proveedor y del autor elegidos: los chips muestran el valor
-  // legible, no el UUID. Si el dato todavía no está en cache, el chip dice
-  // "elegido" en vez de mentir con un id.
-  const nombreProveedor = (() => {
-    if (!proveedorId) return null;
-    return filtros.proveedorNombre ?? 'elegido';
-  })();
+  // Los chips muestran el valor legible, no el UUID. Si el nombre todavía no
+  // está en cache, el chip dice "elegido" en vez de mentir con un id.
   const nombreAutor = (() => {
     if (!createdBy) return null;
     const autor = autores.find((a) => a.id === createdBy);
     return autor ? nombreDeAutor(autor) : 'elegido';
   })();
 
+  // Decisión 5: el valor del select de período es el modo cuando no es un mes.
+  const valorPeriodo =
+    modoPeriodo === 'rango'
+      ? MODO_RANGO
+      : modoPeriodo === 'todo'
+        ? TODOS_LOS_PERIODOS
+        : periodo;
+
+  function cambiarPeriodo(valor) {
+    if (valor === MODO_RANGO) {
+      // Entrar al modo rango precargando el mes corriente. `onFiltro` borra el
+      // `periodo` solo (la exclusión vive en useFiltrosGastos).
+      onFiltro(mesCorrienteEnFechas());
+      return;
+    }
+    onFiltro({ periodo: valor });
+  }
+
   // Los del panel, para el contador del botón y los chips.
   const activosDelPanel = [
     proveedorId && {
       clave: 'proveedorId',
       etiqueta: 'Proveedor',
-      valor: nombreProveedor,
+      valor: proveedorNombre ?? 'elegido',
     },
     categoria && {
       clave: 'categoria',
       etiqueta: 'Categoría',
       valor: CATEGORIAS.find((c) => c.value === categoria)?.label ?? categoria,
     },
-    tipo && {
+    mostrarTipo && tipo && {
       clave: 'tipo',
       etiqueta: 'Tipo',
       valor: TIPOS.find((t) => t.value === tipo)?.label ?? tipo,
     },
-    desde && { clave: 'desde', etiqueta: 'Desde', valor: desde },
-    hasta && { clave: 'hasta', etiqueta: 'Hasta', valor: hasta },
     createdBy && {
       clave: 'createdBy',
       etiqueta: 'Cargado por',
@@ -168,16 +233,46 @@ export default function GastosFiltros({
     },
   ].filter(Boolean);
 
-  // El buscador tiene su propio chip: está a la vista, pero con la lista vacía
-  // conviene que el motivo se lea en el mismo lugar que los demás.
+  // El buscador, el rango y el rubro tienen su propio chip aunque no vivan en el
+  // panel: con la lista vacía conviene que el motivo se lea en un solo lugar. El
+  // rubro además se pone clickeando una barra del chart, donde no hay control que
+  // muestre el estado.
   const chips = [
     ...(q ? [{ clave: 'q', etiqueta: 'Concepto', valor: q }] : []),
+    ...(rubroId
+      ? [{ clave: 'rubroId', etiqueta: 'Rubro', valor: rubroNombre ?? 'elegido' }]
+      : []),
     ...activosDelPanel,
   ];
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
+        {/* Decisión 6: el edificio primero — es el alcance de todo lo demás. */}
+        {onEdificio && (
+          <Select
+            id="filtro-edificio"
+            className="w-56"
+            aria-label="Elegir el edificio"
+            value={edificioSeleccionado ?? ''}
+            onChange={(event) => onEdificio(event.target.value)}
+          >
+            {edificios.map((edificio) => (
+              <option key={edificio.id} value={edificio.id}>
+                {edificio.nombre}
+              </option>
+            ))}
+            <option
+              value={TODOS_LOS_EDIFICIOS}
+              disabled={!consolidado.disponible}
+              title={consolidado.motivo}
+            >
+              Todos los edificios
+              {!consolidado.disponible ? ' (plan Business)' : ''}
+            </option>
+          </Select>
+        )}
+
         {/* Decisión 1: buscador y período, siempre visibles. */}
         <div className="relative w-full max-w-64">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -194,18 +289,58 @@ export default function GastosFiltros({
 
         <Select
           id="filtro-periodo"
-          className="w-44"
+          className="w-48"
           aria-label="Filtrar por período"
-          value={periodo}
-          onChange={(event) => onFiltro({ periodo: event.target.value })}
+          value={valorPeriodo}
+          onChange={(event) => cambiarPeriodo(event.target.value)}
         >
           {periodos.map((p) => (
             <option key={p} value={p}>
               {formatearPeriodo(p)}
             </option>
           ))}
-          <option value={todosLosPeriodos}>Todos los períodos</option>
+          <option value={TODOS_LOS_PERIODOS}>Todos los períodos</option>
+          <option value={MODO_RANGO}>Rango de fechas…</option>
         </Select>
+
+        {/* Decisión 5: en modo rango, los dos extremos al lado del selector.
+            Filtran por FECHA DEL GASTO, no por período: el rótulo lo aclara
+            porque son dos ejes distintos del mismo gasto. */}
+        {modoPeriodo === 'rango' && (
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="filtro-desde" className="text-xs text-muted-foreground">
+              Fecha del gasto
+            </Label>
+            <Input
+              id="filtro-desde"
+              type="date"
+              className="w-40"
+              aria-label="Fecha del gasto desde"
+              value={desde}
+              max={hasta || undefined}
+              onChange={(event) => onFiltro({ desde: event.target.value })}
+            />
+            <span className="text-muted-foreground">→</span>
+            <Input
+              id="filtro-hasta"
+              type="date"
+              className="w-40"
+              aria-label="Fecha del gasto hasta"
+              value={hasta}
+              min={desde || undefined}
+              onChange={(event) => onFiltro({ hasta: event.target.value })}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              // Salir del modo rango: se vuelve al período corriente, que es el
+              // default de la pantalla.
+              onClick={() => onFiltro({ periodo: periodoActual() })}
+            >
+              Volver al período
+            </Button>
+          </div>
+        )}
 
         <Popover>
           <PopoverTrigger
@@ -254,6 +389,7 @@ export default function GastosFiltros({
                   </Select>
                 </CampoFiltro>
 
+                {mostrarTipo && (
                 <CampoFiltro id="filtro-tipo" label="Tipo">
                   <Select
                     id="filtro-tipo"
@@ -267,26 +403,7 @@ export default function GastosFiltros({
                     ))}
                   </Select>
                 </CampoFiltro>
-
-                {/* La fecha filtra por rango: un solo día casi nunca es lo que
-                    se busca. Es la fecha del gasto, no el período. */}
-                <CampoFiltro id="filtro-desde" label="Fecha desde">
-                  <Input
-                    id="filtro-desde"
-                    type="date"
-                    value={desde}
-                    onChange={(event) => onFiltro({ desde: event.target.value })}
-                  />
-                </CampoFiltro>
-
-                <CampoFiltro id="filtro-hasta" label="Fecha hasta">
-                  <Input
-                    id="filtro-hasta"
-                    type="date"
-                    value={hasta}
-                    onChange={(event) => onFiltro({ hasta: event.target.value })}
-                  />
-                </CampoFiltro>
+                )}
               </div>
 
               {puedeVerAutores && (
