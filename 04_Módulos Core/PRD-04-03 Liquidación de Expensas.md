@@ -281,6 +281,28 @@ module.exports = router;
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**Estado de la implementación (S3-09).** La pantalla vive en el tab `Liquidaciones` del detalle de edificio (`/edificios/:id/liquidaciones` la lista, `/edificios/:id/liquidaciones/:liquidacionId` la preview), siguiendo la convención "tabs como rutas hijas" de PRD-07-03 §2.2. Diferencias con el mockup de arriba, deliberadas:
+
+- **Las acciones de estado están en la CABECERA, al lado del badge, no en un pie fijo** (S3-10). Es el mismo bloque que dice en qué estado está la liquidación, y con 40 UFs en la tabla un pie obligaría a scrollear hasta el final para aprobar algo que ya se verificó arriba.
+- **El bloque `⚠️ Alertas` no se implementó.** Detectar que un gasto es "50% mayor que el promedio histórico" es análisis sobre la serie del edificio (agentes IA, S6). Lo que sí se sostiene hoy con datos ciertos es la comparación contra la liquidación vigente anterior, que está: como columna `Variación` por unidad y como badge en las tres tarjetas de resumen. Si no hay liquidación previa sin anular, la columna no se dibuja.
+- **Cada fila de la tabla se expande** y muestra el desglose del reparto de esa UF: un renglón por gasto del período con la participación normalizada (`coeficienteAplicado`), el rótulo de cuota (S3-19) y el nombre del esquema de reparto que fijó el peso (S3-20) cuando no fue el coeficiente. Es lo que convierte la preview en una pantalla de verificación y no en un resumen.
+- **La fila TOTAL se suma en el cliente con decimal.js** y se compara contra `totalGeneral`. Si difieren, la pantalla muestra una alerta y pide no aprobar: el DoD del sprint exige que cierre al centavo, así que un descuadre se denuncia en vez de esconderse.
+- **El diálogo de generación** resuelve los `422` del §3 con la acción que los arregla, no con un toast: `SIN_GASTOS` linkea a los gastos de ese período, `GASTOS_SIN_CATEGORIA` también, y `COEFICIENTES_NO_CUADRAN` linkea a las unidades. Un período ya tomado se avisa **antes** del submit (el selector marca qué períodos tienen liquidación vigente).
+
+### 4.2 Workflow de aprobación y recibos (S3-10)
+
+Las transiciones del §1 se operan desde la preview. `frontend/src/lib/liquidacion.js` espeja `TRANSICIONES` del backend en `ACCIONES_LIQUIDACION`, y `accionesDeLiquidacion(estado)` devuelve las que ese estado habilita — la pantalla **dibuja solo esas**. Diferencias con el mockup del §4.1 y decisiones tomadas:
+
+- **`[Rechazar]` no existe.** El mockup lo dibujaba como "vuelve a BORRADOR con comentarios" (§2 PASO 4), pero el backend no tiene ni la transición ni el campo de comentarios: el estado `PENDIENTE_APROBACION` está declarado y ninguna acción lleva a él. Sobre un borrador propio, "rechazar" es indistinguible de anular — que sí existe y libera el período. El approval inbox con rechazo y comentarios necesita el modelo de tareas (S6).
+- **`[Aprobar y Enviar]` se partió en dos botones**, porque son dos actos con consecuencias distintas: aprobar congela el período (no se editan más sus gastos) y **generar recibos** emite documentos con valor legal. Fusionarlos le quitaría al administrador el único momento en que puede aprobar los importes y todavía revisar antes de emitir.
+- **El botón de `APROBADA → ENVIADA` se rotula "Generar recibos", no "Enviar".** En el MVP la acción emite los PDFs y los deja disponibles para descargar; el envío por email es AgentMail (§2 PASO 6, post-beta). Un botón "Enviar" prometería que los propietarios recibieron algo. El **estado** sigue llamándose `ENVIADA` (es el nombre del backend y de la máquina de estados del §1); lo que cambia es el rótulo de la acción.
+- **Las tres acciones pasan por `ConfirmDialog`** (PRD-07-02 §6.3), incluidas las no destructivas: el diálogo es el que explica qué deja de poder hacerse después.
+- **Optimistic update con rollback en `aprobar` y `anular`; `enviar` espera la respuesta.** Emitir N PDFs con QR tarda, y pintar `ENVIADA` antes de tiempo dejaría una pantalla que promete recibos con la lista vacía debajo. El backend además reclama el estado *antes* de generar y lo revierte si falla (decisión 9 de las rutas), así que un optimismo ahí podría contradecir al servidor. La respuesta del `POST /enviar` ya trae los recibos emitidos: con eso se siembra la cache de la lista, sin refetch.
+- **El `409 ESTADO_INVALIDO` se comunica como conflicto de concurrencia**, no como error de la persona ("alguien la modificó mientras la mirabas: ahora está en X"), y se refetchea el detalle.
+- **Los recibos se listan en una card propia de la preview** (`components/liquidaciones/RecibosCard.jsx`), visible desde `APROBADA` — vacía y nombrando la acción que la llena — con un renglón por UF: número de recibo, ordinarias/extraordinarias/total y descarga del PDF. **La descarga es un `fetch` con Bearer que dispara un anchor sobre un blob** (`api.descargar`), no un `<a href>` al endpoint: el token vive en memoria, así que un link bajaría un 401 en un archivo. El nombre sale del `Content-Disposition` de la API.
+- **Permisos:** aprobar, generar recibos y anular son del `org_admin` (`cerbos/policies/liquidacion.yaml`); el gestor no ve esos botones pero **sí descarga** los recibos de sus edificios asignados (`cerbos/policies/recibo.yaml`).
+- E2E: `frontend/e2e/liquidacion-aprobacion.spec.js` (borrador → aprobar → generar recibos → descargar PDF → anular, y el caso del gestor).
+
 ---
 
 ## 5. Decisiones de Diseño
