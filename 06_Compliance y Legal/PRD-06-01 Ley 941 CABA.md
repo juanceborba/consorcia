@@ -96,10 +96,23 @@ Cada recibo debe contener:
 | Vencimiento con interés respectivo | ✅ | Calculado por motor contable |
 | Datos del admin, firma, CUIT, matrícula RPA | ✅ | Heredados de la organización (`organizacion.administrador.*`) |
 | Lugar y formas de pago | ✅ | Campo `recibo.formas_pago` |
-| **Separación ordinarias/extraordinarias** | ✅ | **Motor contable A/B/C** |
+| **Separación ordinarias/extraordinarias** | ✅ | Campo `gasto.esOrdinario` → `totalOrdinarias` / `totalExtraordinarias` por liquidación y por UF |
 | **Código QR** | ✅ (Ley 5983) | **Generado automáticamente** |
 
 ### 3.2 Separación ordinarias vs extraordinarias
+
+> **Corrección (2026-07-29, research previo a S3-09):** la separación ordinarias/extraordinarias
+> **no** la produce la categoría A/B/C. Son **dos ejes independientes**: A/B/C decide **quiénes**
+> pagan el gasto (base legal: CCyC art. 2049, último párrafo — el reglamento puede eximir
+> parcialmente a las UF sin acceso al servicio o sector), y `esOrdinario` decide **en qué subtotal
+> cae** (Ley 941 art. 10: "separadas y diferenciadas"), **quién lo absorbe** entre propietario e
+> inquilino y **qué respaldo de asamblea** necesita (CCyC arts. 2051/2052). Cualquiera de las 6
+> combinaciones es válida: una extraordinaria puede ser de categoría C.
+>
+> El mockup de abajo dibuja "Pintura fachada (cuota 3/6)": **el modelo de datos todavía no
+> soporta cuotas**. Es la brecha 1 del research, y hay que resolverla o declararla fuera de
+> alcance antes de S3-09. Detalle completo, brechas y fuentes:
+> `app/docs/investigacion/ordinarias-extraordinarias-y-categorias.md`.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐

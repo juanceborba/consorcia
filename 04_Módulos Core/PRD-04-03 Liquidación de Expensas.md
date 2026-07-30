@@ -285,6 +285,21 @@ module.exports = router;
 
 ## 5. Decisiones de Diseño
 
+> **Research previo a S3-09 (2026-07-29):** antes de implementar el generador se investigó cómo se
+> cruzan los dos ejes de clasificación de un gasto (ordinaria/extraordinaria × categoría A/B/C),
+> cómo se imputan y quién paga. Conclusión: **son ejes independientes y el modelo actual no
+> contradice la ley**, pero faltan cuatro piezas para liquidar con certeza —**cuotas** de una
+> extraordinaria, **exención parcial** por porcentaje (CCyC art. 2049 admite "eximir
+> parcialmente", nuestro motor es binario), **respaldo documental** (cláusula del reglamento /
+> acta de asamblea) y **fondo de reserva** (prometido en PRD-06-04 §4.1, ausente del motor).
+>
+> **Bloqueante para esta tarea:** el plan de **cuotas**. Si no se modela antes, cambia después la
+> selección de gastos por período que hace el motor. La segunda decisión a tomar por escrito es
+> si el **fondo de reserva** entra en S3 o no.
+>
+> Detalle, matriz de las 6 combinaciones, brechas por riesgo y fuentes legales:
+> `app/docs/investigacion/ordinarias-extraordinarias-y-categorias.md`.
+
 | Decisión | Contexto | Justificación |
 |----------|----------|---------------|
 | **Borrador antes de aprobar** | Seguridad | Admin siempre revisa antes de enviar. Cero envíos automáticos |
