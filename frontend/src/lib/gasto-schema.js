@@ -154,6 +154,12 @@ export const gastoSchema = z
     // number devuelve '' cuando está vacío.
     enCuotas: z.boolean(),
     cuotasTotal: z.string(),
+    // S3-20 — override del esquema de reparto. '' = automático: el gasto usa el
+    // esquema del servicio/sector si hay uno, o el general del edificio si es de
+    // categoría A, o el coeficiente. Sin validación propia: la lista de opciones
+    // ya sale del edificio y el backend rechaza con `ESQUEMA_INVALIDO` lo que no
+    // sea suyo.
+    esquemaRepartoId: z.string(),
   })
   // Espejo de `incoherenciaCategoria` del backend: el campo específico va con su
   // categoría y con ninguna otra. El form ya oculta el que no corresponde; esto
@@ -212,6 +218,7 @@ export const GASTO_VACIO = {
   comprobanteUrl: '',
   enCuotas: false,
   cuotasTotal: '',
+  esquemaRepartoId: '',
 };
 
 // Valores del form → body de la API. El servicio y el sector se mandan según la
@@ -240,6 +247,9 @@ export function aPayload(valores) {
       valores.enCuotas && valores.tipo === 'extraordinario'
         ? Number(valores.cuotasTotal)
         : null,
+    // S3-20: null = automático, y se manda SIEMPRE para que sacar el override en
+    // una edición efectivamente lo borre en vez de dejar el esquema viejo.
+    esquemaRepartoId: valores.esquemaRepartoId || null,
   };
 }
 
@@ -267,6 +277,7 @@ export function aFormulario(gasto) {
     comprobanteUrl: gasto.comprobanteUrl ?? '',
     enCuotas: Boolean(gasto.cuotasTotal),
     cuotasTotal: gasto.cuotasTotal ? String(gasto.cuotasTotal) : '',
+    esquemaRepartoId: gasto.esquemaRepartoId ?? '',
   };
 }
 

@@ -45,6 +45,20 @@ export const queryKeys = {
       { incluirOcultos },
     ],
   },
+  // Esquemas de reparto de un edificio (S3-20). Una sola key para la pantalla de
+  // configuración y para el selector del gasto: el endpoint devuelve la lista y
+  // la configuración juntas (decisión 2 de esquemas-reparto.routes.js) y las dos
+  // pantallas necesitan la misma foto — cambiar el esquema general tiene que
+  // reflejarse en el selector del gasto sin un refetch aparte.
+  esquemasReparto: {
+    all: ['esquemas-reparto'],
+    porEdificio: (edificioId) => [
+      ...queryKeys.esquemasReparto.all,
+      'edificio',
+      edificioId,
+    ],
+    detail: (id) => [...queryKeys.esquemasReparto.all, 'detail', id],
+  },
   // Contexto propio del usuario logueado (S4-12): no lleva scope de
   // organización porque el endpoint agrega por `usuarioId` (PRD-04-11 §5.5).
   me: {

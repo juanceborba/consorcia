@@ -1,5 +1,5 @@
 // frontend/src/pages/edificio/EdificioConfiguracionTab.jsx — ConsorcIA
-// Tab "Configuración" del detalle de edificio (S2-10). Dos secciones:
+// Tab "Configuración" del detalle de edificio (S2-10). Tres secciones:
 //
 // 1. Edición de datos (PATCH /api/edificios/:id, parcial: solo campos
 //    modificados, según editarEdificioSchema del backend). Patrones de
@@ -7,7 +7,12 @@
 //    no hay cambios o es inválido, loading en botón, toast éxito/error,
 //    confirmación al salir con cambios sin guardar) y mutación con
 //    optimistic update + rollback según PRD-07-04 §2.5.
-// 2. Zona de peligro: eliminar edificio (DELETE, soft delete activo=false)
+// 2. Esquemas de reparto (S3-20, `components/esquemas/EsquemasRepartoSection`):
+//    el setup contable del edificio — con qué se reparte cada gasto cuando el
+//    reglamento se aparta del coeficiente. Vive acá y no en Gastos porque es
+//    configuración del edificio, no un dato de cada gasto (ver la decisión 1 de
+//    esa sección).
+// 3. Zona de peligro: eliminar edificio (DELETE, soft delete activo=false)
 //    con ConfirmDialog requireText = nombre del edificio (PRD-07-02 §4.8,
 //    flujo destructivo §6.3). Al confirmar: invalida listas, toast y
 //    redirige a /edificios.
@@ -29,6 +34,7 @@ import { TIPOS_EDIFICIO } from '@/lib/tipos-edificio';
 import { useAuthStore, SIN_ROLES } from '@/stores/auth.store';
 import { useEdificioStore } from '@/stores/edificio.store';
 import AyudaLink from '@/components/ayuda/AyudaLink';
+import EsquemasRepartoSection from '@/components/esquemas/EsquemasRepartoSection';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -359,6 +365,9 @@ export default function EdificioConfiguracionTab() {
           </form>
         </CardContent>
       </Card>
+
+      {/* Esquemas de reparto (S3-20): el gestor la ve en solo lectura. */}
+      <EsquemasRepartoSection edificio={edificio} />
 
       {/* Zona de peligro: solo org_admin/superadmin (PRD-04-01 §2.1) */}
       {puedeEliminar && (

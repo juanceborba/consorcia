@@ -35,10 +35,22 @@
 //    liquidación (posiblemente aprobada en otra pestaña mientras este diálogo
 //    estaba abierto). Se avisa por toast, se cierra y se refresca la lista, que
 //    vuelve con la acción de editar ya deshabilitada.
+//
+// 5. (S3-20) EL ESQUEMA DE REPARTO ES UN OVERRIDE, Y SU DEFAULT ES "AUTOMÁTICO".
+//    Casi ningún gasto necesita elegirlo: la cadena de resolución
+//    (`backend/src/services/esquemas-reparto.js`) ya le da al gasto el esquema
+//    del servicio/sector que le corresponde, o el general del edificio si es de
+//    categoría A, o el coeficiente. El selector existe para el caso puntual —el
+//    cargo por una rotura que paga un grupo de UF— y por eso su primera opción
+//    nombra lo que va a pasar si no se toca nada, en vez de quedar vacía.
+//    Un esquema desactivado no se ofrece, PERO si el gasto que se está editando
+//    ya lo tenía se muestra igual: el backend respeta ese override (decisión b
+//    de su servicio) y esconderlo haría que guardar el gasto se lo sacara sin
+//    que nadie lo pidiera.
 import { useEffect, useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
@@ -114,6 +126,15 @@ export default function GastoFormDialog({
     [edificio.unidades],
   );
 
+  // Decisión 5: los esquemas del edificio para el override. La query es la misma
+  // que la de la pantalla de configuración (mismo endpoint, misma key), así que
+  // crear un esquema allá lo deja disponible acá sin refetch propio.
+  const { data: esquemasData } = useQuery({
+    queryKey: queryKeys.esquemasReparto.porEdificio(edificio.id),
+    queryFn: () => api.get(`/api/edificios/${edificio.id}/esquemas-reparto`),
+    enabled: isOpen,
+  });
+
   const {
     control,
     register,
@@ -165,6 +186,13 @@ export default function GastoFormDialog({
     return periodo && !ultimos.includes(periodo) ? [periodo, ...ultimos] : ultimos;
   }, [periodo]);
 
+  // Decisión 5: activos + el que el gasto ya tenía, aunque esté desactivado.
+  const esquemas = useMemo(() => {
+    const todos = esquemasData?.data ?? [];
+    const elegido = gasto?.esquemaRepartoId ?? null;
+    return todos.filter((e) => e.activo || e.id === elegido);
+  }, [esquemasData, gasto]);
+
   const mutation = useMutation({
     mutationFn: (valores) =>
       esEdicion
@@ -184,6 +212,11 @@ export default function GastoFormDialog({
       }
       if (err.code === 'RUBRO_INVALIDO') {
         setError('rubroId', { type: 'server', message: err.message });
+        return;
+      }
+      // S3-20: el esquema se desactivó o se borró en otra pestaña.
+      if (err.code === 'ESQUEMA_INVALIDO') {
+        setError('esquemaRepartoId', { type: 'server', message: err.message });
         return;
       }
       // Decisión 4: no es un error del formulario.
@@ -455,6 +488,32 @@ export default function GastoFormDialog({
             )}
           </Campo>
         )}
+
+        {/* Decisión 5: override del esquema de reparto. La primera opción nombra
+            lo que pasa si no se toca nada, que es lo correcto para casi todos
+            los gastos. */}
+        <Campo
+          id="gasto-esquema"
+          label="Esquema de reparto"
+          error={errors.esquemaRepartoId}
+          hint="Solo si este gasto se reparte distinto de lo que ya está configurado para el edificio."
+        >
+          <Select
+            id="gasto-esquema"
+            aria-invalid={errors.esquemaRepartoId ? true : undefined}
+            {...register('esquemaRepartoId')}
+          >
+            <option value="">
+              Automático — el que corresponde según la configuración del edificio
+            </option>
+            {esquemas.map((esquema) => (
+              <option key={esquema.id} value={esquema.id}>
+                {esquema.nombre}
+                {esquema.activo ? '' : ' (desactivado)'}
+              </option>
+            ))}
+          </Select>
+        </Campo>
 
         {/* Tipo: radios, no select — son dos opciones y el mockup de §4.2 las
             muestra a la vista, que es lo que conviene para un dato que cambia

@@ -99,6 +99,82 @@ export const AYUDA_TOPICS = {
     ],
   },
 
+  // Esquemas de reparto (S3-20, PRD-02-05 · CCyC art. 2049, último párrafo).
+  // Topic de la sección de Configuración del edificio. Es el concepto más denso
+  // de S3: la semántica del peso cambia con la base y no se puede deducir
+  // mirando la pantalla, así que se explica con los tres casos completos.
+  'edificios/esquemas-reparto': {
+    ruta: ['Edificios', 'Esquemas de reparto'],
+    titulo: 'Esquemas de reparto',
+    relacionados: [
+      'edificios/unidades',
+      'edificios/unidades/categorias-gastos',
+      'gastos/carga',
+    ],
+    pantallas: ['src/components/esquemas/EsquemasRepartoSection.jsx'],
+    secciones: [
+      {
+        titulo: '¿Para qué sirven?',
+        cuerpo:
+          'Por default cada gasto se reparte según el coeficiente de cada unidad, y en la mayoría de los consorcios eso alcanza. Un esquema de reparto es la excepción que define el reglamento de copropiedad: "planta baja abona el 50% del ascensor", "la Torre A tiene su propia tabla", "esto se paga por unidad y no por coeficiente". Si tu edificio no necesita ninguna de esas cosas, no configures nada: sin esquemas, la app liquida por coeficiente.',
+      },
+      {
+        titulo: 'La autoridad es el reglamento, no la administración',
+        cuerpo:
+          'El Código Civil y Comercial (art. 2049, último párrafo) permite eximir parcialmente a las unidades que no tienen acceso a un servicio o a un sector, pero quien lo define es el reglamento de copropiedad. Por eso cada esquema tiene un campo para la cláusula que lo habilita y un link al documento: es lo primero que se pide cuando un propietario impugna lo que se le cobró.',
+      },
+      {
+        titulo: 'La base: qué significa el peso que cargás',
+        cuerpo:
+          'Cada esquema elige una base, y la base cambia cómo se lee la tabla de pesos. Es lo único que conviene tener claro antes de crear el primero.',
+        items: [
+          'Coeficiente: el peso es un factor sobre el coeficiente de la unidad. 0,5 hace que esa unidad pague la mitad de lo que le tocaría, 0 la exime del todo. Una unidad sin peso cargado paga el 100% de su coeficiente.',
+          'Partes iguales: el peso es un factor sobre 1, y el reparto va por unidad y no por coeficiente (todas pagan lo mismo). Una unidad sin peso cargado paga una parte entera.',
+          'Pesos propios: el peso es el valor absoluto que trae el reglamento — la "segunda tabla de coeficientes", que no es proporcional a la general. Acá una unidad sin peso cargado NO participa del reparto.',
+        ],
+      },
+      {
+        titulo: 'El alcance: a quiénes les llega',
+        cuerpo:
+          'El alcance se aplica antes que la base: la unidad que queda afuera no paga nada, sea cual sea su peso. Además es lo que hace que el esquema se aplique solo.',
+        items: [
+          'Todas las unidades: es el alcance del esquema general del edificio.',
+          'Servicio (categoría B): los gastos de ese servicio lo usan automáticamente.',
+          'Sector (categoría C): los gastos de ese sector lo usan automáticamente.',
+          'Solo las unidades de la tabla: ningún gasto lo toma solo — hay que elegirlo a mano en el gasto. Es el caso del cargo por una rotura que pagan tres unidades.',
+        ],
+      },
+      {
+        titulo: 'Cargá solo las excepciones',
+        cuerpo:
+          'La tabla muestra todas las unidades del edificio, pero se completan únicamente las que se apartan del reparto normal. El esquema "todas al 100% menos planta baja al 50%" es un solo peso cargado: el de planta baja. El resto queda vacío y va con el default de la base.',
+      },
+      {
+        titulo: 'Qué esquema usa cada gasto',
+        cuerpo:
+          'La app elige solo, en este orden, y el primero que aplica gana.',
+        items: [
+          'El que hayas elegido a mano en el gasto (el campo "Esquema de reparto" del formulario).',
+          'El esquema del servicio o del sector del gasto, si el edificio tiene uno para ese servicio o sector.',
+          'El esquema general del edificio, y solo para los gastos de categoría A. Un gasto de categoría B sin esquema propio no cae al general: se reparte por coeficiente entre las unidades que tienen el servicio.',
+          'Si nada de lo anterior aplica, el coeficiente de siempre.',
+        ],
+      },
+      {
+        titulo: 'Editar un esquema no cambia lo ya emitido',
+        cuerpo:
+          'Cada liquidación guarda el reparto con el que se calculó, así que editar o desactivar un esquema no reescribe un recibo emitido: cambia lo que se va a liquidar de acá en adelante. Por eso un esquema que ya se usó no se borra — queda desactivado, y deja de ofrecerse y de aplicarse solo. Los gastos que lo habían elegido a mano lo siguen usando: cambiarles el reparto por debajo sería mover plata sin que nadie lo pida.',
+      },
+      {
+        titulo: '¿Quién puede hacer qué?',
+        items: [
+          'Crear, editar y eliminar esquemas y elegir el general: el administrador de la organización.',
+          'El gestor los ve (los necesita para entender un importe) pero no los modifica: cambian cuánto paga cada propietario en todas las liquidaciones futuras.',
+        ],
+      },
+    ],
+  },
+
   // Roles y accesos (PRD-04-11 §2/§3: identidad global, staff vs residentes,
   // multi-organización). Topic del backoffice de staff (/configuracion/usuarios).
   'usuarios/roles': {
@@ -276,6 +352,7 @@ export const AYUDA_TOPICS = {
     titulo: 'Cargar un gasto',
     relacionados: [
       'edificios/unidades/categorias-gastos',
+      'edificios/esquemas-reparto',
       'gastos/proveedores',
       'gastos/rubros',
     ],
@@ -323,6 +400,11 @@ export const AYUDA_TOPICS = {
         ],
       },
       {
+        titulo: 'El esquema de reparto casi nunca se toca',
+        cuerpo:
+          'El campo "Esquema de reparto" viene en "Automático" y así conviene dejarlo: la app ya le aplica al gasto el esquema que el edificio tiene configurado para ese servicio o sector, el general si es de categoría A, o el coeficiente si no hay nada. Elegí uno a mano solo cuando ESTE gasto se reparte distinto de lo habitual —el típico cargo por una rotura que pagan tres unidades—, y creá antes el esquema en Configuración del edificio.',
+      },
+      {
         titulo: 'Un gasto liquidado ya no se edita',
         cuerpo:
           'Cuando la liquidación del período está aprobada, sus gastos quedan congelados: editar o eliminar uno cambiaría un recibo ya emitido. Las acciones de esas filas aparecen deshabilitadas. Para corregir un gasto así hay que anular la liquidación, corregirlo y volver a generarla.',
@@ -341,7 +423,7 @@ export const AYUDA_TOPICS = {
   'edificios/unidades/categorias-gastos': {
     ruta: ['Edificios', 'Unidades', 'Categorías de gastos'],
     titulo: 'Categorías de gastos',
-    relacionados: ['edificios/unidades'],
+    relacionados: ['edificios/unidades', 'edificios/esquemas-reparto'],
     pantallas: ['src/pages/edificio/UnidadCategoriasTab.jsx'],
     secciones: [
       {
@@ -379,7 +461,7 @@ export const AYUDA_TOPICS = {
       {
         titulo: 'Cómo se reparten los gastos al liquidar',
         cuerpo:
-          'Al liquidar las expensas del mes, el motor de liquidación toma cada gasto cargado y lo distribuye según su categoría: los de A entre todas las unidades, los de B solo entre las que tienen ese servicio y los de C solo entre las del sector — siempre en proporción al coeficiente de cada unidad. Por eso conviene clasificar bien desde el alta: una categoría mal puesta hace que una unidad pague de más o de menos todos los meses.',
+          'Al liquidar las expensas del mes, el motor de liquidación toma cada gasto cargado y lo distribuye según su categoría: los de A entre todas las unidades, los de B solo entre las que tienen ese servicio y los de C solo entre las del sector — en proporción al coeficiente de cada unidad, salvo que el edificio tenga configurado un esquema de reparto distinto (por ejemplo, planta baja al 50% del ascensor). Por eso conviene clasificar bien desde el alta: una categoría mal puesta hace que una unidad pague de más o de menos todos los meses.',
       },
       {
         titulo: '¿Cuándo conviene cada una?',
