@@ -251,6 +251,15 @@ test('el gestor lee los gastos pero no los carga', async ({ page }) => {
   // `CardTitle` es un div, no un heading: se busca por texto.
   await expect(page.getByText(/^Gastos \(\d+\)$/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Nuevo gasto' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Cargar el primer gasto' })).toHaveCount(0);
+
+  // Y el empty state no le pide una acción que su rol no puede hacer: sin este
+  // corte el copy decía "Cargá los gastos del período" y no había ningún botón.
+  if (await page.getByText('Este edificio todavía no tiene gastos').isVisible()) {
+    await expect(
+      page.getByText('Los gastos los carga la administración de la organización.'),
+    ).toBeVisible();
+  }
 
   // Los filtros que no dependen de la nómina de staff sí los tiene (lee gastos),
   // pero el de "Cargado por" no: su combo saldría de

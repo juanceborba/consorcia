@@ -327,7 +327,11 @@ function EmptyState({ hayFiltros, onLimpiar, puedeEscribir, onNuevo }) {
       <p className="text-sm text-muted-foreground">
         {hayFiltros
           ? 'Revisá los filtros activos de arriba: se quitan de a uno o todos juntos.'
-          : 'Cargá los gastos del período para poder liquidar las expensas.'}
+          : // Decisión 6: el gestor solo lee. Sin este corte, el empty state le
+            // pedía cargar gastos y no le mostraba ningún botón para hacerlo.
+            puedeEscribir
+            ? 'Cargá los gastos del período para poder liquidar las expensas.'
+            : 'Los gastos los carga la administración de la organización.'}
       </p>
       {hayFiltros ? (
         <Button variant="outline" size="sm" onClick={onLimpiar}>
