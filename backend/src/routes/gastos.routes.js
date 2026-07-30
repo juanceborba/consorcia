@@ -72,6 +72,15 @@
 //    `groupBy` sobre el MISMO `where` que el total, así que los tres números
 //    siempre reconcilian (total = ordinarios + extraordinarios).
 //
+// 10. AGREGADO EN S3-08b: `totales.porCategoria` con { A, B, C }. Es la MISMA
+//     plata partida por otro eje que `ordinarios`/`extraordinarios`, y los dos
+//     ejes son independientes: la categoría A/B/C decide QUIÉNES pagan el gasto
+//     (art. 2049 CCyC, último párrafo: el reglamento puede eximir a las UF sin
+//     acceso al servicio o sector) y `esOrdinario` decide en qué subtotal cae
+//     (art. 10 inc. i de la Ley 941 CABA: ordinarias y extraordinarias van
+//     "separadas y diferenciadas"). Ver
+//     `docs/investigacion/ordinarias-extraordinarias-y-categorias.md`.
+//
 // 9. AGREGADO EN S3-08b: cada fila trae `creadoPor: { id, nombre, apellido }`
 //    (o null) y la lista acepta `?createdBy=`. Es la trazabilidad que pide la
 //    columna "Cargado por" del listado: con varios gestores cargando gastos del
@@ -230,6 +239,24 @@ function segmentarPorTipo(filas) {
   return segmentos;
 }
 
+// Decisión 10: mismo criterio que `segmentarPorTipo`, sobre las tres categorías.
+// Las tres están siempre presentes (una categoría sin gastos es un cero, no un
+// hueco) porque la pantalla dibuja una tarjeta fija por categoría.
+function segmentarPorCategoria(filas) {
+  const segmentos = {
+    A: { cantidad: 0, monto: '0.00' },
+    B: { cantidad: 0, monto: '0.00' },
+    C: { cantidad: 0, monto: '0.00' },
+  };
+  for (const fila of filas) {
+    segmentos[fila.categoria] = {
+      cantidad: fila._count._all,
+      monto: new Decimal(fila._sum.monto ?? 0).toFixed(2),
+    };
+  }
+  return segmentos;
+}
+
 // Decisión 9: quién cargó cada gasto, resuelto en una query por página.
 //
 // `Gasto.createdBy` es un String suelto, SIN relación Prisma a `Usuario` (el PRD
@@ -331,12 +358,19 @@ gastosDeEdificioRouter.get(
           : {}),
       };
 
-      const [agregado, porTipo, gastos] = await Promise.all([
+      const [agregado, porTipo, porCategoria, gastos] = await Promise.all([
         // Decisión 5: los totales son del filtro completo, no de la página.
         prisma.gasto.aggregate({ where, _count: { _all: true }, _sum: { monto: true } }),
         // Decisión 8: el mismo total, partido en ordinarios y extraordinarios.
         prisma.gasto.groupBy({
           by: ['esOrdinario'],
+          where,
+          _count: { _all: true },
+          _sum: { monto: true },
+        }),
+        // Decisión 10: y el mismo total, partido por categoría A/B/C.
+        prisma.gasto.groupBy({
+          by: ['categoria'],
           where,
           _count: { _all: true },
           _sum: { monto: true },
@@ -370,6 +404,7 @@ gastosDeEdificioRouter.get(
           cantidad: total,
           monto: new Decimal(agregado._sum.monto ?? 0).toFixed(2),
           ...segmentarPorTipo(porTipo),
+          porCategoria: segmentarPorCategoria(porCategoria),
         },
       });
     } catch (err) {

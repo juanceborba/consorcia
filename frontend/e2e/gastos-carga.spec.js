@@ -158,6 +158,25 @@ test('carga de un gasto: combobox de proveedor con alta inline, cascada de rubro
     await expect(tarjeta('Extraordinarios')).toContainText('$ 0,00');
   });
 
+  await test.step('las tarjetas por categoría suman lo mismo que el total y filtran', async () => {
+    // El gasto quedó en categoría B: la tarjeta de B lo tiene y las otras dos
+    // están en cero (el eje A/B/C es independiente del ordinario/extraordinario).
+    const tarjetaB = page.getByRole('button', { name: 'Filtrar por categoría B' });
+    await expect(tarjetaB).toContainText('$ 1.500,50');
+    await expect(
+      page.getByRole('button', { name: 'Filtrar por categoría C' }),
+    ).toContainText('$ 0,00');
+
+    // La tarjeta es además el atajo para filtrar por su categoría.
+    await tarjetaB.click();
+    await expect(page).toHaveURL(/categoria=B/);
+    await expect(tarjetaB).toHaveAttribute('aria-pressed', 'true');
+    await expect(fila).toBeVisible();
+    // Y volver a clickearla lo saca.
+    await tarjetaB.click();
+    await expect(page).not.toHaveURL(/categoria=B/);
+  });
+
   await test.step('el panel de filtros aplica tipo y autor, y los resume en chips', async () => {
     // Tipo y "cargado por" viven en el panel, no en la cabecera de la tabla.
     await page.getByRole('button', { name: /Filtros/ }).click();

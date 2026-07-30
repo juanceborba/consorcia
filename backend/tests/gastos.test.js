@@ -478,6 +478,20 @@ describe('gastos (S3-02)', () => {
     assert.deepEqual(todos.data.totales.ordinarios, { cantidad: 2, monto: '400.75' });
     assert.deepEqual(todos.data.totales.extraordinarios, { cantidad: 1, monto: '200.25' });
 
+    // Decisión 10: el mismo total partido por categoría. Los dos ejes son
+    // independientes: F2 es B y extraordinario a la vez, y suma en los dos.
+    assert.deepEqual(todos.data.totales.porCategoria.A, { cantidad: 2, monto: '400.75' });
+    assert.deepEqual(todos.data.totales.porCategoria.B, { cantidad: 1, monto: '200.25' });
+    assert.deepEqual(todos.data.totales.porCategoria.C, { cantidad: 0, monto: '0.00' });
+    // Y los dos ejes cierran contra el mismo total.
+    const sumar = (segmentos) =>
+      segmentos.reduce((acc, s) => acc + Number(s.monto), 0).toFixed(2);
+    assert.equal(
+      sumar([todos.data.totales.ordinarios, todos.data.totales.extraordinarios]),
+      todos.data.totales.monto
+    );
+    assert.equal(sumar(Object.values(todos.data.totales.porCategoria)), todos.data.totales.monto);
+
     // Decisión 9: cada fila dice quién la cargó.
     const f1 = todos.data.data.find((g) => g.concepto === `F1 ${SUFIJO}`);
     assert.equal(f1.creadoPor.id, admin.user.id);

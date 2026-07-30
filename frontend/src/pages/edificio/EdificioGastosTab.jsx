@@ -80,6 +80,16 @@
 //    que un administrador hace antes de liquidar. Es el antecesor de los KPI
 //    cards de S3-16, que reemplazan este bloque cuando el tab pase a dashboard.
 //
+// 11. TRES TARJETAS MÁS, POR CATEGORÍA A/B/C, debajo del totalizador por tipo:
+//     es la MISMA plata partida por el otro eje del dominio, y los dos ejes son
+//     independientes (la categoría decide QUIÉNES pagan; ordinario/extraordinario
+//     decide en qué subtotal cae y quién lo absorbe entre propietario e
+//     inquilino). Cada tarjeta es además el atajo para filtrar la lista por esa
+//     categoría, que es lo que uno quiere hacer justo después de leer el número.
+//     El "quién paga" de cada tarjeta viene del reparto real del motor (S3-03) y
+//     de la base legal del art. 2049 CCyC. Fundamentos y huecos abiertos en
+//     `docs/investigacion/ordinarias-extraordinarias-y-categorias.md`.
+//
 // 10. LA COLUMNA "CARGADO POR" ES TRAZABILIDAD, no adorno: varios gestores
 //     cargan gastos del mismo edificio y "quién cargó esto" es la primera
 //     pregunta cuando un monto no cierra. Se muestra abreviada ("María R.") con
@@ -146,6 +156,16 @@ const LIMIT = 50;
 // Centinela de "sin filtro de período" (decisión 2).
 const TODOS_LOS_PERIODOS = 'todos';
 
+// Decisión 11: las tres categorías del dominio, con el reparto que implica cada
+// una (PRD-04-02 §1.2 y art. 2049 CCyC último párrafo). El copy de "quién paga"
+// es lo que hace que la tarjeta se entienda sin ir a la ayuda: el eje A/B/C
+// decide QUIÉNES pagan, no si el gasto es ordinario o extraordinario.
+const CATEGORIAS_DOMINIO = [
+  { value: 'A', titulo: 'Generales', quienPaga: 'las pagan todas las UF' },
+  { value: 'B', titulo: 'Servicios', quienPaga: 'solo las UF con el servicio' },
+  { value: 'C', titulo: 'Sectores', quienPaga: 'solo las UF del sector' },
+];
+
 const columnHelper = createColumnHelper();
 
 // Badge de la categoría con su detalle: A se reparte a todas las UF, B lleva el
@@ -187,6 +207,56 @@ function GastosSkeleton() {
         ))}
       </CardContent>
     </Card>
+  );
+}
+
+// Decisión 11: las tres categorías, con el filtro que las aísla en la lista. El
+// `onFiltro` hace que la tarjeta sea también el atajo para ver esos gastos, que
+// es lo que uno quiere hacer justo después de leer el número.
+function TarjetasPorCategoria({ totales, categoriaActiva, onFiltro }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      {CATEGORIAS_DOMINIO.map((categoria) => {
+        const segmento = totales?.porCategoria?.[categoria.value];
+        const activa = categoriaActiva === categoria.value;
+        return (
+          <button
+            key={categoria.value}
+            type="button"
+            aria-pressed={activa}
+            // El nombre accesible por defecto sería todo el contenido de la
+            // tarjeta ("B SERVICIOS $ 45.000,00 1 gasto · …"): se declara qué
+            // hace el control, que es filtrar.
+            aria-label={`Filtrar por categoría ${categoria.value}`}
+            className={`flex flex-col gap-1 rounded-lg border p-4 text-left transition-colors hover:bg-accent/50 ${
+              activa ? 'border-ring ring-3 ring-ring/30' : ''
+            }`}
+            onClick={() =>
+              onFiltro({ categoria: activa ? '' : categoria.value })
+            }
+          >
+            <span className="flex items-center gap-2">
+              <Badge variant={`categoria${categoria.value}`}>
+                {categoria.value}
+              </Badge>
+              <span className="text-xs font-medium text-muted-foreground uppercase">
+                {categoria.titulo}
+              </span>
+            </span>
+            <span className="text-lg font-semibold tabular-nums">
+              {formatearMonto(segmento?.monto ?? '0.00')}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {segmento?.cantidad === 1
+                ? '1 gasto'
+                : `${segmento?.cantidad ?? 0} gastos`}
+              {' · '}
+              {categoria.quienPaga}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -573,8 +643,16 @@ export default function EdificioGastosTab() {
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4">
-        {/* Decisión 9: el totalizador del filtro activo, segmentado. */}
+        {/* Decisión 9: el totalizador del filtro activo, segmentado por tipo. */}
         <Totalizador totales={totales} />
+
+        {/* Decisión 11: el MISMO total partido por el otro eje (A/B/C). Cada
+            tarjeta filtra la lista por su categoría. */}
+        <TarjetasPorCategoria
+          totales={totales}
+          categoriaActiva={categoria}
+          onFiltro={setFiltro}
+        />
 
         {/* Decisión 8: toolbar, no filtros dentro de la tabla. */}
         <GastosFiltros
