@@ -482,7 +482,7 @@ class LiquidacionEngine {
    *   cuotasTotal }. Lo que suma a los totales y lo que se reparte es SIEMPRE el
    *   monto imputado al período, nunca el total de la factura.
    */
-  static async calcularLiquidacion(edificioId, periodo, gastos, unidades) {
+  static async calcularLiquidacion(edificioId, periodo, gastos, unidades, opciones = {}) {
     const liquidacion = {
       edificioId,
       periodo,
@@ -501,6 +501,7 @@ class LiquidacionEngine {
 
       for (const detalle of distribucion) {
         liquidacion.detalles.push({
+          tipo: 'GASTO',
           unidadId: detalle.unidadId,
           gastoId: gasto.id,
           // Snapshot del rótulo "cuota k/N": lo que se emitió no cambia si
@@ -528,12 +529,44 @@ class LiquidacionEngine {
       }
     }
 
-    liquidacion.totalGeneral = liquidacion.totalOrdinarias.plus(liquidacion.totalExtraordinarias);
+    // S3-21: el aporte al fondo se reparte DESPUÉS de conocer los totales —su
+    // base es el total de ordinarias del período— y con el esquema de la regla
+    // (o el general del edificio, o el coeficiente). Va como un reparto más,
+    // así que hereda el ajuste de centavos y la garantía de suma exacta.
+    const aporte = new Decimal(opciones.fondoReserva?.aporte ?? 0).toDecimalPlaces(2);
+    liquidacion.totalFondoReserva = aporte;
+
+    if (aporte.greaterThan(0)) {
+      const esquema = opciones.fondoReserva?.esquema ?? null;
+      // Sin esquema, todas las UF por coeficiente: contribuir al fondo es
+      // obligación de todo propietario (CCyC art. 2046 inc. d) y no admite las
+      // exenciones de las categorías B y C, así que se comporta como una A.
+      const gastoDelFondo = { monto: aporte.toFixed(2), categoria: 'A', esquema };
+      for (const detalle of this.calcularDistribucion(gastoDelFondo, unidades)) {
+        liquidacion.detalles.push({
+          tipo: 'FONDO_RESERVA',
+          unidadId: detalle.unidadId,
+          gastoId: null,
+          gastoCuotaId: null,
+          cuotaNumero: null,
+          cuotasTotal: null,
+          esquemaRepartoId: esquema?.id ?? null,
+          esquemaNombre: esquema?.nombre ?? null,
+          coeficienteAplicado: detalle.coeficiente,
+          montoAsignado: detalle.monto,
+        });
+      }
+    }
+
+    liquidacion.totalGeneral = liquidacion.totalOrdinarias
+      .plus(liquidacion.totalExtraordinarias)
+      .plus(liquidacion.totalFondoReserva);
 
     return {
       ...liquidacion,
       totalOrdinarias: liquidacion.totalOrdinarias.toFixed(2),
       totalExtraordinarias: liquidacion.totalExtraordinarias.toFixed(2),
+      totalFondoReserva: liquidacion.totalFondoReserva.toFixed(2),
       totalGeneral: liquidacion.totalGeneral.toFixed(2),
     };
   }

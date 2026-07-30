@@ -49,6 +49,9 @@ import Decimal from 'decimal.js';
 export const SELECT_DETALLE = {
   unidadId: true,
   gastoId: true,
+  // S3-21: `FONDO_RESERVA` es una línea sin gasto detrás (el aporte del período),
+  // así que todo lo que se lea de `gasto` tiene que ser null-safe.
+  tipo: true,
   // S3-19: el rótulo "cuota k/N" sale del SNAPSHOT del detalle, no del plan
   // vigente: si el plan se editó después, el recibo emitido sigue diciendo lo
   // que decía cuando se emitió.
@@ -84,10 +87,35 @@ export function conceptoImpreso(gastoConcepto, cuotaNumero, cuotasTotal) {
 // Un `LiquidacionDetalle` (leído con `SELECT_DETALLE`) → el ítem plano que
 // consumen el agrupador, la preview y el PDF.
 export function itemDeDetalle(d) {
+  // S3-21: el aporte al fondo no tiene gasto, ni rubro, ni proveedor: es una
+  // contribución patrimonial (CCyC art. 2046 inc. d) y va en su propia sección.
+  if (d.tipo === 'FONDO_RESERVA') {
+    return {
+      tipo: 'FONDO_RESERVA',
+      gastoId: null,
+      concepto: 'Fondo de reserva',
+      conceptoImpreso: 'Fondo de reserva',
+      esOrdinario: null,
+      categoria: null,
+      fechaGasto: null,
+      proveedorNombre: null,
+      rubroId: null,
+      rubroNombre: null,
+      subrubroId: null,
+      subrubroNombre: null,
+      pesoAplicado: new Decimal(d.coeficienteAplicado).toFixed(6),
+      esquemaNombre: d.esquemaNombre,
+      cuotaNumero: null,
+      cuotasTotal: null,
+      monto: new Decimal(d.montoAsignado).toFixed(2),
+    };
+  }
+
   // Decisión 3: la hoja puede ser un subrubro (tiene `parent`) o el rubro mismo.
   const hoja = d.gasto.rubro ?? null;
   const padre = hoja?.parent ?? null;
   return {
+    tipo: 'GASTO',
     gastoId: d.gastoId,
     concepto: d.gasto.concepto,
     conceptoImpreso: conceptoImpreso(d.gasto.concepto, d.cuotaNumero, d.cuotasTotal),
@@ -111,10 +139,24 @@ export function itemDeDetalle(d) {
   };
 }
 
+// S3-21: el fondo es la TERCERA sección y no una fila dentro de las ordinarias.
+// La Ley 941 obliga a separar ordinarias de extraordinarias y el fondo no es
+// ninguna de las dos; además, sumarlo a las ordinarias haría que el subtotal de
+// la sección dejara de coincidir con `totalOrdinarias` de la liquidación.
 const SECCIONES = [
-  { id: 'ordinarias', titulo: 'Expensas ordinarias', esOrdinario: true },
-  { id: 'extraordinarias', titulo: 'Expensas extraordinarias', esOrdinario: false },
+  { id: 'ordinarias', titulo: 'Expensas ordinarias', clave: 'ordinarias' },
+  { id: 'extraordinarias', titulo: 'Expensas extraordinarias', clave: 'extraordinarias' },
+  { id: 'fondoReserva', titulo: 'Fondo de reserva', clave: 'fondoReserva' },
 ];
+
+// A qué sección va un ítem. El fondo se distingue por `tipo`; los gastos, por
+// `esOrdinario`, como antes.
+const claveDeSeccion = (item) =>
+  item.tipo === 'FONDO_RESERVA'
+    ? 'fondoReserva'
+    : item.esOrdinario
+      ? 'ordinarias'
+      : 'extraordinarias';
 
 // Decisión 4: nombre y después id, para que nunca haya un empate.
 const porNombre = (a, b) =>
@@ -137,7 +179,7 @@ export function agruparItems(items) {
   const secciones = SECCIONES.map((s) => ({ ...s, total: new Decimal(0), rubros: new Map() }));
 
   for (const item of items ?? []) {
-    const seccion = secciones.find((s) => s.esOrdinario === Boolean(item.esOrdinario));
+    const seccion = secciones.find((s) => s.clave === claveDeSeccion(item));
     if (!seccion) continue;
 
     const monto = new Decimal(item.monto);
@@ -147,7 +189,9 @@ export function agruparItems(items) {
     if (!seccion.rubros.has(rubroKey)) {
       seccion.rubros.set(rubroKey, {
         id: rubroKey,
-        nombre: item.rubroNombre ?? 'Sin rubro',
+        // El aporte al fondo no tiene rubro y no debe inventarse uno: su
+        // "rubro" es el concepto mismo.
+        nombre: item.rubroNombre ?? (item.tipo === 'FONDO_RESERVA' ? 'Aporte del período' : 'Sin rubro'),
         total: new Decimal(0),
         subrubros: new Map(),
       });

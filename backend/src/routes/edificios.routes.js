@@ -28,6 +28,7 @@ import {
   esquemasDeEdificioRouter,
   configuracionLiquidacionRouter,
 } from './esquemas-reparto.routes.js';
+import { fondoReservaDeEdificioRouter } from './fondo-reserva.routes.js';
 
 const router = Router();
 
@@ -44,6 +45,8 @@ router.use('/:id/liquidaciones', liquidacionesDeEdificioRouter);
 // autoridad es el reglamento de copropiedad de ese consorcio.
 router.use('/:id/esquemas-reparto', esquemasDeEdificioRouter);
 router.use('/:id/configuracion-liquidacion', configuracionLiquidacionRouter);
+// S3-21: reglas del fondo de reserva, versionadas por período de vigencia.
+router.use('/:id/fondo-reserva', fondoReservaDeEdificioRouter);
 
 // Estado informativo de la suma de coeficientes del edificio (#57): siempre
 // sobre el set COMPLETO de unidades, nunca sobre la página pedida — la UI usa

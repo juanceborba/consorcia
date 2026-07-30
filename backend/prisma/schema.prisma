@@ -311,6 +311,7 @@ model Edificio {
   liquidaciones   Liquidacion[]
   esquemasReparto EsquemaReparto[]
   configuracionLiquidacion ConfiguracionLiquidacion?
+  reglasFondoReserva ReglaFondoReserva[]
   tickets         Ticket[]
   comunicaciones  Comunicacion[]
   documentos      Documento[]
@@ -655,6 +656,7 @@ model EsquemaReparto {
   gastos          Gasto[]
   liquidaciones   LiquidacionDetalle[]
   configuraciones ConfiguracionLiquidacion[]
+  reglasFondoReserva ReglaFondoReserva[]
 
   // Timestamps
   createdAt       DateTime @default(now()) @map("created_at")
@@ -726,6 +728,70 @@ model ConfiguracionLiquidacion {
 // no aplican la policy estándar de aislamiento por organización; la visibilidad
 // se resuelve a nivel aplicación (merge maestro + propios, PRD-04-02 §1.3/§1.4).
 
+// Base de cálculo del aporte al fondo de reserva (S3-21).
+enum BaseFondoReserva {
+  ORDINARIAS // % sobre el total de expensas ordinarias del período (el default)
+  TOTAL      // % sobre ordinarias + extraordinarias
+  MONTO_FIJO // importe fijo por período, sin porcentaje
+}
+
+// Qué representa una línea del detalle de la liquidación (S3-21).
+enum TipoDetalleLiquidacion {
+  GASTO
+  FONDO_RESERVA
+}
+
+// Regla del fondo de reserva de un edificio, VIGENTE DESDE UN PERÍODO (S3-21).
+//
+// POR QUÉ VERSIONADA Y NO UN CAMPO EN `ConfiguracionLiquidacion`: el porcentaje
+// lo fija una asamblea con fecha, y una liquidación emitida no puede cambiar de
+// importe porque hoy alguien tocó la configuración. La liquidación de un período
+// resuelve "la regla de mayor `vigenciaDesde` <= período" y guarda el snapshot
+// de lo aplicado. Cambiar la regla afecta a los períodos siguientes, nunca al
+// pasado — que es exactamente lo que pasa en el mundo real.
+//
+// El FONDO ES ACUMULATIVO más allá de la regla: cada liquidación aprobada suma
+// su aporte, sin importar con qué regla se calculó.
+model ReglaFondoReserva {
+  id              String   @id @default(uuid())
+  organizacionId  String   @map("organizacion_id")
+  edificioId      String   @map("edificio_id")
+
+  // "2026-08": el período DESDE el que rige (inclusive).
+  vigenciaDesde   String   @map("vigencia_desde")
+
+  base            BaseFondoReserva @default(ORDINARIAS)
+  // % con dos decimales (5.00 = 5%) para ORDINARIAS/TOTAL; NULL en MONTO_FIJO.
+  porcentaje      Decimal? @db.Decimal(5, 2)
+  // Importe por período en MONTO_FIJO; NULL en las otras dos bases.
+  montoFijo       Decimal? @map("monto_fijo") @db.Decimal(12, 2)
+
+  // Con qué esquema se reparte el aporte entre las UFs. NULL = el esquema
+  // general del edificio y, si no hay, el coeficiente. Existe porque contribuir
+  // al fondo NO admite exención (CCyC art. 2046 inc. d): si el esquema general
+  // del edificio exime a una UF de un servicio, esa exención no debería alcanzar
+  // al fondo, y acá se le puede dar el suyo.
+  esquemaRepartoId String? @map("esquema_reparto_id")
+
+  // Respaldo de la decisión: "Asamblea del 12/07/2026". Es la brecha 3 del
+  // research (respaldo documental) aplicada al caso más discutible.
+  motivo          String?
+
+  edificio        Edificio @relation(fields: [edificioId], references: [id], onDelete: Cascade)
+  esquemaReparto  EsquemaReparto? @relation(fields: [esquemaRepartoId], references: [id], onDelete: Restrict)
+  liquidaciones   Liquidacion[]
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdBy       String   @map("created_by")
+
+  // Una sola regla por período de vigencia: dos reglas desde el mismo mes serían
+  // ambiguas y el resolutor tendría que desempatar por un criterio inventado.
+  @@unique([edificioId, vigenciaDesde])
+  @@index([organizacionId, edificioId])
+  @@map("reglas_fondo_reserva")
+}
+
 // ==========================================
 // LIQUIDACIONES
 // ==========================================
@@ -745,7 +811,20 @@ model Liquidacion {
   // Totales
   totalOrdinarias Decimal  @map("total_ordinarias") @db.Decimal(12, 2)
   totalExtraordinarias Decimal @map("total_extraordinarias") @db.Decimal(12, 2)
+  // Aporte al fondo de reserva del período (S3-21). Es el TERCER subtotal y no
+  // se mezcla con los otros dos: la Ley 941 obliga a separar ordinarias de
+  // extraordinarias, y el fondo no es ninguna de las dos (es una contribución
+  // patrimonial, CCyC art. 2046 inc. d). `totalGeneral` los suma a los tres.
+  totalFondoReserva Decimal @default(0) @map("total_fondo_reserva") @db.Decimal(12, 2)
   totalGeneral    Decimal  @map("total_general") @db.Decimal(12, 2)
+
+  // SNAPSHOT de la regla del fondo aplicada (S3-21). Misma razón que
+  // `esquemaNombre` y `cuotaNumero` en el detalle: cambiar el porcentaje a
+  // futuro no puede reescribir lo que ya se emitió, y el recibo tiene que poder
+  // explicar de dónde salió el número ("5,00% de las ordinarias").
+  reglaFondoReservaId String? @map("regla_fondo_reserva_id")
+  fondoReservaBase    BaseFondoReserva? @map("fondo_reserva_base")
+  fondoReservaValor   Decimal? @map("fondo_reserva_valor") @db.Decimal(12, 2)
 
   // Ley 941
   matriculaRPA    String   @map("matricula_rpa")
@@ -756,6 +835,7 @@ model Liquidacion {
   detalles        LiquidacionDetalle[]
   cobros          Cobro[]
   recibos         Recibo[]
+  reglaFondoReserva ReglaFondoReserva? @relation(fields: [reglaFondoReservaId], references: [id], onDelete: Restrict)
 
   // Timestamps
   createdAt       DateTime @default(now()) @map("created_at")
@@ -779,7 +859,15 @@ model LiquidacionDetalle {
   organizacionId        String   @map("organizacion_id")
   liquidacionId   String   @map("liquidacion_id")
   unidadId        String   @map("unidad_id")
-  gastoId         String   @map("gasto_id")
+
+  // Qué representa esta línea (S3-21). `GASTO` es el default histórico: la parte
+  // de un gasto que le toca a una UF. `FONDO_RESERVA` es el aporte del período,
+  // que no tiene gasto detrás — de ahí que `gastoId` sea opcional. Modelarlo como
+  // un detalle más y no en una tabla aparte mantiene UNA sola definición de
+  // "lo que paga esta UF": el reparto, la fila del recibo y la reconciliación
+  // (Σ detalles = total de la liquidación) siguen siendo las mismas.
+  tipo            TipoDetalleLiquidacion @default(GASTO)
+  gastoId         String?  @map("gasto_id")
 
   // Cuota del plan que este detalle imputa (S3-19). NULL = gasto de imputación
   // única (el caso por default). `cuotaNumero`/`cuotasTotal` son el SNAPSHOT del
@@ -806,13 +894,21 @@ model LiquidacionDetalle {
   // Relaciones
   liquidacion     Liquidacion @relation(fields: [liquidacionId], references: [id])
   unidad          Unidad   @relation(fields: [unidadId], references: [id])
-  gasto           Gasto    @relation(fields: [gastoId], references: [id])
+  // Restrict explícito: al ser opcional, Prisma asumiría `SetNull` y un gasto
+  // borrado dejaría detalles liquidados sin decir de qué eran. El soft delete
+  // del gasto (Ley 941) ya cubre la baja.
+  gasto           Gasto?   @relation(fields: [gastoId], references: [id], onDelete: Restrict)
   gastoCuota      GastoCuota? @relation(fields: [gastoCuotaId], references: [id], onDelete: Restrict)
   esquemaReparto  EsquemaReparto? @relation(fields: [esquemaRepartoId], references: [id], onDelete: Restrict)
 
   // Timestamps
   createdAt       DateTime @default(now()) @map("created_at")
 
+  // El aporte al fondo entra una vez por UF y por liquidación, y no tiene
+  // `gastoId` que lo distinga: el índice único parcial que lo garantiza se crea
+  // a mano en la migración (Prisma no expresa índices parciales):
+  //   CREATE UNIQUE INDEX liquidacion_detalles_fondo_unique
+  //     ON liquidacion_detalles (liquidacion_id, unidad_id) WHERE gasto_id IS NULL;
   @@unique([organizacionId, liquidacionId, unidadId, gastoId])
   @@index([organizacionId, liquidacionId])
   @@index([organizacionId, unidadId])
@@ -846,6 +942,10 @@ model Recibo {
   matriculaRPA    String   @map("matricula_rpa")
   totalOrdinarias Decimal  @map("total_ordinarias") @db.Decimal(12, 2)
   totalExtraordinarias Decimal @map("total_extraordinarias") @db.Decimal(12, 2)
+  // Lo que esta UF aporta al fondo de reserva en el período (S3-21). El recibo
+  // lo imprime como tercer subtotal, separado de ordinarias y extraordinarias;
+  // el snapshot de CON QUÉ REGLA se calculó vive en la liquidación.
+  totalFondoReserva Decimal @default(0) @map("total_fondo_reserva") @db.Decimal(12, 2)
   totalGeneral    Decimal  @map("total_general") @db.Decimal(12, 2)
   qrData          String   @map("qr_data") // JSON embebido en el QR del PDF
   fechaEmision    DateTime @map("fecha_emision")

@@ -82,6 +82,7 @@ export function armarQrData(datos) {
     recibo: datos.numero,
     totalOrdinarias: new Decimal(datos.totalOrdinarias).toFixed(2),
     totalExtraordinarias: new Decimal(datos.totalExtraordinarias).toFixed(2),
+    totalFondoReserva: new Decimal(datos.totalFondoReserva ?? 0).toFixed(2),
     totalGeneral: new Decimal(datos.totalGeneral).toFixed(2),
     fechaEmision: new Date(datos.fechaEmision).toISOString(),
     verificacion: datos.verificacionUrl,
@@ -273,6 +274,12 @@ export async function generarReciboPDF(datos) {
     porId.get('extraordinarias'),
     datos.totalExtraordinarias
   );
+  // S3-21: el fondo es el tercer subtotal y solo se imprime si el edificio tiene
+  // una regla vigente. Sin regla, un renglón en $ 0,00 le haría creer al
+  // propietario que aporta a un fondo que no existe.
+  if (new Decimal(datos.totalFondoReserva ?? 0).greaterThan(0)) {
+    seccion(doc, 'FONDO DE RESERVA', porId.get('fondoReserva'), datos.totalFondoReserva);
+  }
 
   // ─── Total a pagar ───
   doc.moveTo(izquierda, doc.y).lineTo(derecha, doc.y).stroke();
@@ -285,6 +292,7 @@ export async function generarReciboPDF(datos) {
   doc.text(
     `Total del consorcio en el período: ordinarias ${pesos(datos.totalesConsorcio.ordinarias)} · ` +
       `extraordinarias ${pesos(datos.totalesConsorcio.extraordinarias)} · ` +
+      `fondo de reserva ${pesos(datos.totalesConsorcio.fondoReserva ?? '0.00')} · ` +
       `general ${pesos(datos.totalesConsorcio.general)}. ` +
       `El importe de esta UF surge de aplicar su coeficiente ${porcentaje(datos.unidad.coeficiente)} ` +
       `sobre los gastos que le corresponden.`

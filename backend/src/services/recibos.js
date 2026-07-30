@@ -148,13 +148,20 @@ export async function emitirRecibos(liquidacion, { fechaEmision = new Date() } =
         items: [],
         totalOrdinarias: new Decimal(0),
         totalExtraordinarias: new Decimal(0),
+        // S3-21: el aporte de esta UF al fondo del período, tercer subtotal.
+        totalFondoReserva: new Decimal(0),
       });
     }
     const fila = porUnidad.get(d.unidadId);
     const monto = new Decimal(d.montoAsignado);
 
-    if (d.gasto.esOrdinario) fila.totalOrdinarias = fila.totalOrdinarias.plus(monto);
-    else fila.totalExtraordinarias = fila.totalExtraordinarias.plus(monto);
+    if (d.tipo === 'FONDO_RESERVA') {
+      fila.totalFondoReserva = fila.totalFondoReserva.plus(monto);
+    } else if (d.gasto.esOrdinario) {
+      fila.totalOrdinarias = fila.totalOrdinarias.plus(monto);
+    } else {
+      fila.totalExtraordinarias = fila.totalExtraordinarias.plus(monto);
+    }
 
     // Decisión 3: los detalles en 0 no se imprimen, pero sí suman al total.
     if (!monto.isZero()) fila.items.push(itemDeDetalle(d));
@@ -167,6 +174,7 @@ export async function emitirRecibos(liquidacion, { fechaEmision = new Date() } =
   const totalesConsorcio = {
     ordinarias: new Decimal(liquidacion.totalOrdinarias).toFixed(2),
     extraordinarias: new Decimal(liquidacion.totalExtraordinarias).toFixed(2),
+    fondoReserva: new Decimal(liquidacion.totalFondoReserva ?? 0).toFixed(2),
     general: new Decimal(liquidacion.totalGeneral).toFixed(2),
   };
 
@@ -192,7 +200,11 @@ export async function emitirRecibos(liquidacion, { fechaEmision = new Date() } =
       secciones: fila.secciones,
       totalOrdinarias: fila.totalOrdinarias.toFixed(2),
       totalExtraordinarias: fila.totalExtraordinarias.toFixed(2),
-      totalGeneral: fila.totalOrdinarias.plus(fila.totalExtraordinarias).toFixed(2),
+      totalFondoReserva: fila.totalFondoReserva.toFixed(2),
+      totalGeneral: fila.totalOrdinarias
+        .plus(fila.totalExtraordinarias)
+        .plus(fila.totalFondoReserva)
+        .toFixed(2),
       totalesConsorcio,
       verificacionUrl: urlVerificacion(id),
     };
@@ -233,6 +245,7 @@ export async function emitirRecibos(liquidacion, { fechaEmision = new Date() } =
       matriculaRPA: liquidacion.matriculaRPA,
       totalOrdinarias: datos.totalOrdinarias,
       totalExtraordinarias: datos.totalExtraordinarias,
+      totalFondoReserva: datos.totalFondoReserva,
       totalGeneral: datos.totalGeneral,
       qrData,
       fechaEmision,
@@ -282,6 +295,7 @@ export const serializarRecibo = (r) => ({
   matriculaRPA: r.matriculaRPA,
   totalOrdinarias: new Decimal(r.totalOrdinarias).toFixed(2),
   totalExtraordinarias: new Decimal(r.totalExtraordinarias).toFixed(2),
+  totalFondoReserva: new Decimal(r.totalFondoReserva ?? 0).toFixed(2),
   totalGeneral: new Decimal(r.totalGeneral).toFixed(2),
   fechaEmision: r.fechaEmision,
   bytes: r.bytes,

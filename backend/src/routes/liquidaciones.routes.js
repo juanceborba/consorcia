@@ -120,6 +120,12 @@ import {
 } from '../services/coeficientes.js';
 import { SELECT_DETALLE, itemDeDetalle, agruparItems } from '../core/detalle-agrupado.js';
 import { resolutorDeEsquemas } from '../services/esquemas-reparto.js';
+import {
+  calcularAporte,
+  explicarRegla,
+  reglaVigente,
+  valorDeLaRegla,
+} from '../services/fondo-reserva.js';
 import { emitirRecibos, serializarRecibo, ReciboError } from '../services/recibos.js';
 
 // ---------------------------------------------------------------------------
@@ -199,6 +205,12 @@ const CAMPOS = {
   fechaLiquidacion: true,
   totalOrdinarias: true,
   totalExtraordinarias: true,
+  // S3-21: el fondo es el tercer subtotal, con el snapshot de la regla que lo
+  // produjo (la regla puede cambiar después; lo emitido no).
+  totalFondoReserva: true,
+  reglaFondoReservaId: true,
+  fondoReservaBase: true,
+  fondoReservaValor: true,
   totalGeneral: true,
   matriculaRPA: true,
   createdAt: true,
@@ -211,7 +223,21 @@ const serializar = (l) => ({
   ...l,
   totalOrdinarias: dinero(l.totalOrdinarias),
   totalExtraordinarias: dinero(l.totalExtraordinarias),
+  totalFondoReserva: dinero(l.totalFondoReserva),
   totalGeneral: dinero(l.totalGeneral),
+  // Cómo se lee el aporte: "5,00% de las expensas ordinarias". Sale del
+  // snapshot y no de la regla vigente, por la misma razón que el monto.
+  fondoReserva: l.fondoReservaBase
+    ? {
+        base: l.fondoReservaBase,
+        valor: l.fondoReservaValor === null ? null : String(l.fondoReservaValor),
+        descripcion: explicarRegla({
+          base: l.fondoReservaBase,
+          porcentaje: l.fondoReservaValor,
+          montoFijo: l.fondoReservaValor,
+        }),
+      }
+    : null,
 });
 
 // Recurso Cerbos: scope doble org + edificio (contrato en cerbos/policies/liquidacion.yaml).
@@ -266,7 +292,7 @@ async function preview(liquidacion) {
   const gastos = new Set();
 
   for (const d of detalles) {
-    gastos.add(d.gastoId);
+    if (d.gastoId) gastos.add(d.gastoId);
 
     if (!porUnidad.has(d.unidadId)) {
       porUnidad.set(d.unidadId, {
@@ -277,6 +303,8 @@ async function preview(liquidacion) {
         coeficiente: coeficiente(d.unidad.coeficiente),
         ordinarias: new Decimal(0),
         extraordinarias: new Decimal(0),
+        // S3-21: lo que esta UF aporta al fondo del período.
+        fondoReserva: new Decimal(0),
         // S3-18: el peso que el motor aplicó A CADA GASTO de esta UF. No es
         // redundante con `coeficiente`: en un gasto B/C es el coeficiente
         // renormalizado entre las alcanzadas, y cuando existan los esquemas de
@@ -290,7 +318,8 @@ async function preview(liquidacion) {
 
     const fila = porUnidad.get(d.unidadId);
     const monto = new Decimal(d.montoAsignado);
-    if (d.gasto.esOrdinario) fila.ordinarias = fila.ordinarias.plus(monto);
+    if (d.tipo === 'FONDO_RESERVA') fila.fondoReserva = fila.fondoReserva.plus(monto);
+    else if (d.gasto.esOrdinario) fila.ordinarias = fila.ordinarias.plus(monto);
     else fila.extraordinarias = fila.extraordinarias.plus(monto);
     // Solo los pesos que participan: un 0 en una UF no alcanzada es ruido.
     if (new Decimal(d.coeficienteAplicado).gt(0)) fila.pesos.push(itemDeDetalle(d));
@@ -302,7 +331,8 @@ async function preview(liquidacion) {
       ...u,
       ordinarias: u.ordinarias.toFixed(2),
       extraordinarias: u.extraordinarias.toFixed(2),
-      total: u.ordinarias.plus(u.extraordinarias).toFixed(2),
+      fondoReserva: u.fondoReserva.toFixed(2),
+      total: u.ordinarias.plus(u.extraordinarias).plus(u.fondoReserva).toFixed(2),
       secciones: agruparItems(u.pesos),
     }));
 
@@ -457,12 +487,35 @@ liquidacionesDeEdificioRouter.post(
         return res.status(422).json(errorCoeficientes(sumarCoeficientes(unidades.map((u) => u.coeficiente))));
       }
 
+      // S3-21: la regla del fondo VIGENTE EN EL PERÍODO (no la actual), con su
+      // esquema propio si lo tiene y, si no, el general del edificio — que es lo
+      // que ya devuelve el resolutor para un gasto sin esquema propio.
+      const regla = await reglaVigente(organizacionId, edificioId, periodo);
+      const esquemaDelFondo = regla
+        ? resolver({ esquemaRepartoId: regla.esquemaRepartoId, categoria: 'A' })
+        : null;
+
       // PASO 2: el motor determinístico (decimal.js, cero floats).
       const calculada = await LiquidacionEngine.calcularLiquidacion(
         edificioId,
         periodo,
         gastos,
-        unidades
+        unidades,
+        {
+          fondoReserva: regla
+            ? {
+                aporte: calcularAporte(regla, {
+                  totalOrdinarias: gastos
+                    .filter((g) => g.esOrdinario)
+                    .reduce((suma, g) => suma.plus(new Decimal(g.montoImputado ?? g.monto)), new Decimal(0)),
+                  totalExtraordinarias: gastos
+                    .filter((g) => !g.esOrdinario)
+                    .reduce((suma, g) => suma.plus(new Decimal(g.montoImputado ?? g.monto)), new Decimal(0)),
+                }),
+                esquema: esquemaDelFondo,
+              }
+            : undefined,
+        }
       );
 
       // Decisión 6: la matrícula RPA es de la organización y se copia acá.
@@ -480,11 +533,17 @@ liquidacionesDeEdificioRouter.post(
           estado: 'BORRADOR',
           totalOrdinarias: calculada.totalOrdinarias,
           totalExtraordinarias: calculada.totalExtraordinarias,
+          totalFondoReserva: calculada.totalFondoReserva,
+          // Snapshot de la regla aplicada (S3-21).
+          reglaFondoReservaId: regla?.id ?? null,
+          fondoReservaBase: regla?.base ?? null,
+          fondoReservaValor: valorDeLaRegla(regla),
           totalGeneral: calculada.totalGeneral,
           matriculaRPA: organizacion.matriculaRPA,
           detalles: {
             create: calculada.detalles.map((d) => ({
               organizacionId,
+              tipo: d.tipo,
               unidadId: d.unidadId,
               gastoId: d.gastoId,
               // S3-19: snapshot de la cuota imputada (null = imputación única).

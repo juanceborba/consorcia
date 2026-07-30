@@ -19,6 +19,7 @@ import rubrosRoutes from './routes/rubros.routes.js';
 import gastosRoutes from './routes/gastos.routes.js';
 import liquidacionesRoutes from './routes/liquidaciones.routes.js';
 import esquemasRepartoRoutes from './routes/esquemas-reparto.routes.js';
+import fondoReservaRoutes from './routes/fondo-reserva.routes.js';
 import recibosRoutes from './routes/recibos.routes.js';
 import meRoutes from './routes/me.routes.js';
 import invitacionesRoutes from './routes/invitaciones.routes.js';
@@ -97,6 +98,7 @@ app.use('/api/liquidaciones', liquidacionesRoutes);
 // el reparto lo fija el reglamento de copropiedad de ESE edificio; acá cuelgan
 // las operaciones sobre un esquema ya identificado.
 app.use('/api/esquemas-reparto', esquemasRepartoRoutes);
+app.use('/api/fondo-reserva', fondoReservaRoutes);
 
 // Recibos (S3-05). La emisión y el listado son de la liquidación
 // (`POST /api/liquidaciones/:id/enviar`, `GET /api/liquidaciones/:id/recibos`);
