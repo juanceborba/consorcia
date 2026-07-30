@@ -296,9 +296,11 @@ export default function LiquidacionPreviewTab() {
       (acc, u) => ({
         ordinarias: acc.ordinarias.plus(u.ordinarias),
         extraordinarias: acc.extraordinarias.plus(u.extraordinarias),
+        // S3-21: el aporte al fondo del período, tercer subtotal.
+        fondoReserva: acc.fondoReserva.plus(u.fondoReserva ?? 0),
         total: acc.total.plus(u.total),
       }),
-      { ordinarias: cero, extraordinarias: cero, total: cero },
+      { ordinarias: cero, extraordinarias: cero, fondoReserva: cero, total: cero },
     );
   }, [data]);
 
@@ -349,7 +351,9 @@ export default function LiquidacionPreviewTab() {
 
   const estado = estadoDeLiquidacion(data.estado);
   const hayComparacion = Boolean(previewAnterior);
-  const columnas = hayComparacion ? 6 : 5;
+  // S3-21: la columna del fondo solo existe si el período tuvo aporte.
+  const hayFondo = new Decimal(data?.totalFondoReserva ?? 0).greaterThan(0);
+  const columnas = 5 + (hayComparacion ? 1 : 0) + (hayFondo ? 1 : 0);
 
   return (
     <div className="flex flex-col gap-4">
@@ -426,6 +430,23 @@ export default function LiquidacionPreviewTab() {
               : null
           }
         />
+        {/* S3-21: la tarjeta aparece solo si el edificio tiene regla vigente.
+            Un "$ 0,00" fijo haría creer que hay un fondo que no existe. */}
+        {new Decimal(data.totalFondoReserva ?? 0).greaterThan(0) && (
+          <CardTotal
+            titulo="Fondo de reserva"
+            monto={data.totalFondoReserva}
+            detalle={data.fondoReserva?.descripcion ?? 'Aporte del período'}
+            variacion={
+              previewAnterior
+                ? variacionPorcentual(
+                    data.totalFondoReserva,
+                    previewAnterior.totalFondoReserva,
+                  )
+                : null
+            }
+          />
+        )}
         <CardTotal
           titulo="Total general"
           monto={data.totalGeneral}
@@ -456,6 +477,7 @@ export default function LiquidacionPreviewTab() {
                 <TableHead className="text-right">Coeficiente</TableHead>
                 <TableHead className="text-right">Ordinarias</TableHead>
                 <TableHead className="text-right">Extraordinarias</TableHead>
+                {hayFondo && <TableHead className="text-right">Fondo</TableHead>}
                 <TableHead className="text-right">Total</TableHead>
                 {hayComparacion && (
                   <TableHead
@@ -499,6 +521,11 @@ export default function LiquidacionPreviewTab() {
                     <TableCell className="text-right tabular-nums">
                       {formatearMonto(u.extraordinarias)}
                     </TableCell>
+                    {hayFondo && (
+                      <TableCell className="text-right tabular-nums">
+                        {formatearMonto(u.fondoReserva ?? '0.00')}
+                      </TableCell>
+                    )}
                     <TableCell className="text-right font-medium tabular-nums">
                       {formatearMonto(u.total)}
                     </TableCell>
@@ -531,6 +558,11 @@ export default function LiquidacionPreviewTab() {
                 <TableCell className="text-right font-medium tabular-nums">
                   {formatearMonto(sumaDeFilas.extraordinarias.toFixed(2))}
                 </TableCell>
+                {hayFondo && (
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {formatearMonto(sumaDeFilas.fondoReserva.toFixed(2))}
+                  </TableCell>
+                )}
                 <TableCell className="text-right font-medium tabular-nums">
                   {formatearMonto(sumaDeFilas.total.toFixed(2))}
                 </TableCell>

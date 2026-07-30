@@ -505,6 +505,43 @@ export const AYUDA_TOPICS = {
     ],
   },
 
+  // Fondo de reserva (S3-21). Concepto de dominio nuevo: qué es, cómo se
+  // calcula, por qué la regla tiene fecha de vigencia y qué NO se puede hacer
+  // todavía (usarlo), que es lo que evita la pregunta "¿dónde está la plata?".
+  'edificios/fondo-reserva': {
+    ruta: ['Edificios', 'Configuración', 'Fondo de reserva'],
+    titulo: 'Fondo de reserva',
+    relacionados: ['edificios/esquemas-reparto', 'liquidaciones', 'gastos/carga'],
+    pantallas: ['src/components/fondo-reserva/FondoReservaSection.jsx'],
+    secciones: [
+      {
+        titulo: 'Qué es y quién lo paga',
+        cuerpo:
+          'Es el ahorro del consorcio para imprevistos. Contribuir a él es una obligación de todos los propietarios (art. 2046 inc. d del Código Civil y Comercial): no admite las exenciones de las categorías B y C, así que por defecto se reparte entre todas las unidades por su coeficiente.',
+      },
+      {
+        titulo: 'La regla tiene fecha de vigencia, y por eso no se edita',
+        cuerpo:
+          'El porcentaje lo vota una asamblea con fecha. Cambiarlo es cargar una regla nueva desde el período que corresponda: las liquidaciones ya emitidas conservan la regla con la que se calcularon, porque cambiarles el importe hoy sería reescribir un comprobante que el propietario ya recibió.',
+        items: [
+          'La lista es el historial: arriba, la más nueva.',
+          '"Vigente" marca la que rige este mes, que puede no ser la primera.',
+          'Una regla que ya liquidó un período no se puede borrar; una futura sí.',
+        ],
+      },
+      {
+        titulo: 'Cómo se calcula el aporte',
+        cuerpo:
+          'Por defecto es un porcentaje de las expensas ordinarias del período —en la práctica, entre 5% y 10%—. También puede calcularse sobre el total (incluyendo extraordinarias) o ser un importe fijo mensual. En la liquidación y en el recibo aparece como un tercer subtotal, separado de las ordinarias y de las extraordinarias, porque no es ninguna de las dos.',
+      },
+      {
+        titulo: 'Todavía no se puede usar el fondo',
+        cuerpo:
+          'El fondo se acumula con cada liquidación aprobada, pero destinarlo a financiar una obra extraordinaria requiere la cuenta corriente del edificio, que está en desarrollo. Hasta entonces el sistema calcula y cobra el aporte, y el uso del dinero se administra fuera de la aplicación.',
+      },
+    ],
+  },
+
   // Primer topic: categorías A/B/C del alta de unidad (Ley 941,
   // PRD-04-01 §1.4). El reparto que describe es el del motor de liquidación
   // de S3 (S3-03: A → todas las UF, B → UF con ese servicio, C → UF del sector).

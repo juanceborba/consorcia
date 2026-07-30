@@ -756,6 +756,29 @@ async function main() {
     });
   }
 
+  // --- Regla del fondo de reserva (S3-21) -----------------------------------
+  // Torre Palermo aporta el 5% de las ordinarias desde hace tres períodos: es el
+  // rango típico (5-10%) y deja la demo con el tercer subtotal visible en la
+  // liquidación y en el recibo. Edificio San Martín queda SIN regla a propósito
+  // —es el caso "el fondo no se cobra"— y los tests de backend lo usan.
+  const vigenciaFondo = new Date();
+  vigenciaFondo.setUTCMonth(vigenciaFondo.getUTCMonth() - 3);
+  await prisma.reglaFondoReserva.create({
+    data: {
+      organizacionId: orgA.id,
+      edificioId: torrePalermo.id,
+      vigenciaDesde: vigenciaFondo.toISOString().slice(0, 7),
+      base: 'ORDINARIAS',
+      porcentaje: '5.00',
+      motivo: 'Asamblea ordinaria — acta 47',
+      createdBy: admin.id,
+    },
+  });
+  console.log(
+    `Fondo de reserva: 5,00% de las ordinarias en ${torrePalermo.nombre} ` +
+      `desde ${vigenciaFondo.toISOString().slice(0, 7)} · ${sanMartin.nombre} sin regla`
+  );
+
   const totalDemo = GASTOS_DEMO.reduce((suma, g) => suma + Number(g.monto), 0);
   console.log(
     `Gastos demo en ${torrePalermo.nombre} (${periodoCorriente}): ` +

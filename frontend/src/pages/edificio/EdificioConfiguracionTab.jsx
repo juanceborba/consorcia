@@ -35,6 +35,7 @@ import { useAuthStore, SIN_ROLES } from '@/stores/auth.store';
 import { useEdificioStore } from '@/stores/edificio.store';
 import AyudaLink from '@/components/ayuda/AyudaLink';
 import EsquemasRepartoSection from '@/components/esquemas/EsquemasRepartoSection';
+import FondoReservaSection from '@/components/fondo-reserva/FondoReservaSection';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -368,6 +369,10 @@ export default function EdificioConfiguracionTab() {
 
       {/* Esquemas de reparto (S3-20): el gestor la ve en solo lectura. */}
       <EsquemasRepartoSection edificio={edificio} />
+
+      {/* S3-21: las reglas del fondo van al lado de los esquemas — las dos
+          responden "cómo se calcula lo que paga cada UF". */}
+      <FondoReservaSection edificio={edificio} />
 
       {/* Zona de peligro: solo org_admin/superadmin (PRD-04-01 §2.1) */}
       {puedeEliminar && (

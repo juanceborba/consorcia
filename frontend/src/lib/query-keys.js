@@ -70,6 +70,13 @@ export const queryKeys = {
     ],
     detail: (id) => [...queryKeys.esquemasReparto.all, 'detail', id],
   },
+  // Reglas del fondo de reserva de un edificio (S3-21). Van aparte de los
+  // esquemas aunque se muestren juntas: invalidar el alta de una regla no tiene
+  // por qué refetchear los esquemas de reparto.
+  fondoReserva: {
+    all: ['fondo-reserva'],
+    porEdificio: (edificioId) => [...queryKeys.fondoReserva.all, 'edificio', edificioId],
+  },
   // Liquidaciones de un edificio (S3-09). La lista lleva el edificio antes que
   // los filtros para poder invalidar todas sus páginas con un prefijo; el
   // `detail` es la preview completa (cabecera + resumen + detalle por UF) y se
