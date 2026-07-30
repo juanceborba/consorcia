@@ -1,9 +1,9 @@
 # GENERADO por app/state/engine.py — no editar a mano
 sprint: S3
 titulo: "Gastos + motor contable"
-generado: 2026-07-30T01:32:23Z
+generado: 2026-07-30T01:36:57Z
 total: 21
-done: 10
+done: 11
 tareas:
   - id: S3-01
     titulo: "Ajustes de schema + policies Cerbos"
@@ -195,13 +195,13 @@ tareas:
   - id: S3-18
     titulo: "Motor de reparto por pesos por unidad (seam)"
     seccion: Backend
-    status: in-progress
+    status: done
     depende_de: []
     desbloquea: [S3-20]
     issue: 66
     lote: D
     fuente: [PRD-02-05]
-    claimed_by: claude
+    claimed_by: null
     score: 7.8
   - id: S3-19
     titulo: "Cuotas de gastos extraordinarios"
@@ -217,7 +217,7 @@ tareas:
   - id: S3-20
     titulo: "Esquemas de reparto configurables por edificio"
     seccion: Backend
-    status: stale
+    status: ready
     depende_de: [S3-18]
     desbloquea: []
     issue: 68

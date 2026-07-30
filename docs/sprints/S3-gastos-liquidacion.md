@@ -26,7 +26,7 @@
   - _Depende de: S3-01._
 - [ ] **S3-15 Endpoint dashboard de gastos.** `GET /api/edificios/:id/gastos/dashboard` y `GET /api/organizaciones/:id/gastos/dashboard` (gate plan Business+ → 403 `PLAN_INSUFICIENTE`), query `periodo=YYYY-MM` | `desde&hasta` | `todo=1`, respuesta agregada (KPIs, top 10 proveedores, por rubro, por categoría, evolución mensual) según PRD-04-02 §3.4, con Prisma groupBy + decimal.js (cero floats). Tests contra cálculo manual.
   - _Depende de: S3-02._
-- [ ] **S3-18 Motor de reparto por pesos por unidad (seam).** Refactor interno de calcularDistribucion a distribuir(monto, pesos) con pesosDe(gasto, unidades) derivando los pesos de la categoria A/B/C como hoy (cero cambio funcional). La preview expone el peso normalizado por UF. Diseño: docs/investigacion/esquemas-de-reparto.md
+- [x] **S3-18 Motor de reparto por pesos por unidad (seam).** Refactor interno de calcularDistribucion a distribuir(monto, pesos) con pesosDe(gasto, unidades) derivando los pesos de la categoria A/B/C como hoy (cero cambio funcional). La preview expone el peso normalizado por UF. Diseño: docs/investigacion/esquemas-de-reparto.md
   - _Depende de: nada._
 - [ ] **S3-19 Cuotas de gastos extraordinarios.** Plan de cuotas + imputacion por periodo, seleccion de gastos del motor por periodo, UI en el form de gasto y rotulo cuota k/N en la lista y el recibo. Brecha 1 del research.
   - _Depende de: S3-02._
