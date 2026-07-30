@@ -149,6 +149,11 @@ export const gastoSchema = z
     comprobanteUrl: opcional(
       z.url('Link inválido: tiene que empezar con http:// o https://').max(500),
     ),
+    // S3-19 — plan de cuotas. `enCuotas` es solo del form (el switch); lo que
+    // viaja a la API es `cuotasTotal`. Se valida como string porque el input
+    // number devuelve '' cuando está vacío.
+    enCuotas: z.boolean(),
+    cuotasTotal: z.string(),
   })
   // Espejo de `incoherenciaCategoria` del backend: el campo específico va con su
   // categoría y con ninguna otra. El form ya oculta el que no corresponde; esto
@@ -168,6 +173,27 @@ export const gastoSchema = z
         message: 'Elegí el sector que se reparte',
       });
     }
+    // S3-19: espejo de `incoherenciaCuotas` + del rango del backend. El form ya
+    // esconde el switch en un gasto ordinario; esto cubre el residuo de haber
+    // cambiado de tipo con un plan cargado.
+    if (data.enCuotas) {
+      if (data.tipo === 'ordinario') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['enCuotas'],
+          message: 'Solo un gasto extraordinario se imputa en cuotas',
+        });
+        return;
+      }
+      const cuotas = Number(data.cuotasTotal);
+      if (!data.cuotasTotal || !Number.isInteger(cuotas) || cuotas < 2 || cuotas > 120) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['cuotasTotal'],
+          message: 'Ingresá un número entero de cuotas, entre 2 y 120',
+        });
+      }
+    }
   });
 
 export const GASTO_VACIO = {
@@ -184,6 +210,8 @@ export const GASTO_VACIO = {
   fechaGasto: hoyISO(),
   periodo: periodoActual(),
   comprobanteUrl: '',
+  enCuotas: false,
+  cuotasTotal: '',
 };
 
 // Valores del form → body de la API. El servicio y el sector se mandan según la
@@ -205,6 +233,13 @@ export function aPayload(valores) {
     fechaGasto: valores.fechaGasto,
     periodo: valores.periodo,
     comprobanteUrl: valores.comprobanteUrl.trim() || null,
+    // S3-19: null borra el plan (el backend lo interpreta como imputación
+    // única), y se manda SIEMPRE para que desactivar el switch en una edición
+    // efectivamente lo borre en vez de dejar el plan viejo.
+    cuotasTotal:
+      valores.enCuotas && valores.tipo === 'extraordinario'
+        ? Number(valores.cuotasTotal)
+        : null,
   };
 }
 
@@ -230,6 +265,8 @@ export function aFormulario(gasto) {
     fechaGasto: (gasto.fechaGasto ?? '').slice(0, 10) || hoyISO(),
     periodo: gasto.periodo ?? periodoActual(),
     comprobanteUrl: gasto.comprobanteUrl ?? '',
+    enCuotas: Boolean(gasto.cuotasTotal),
+    cuotasTotal: gasto.cuotasTotal ? String(gasto.cuotasTotal) : '',
   };
 }
 
@@ -251,6 +288,47 @@ export function serviciosDeEdificio(unidades = []) {
   return [...valores].sort((a, b) =>
     etiquetaDeServicio(a).localeCompare(etiquetaDeServicio(b), 'es-AR'),
   );
+}
+
+// S3-19 — resumen del plan de cuotas para mostrarlo ANTES de guardar.
+//
+// Replica la política del motor (`planDeCuotas` en
+// backend/src/core/liquidacion.engine.js): cuota base truncada al centavo y el
+// resto en la última. Está duplicada a propósito y no puede divergir en silencio:
+// lo que el administrador ve acá tiene que ser lo que el backend va a generar, y
+// el backend sigue siendo la única fuente de verdad de las filas que se guardan.
+// Devuelve null si todavía no hay datos suficientes para calcularlo.
+export function resumenDePlan({ monto, cuotasTotal, periodo }) {
+  const cantidad = Number(cuotasTotal);
+  if (!Number.isInteger(cantidad) || cantidad < 2 || cantidad > 120) return null;
+  if (!periodo || !/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo)) return null;
+
+  let total;
+  try {
+    total = new Decimal(normalizarMonto(monto));
+  } catch {
+    return null;
+  }
+  if (!total.isFinite() || total.lte(0)) return null;
+
+  const base = total.div(cantidad).toDecimalPlaces(2, Decimal.ROUND_DOWN);
+  const ultima = total.minus(base.times(cantidad - 1));
+
+  const [anio, mes] = periodo.split('-').map(Number);
+  const absoluto = anio * 12 + (mes - 1) + (cantidad - 1);
+  const hastaAnio = Math.floor(absoluto / 12);
+  const hastaMes = absoluto - hastaAnio * 12 + 1;
+
+  return {
+    cantidad,
+    montoCuota: base.toFixed(2),
+    montoUltima: ultima.toFixed(2),
+    // El ajuste de centavos hace que la última cuota difiera: se avisa en vez de
+    // que el administrador lo descubra en el recibo del último mes.
+    ultimaDifiere: !ultima.equals(base),
+    desde: periodo,
+    hasta: `${String(hastaAnio).padStart(4, '0')}-${String(hastaMes).padStart(2, '0')}`,
+  };
 }
 
 export function sectoresDeEdificio(unidades = []) {

@@ -91,6 +91,10 @@ export async function emitirRecibos(liquidacion, { fechaEmision = new Date() } =
       select: {
         unidadId: true,
         montoAsignado: true,
+        // S3-19: el rótulo "cuota k/N" del ítem sale del snapshot del detalle
+        // (PRD-06-01 §3.2 lo dibuja: "Pintura fachada (cuota 3/6)").
+        cuotaNumero: true,
+        cuotasTotal: true,
         unidad: { select: { id: true, numero: true, tipo: true, m2: true, coeficiente: true } },
         gasto: { select: { id: true, concepto: true, esOrdinario: true, fechaGasto: true } },
       },
@@ -145,7 +149,15 @@ export async function emitirRecibos(liquidacion, { fechaEmision = new Date() } =
     }
     const fila = porUnidad.get(d.unidadId);
     const monto = new Decimal(d.montoAsignado);
-    const item = { concepto: d.gasto.concepto, monto: monto.toFixed(2) };
+    // S3-19: el ítem de una cuota se rotula "Concepto (cuota k/N)". Va en el
+    // concepto impreso y no en un campo aparte porque el Modelo Único de la Ley
+    // 941 tiene una columna de concepto y una de importe, no una de cuota.
+    const item = {
+      concepto: d.cuotasTotal
+        ? `${d.gasto.concepto} (cuota ${d.cuotaNumero}/${d.cuotasTotal})`
+        : d.gasto.concepto,
+      monto: monto.toFixed(2),
+    };
 
     if (d.gasto.esOrdinario) {
       fila.totalOrdinarias = fila.totalOrdinarias.plus(monto);

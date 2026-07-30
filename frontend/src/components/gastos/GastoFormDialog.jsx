@@ -44,7 +44,7 @@ import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
-import { formatearPeriodo, ultimosPeriodos } from '@/lib/formato';
+import { formatearMonto, formatearPeriodo, ultimosPeriodos } from '@/lib/formato';
 import {
   aFormulario,
   aPayload,
@@ -53,6 +53,7 @@ import {
   GASTO_VACIO,
   gastoSchema,
   MONEDAS,
+  resumenDePlan,
   sectoresDeEdificio,
   serviciosDeEdificio,
 } from '@/lib/gasto-schema';
@@ -78,6 +79,7 @@ const CAMPOS_DEL_SERVIDOR = [
   'fechaGasto',
   'periodo',
   'comprobanteUrl',
+  'cuotasTotal',
 ];
 
 // Campo con label, error inline y hint. Mismo componente local que
@@ -137,6 +139,24 @@ export default function GastoFormDialog({
 
   const categoria = watch('categoria');
   const periodo = watch('periodo');
+  // S3-19: el plan de cuotas solo existe para un extraordinario, y su resumen se
+  // recalcula en vivo con las mismas reglas que el motor (ver `resumenDePlan`).
+  const tipo = watch('tipo');
+  const enCuotas = watch('enCuotas');
+  const cuotasTotal = watch('cuotasTotal');
+  const monto = watch('monto');
+  const moneda = watch('moneda');
+  const esExtraordinario = tipo === 'extraordinario';
+  const plan = useMemo(
+    () => (esExtraordinario && enCuotas ? resumenDePlan({ monto, cuotasTotal, periodo }) : null),
+    [esExtraordinario, enCuotas, monto, cuotasTotal, periodo],
+  );
+
+  // Pasar a ordinario apaga el plan: el backend lo rechaza (422) y dejar el
+  // switch encendido mostraría un plan que no se va a guardar.
+  useEffect(() => {
+    if (!esExtraordinario && enCuotas) setValue('enCuotas', false);
+  }, [esExtraordinario, enCuotas, setValue]);
 
   // Los últimos 12 períodos, más el del gasto que se está editando si cayera
   // fuera de la ventana (decisión 2 de gasto-schema.js).
@@ -500,6 +520,86 @@ export default function GastoFormDialog({
             </Select>
           </Campo>
         </div>
+
+        {/* S3-19 — plan de cuotas. Solo aparece en un extraordinario: una
+            ordinaria es el gasto corriente del mes y prorratearla escondería el
+            gasto real de cada período (el backend lo rechaza con 422). El resumen
+            en vivo es lo que evita la sorpresa del último recibo: muestra la
+            cuota, el rango de períodos y, si el ajuste de centavos la mueve, el
+            monto de la última. */}
+        {esExtraordinario && (
+          <fieldset className="flex flex-col gap-3 rounded-md border border-border p-4">
+            <legend className="px-1 text-sm leading-none font-medium">
+              Imputación
+            </legend>
+
+            <label className="flex items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 accent-primary"
+                {...register('enCuotas')}
+              />
+              <span>
+                Cobrar en cuotas
+                <span className="block text-xs text-muted-foreground">
+                  El gasto se reparte en cuotas mensuales consecutivas desde el período
+                  elegido. Sin esto, entra completo en un solo período.
+                </span>
+              </span>
+            </label>
+            {errors.enCuotas && (
+              <p className="text-sm text-destructive">{errors.enCuotas.message}</p>
+            )}
+
+            {enCuotas && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Campo
+                  id="gasto-cuotas"
+                  label="Cantidad de cuotas *"
+                  error={errors.cuotasTotal}
+                  hint="Entre 2 y 120."
+                >
+                  <Input
+                    id="gasto-cuotas"
+                    type="number"
+                    min="2"
+                    max="120"
+                    step="1"
+                    inputMode="numeric"
+                    aria-invalid={errors.cuotasTotal ? true : undefined}
+                    {...register('cuotasTotal')}
+                  />
+                </Campo>
+
+                <div
+                  className="flex flex-col justify-center gap-1 rounded-md bg-muted/50 p-3 text-sm"
+                  aria-live="polite"
+                >
+                  {plan ? (
+                    <>
+                      <p>
+                        <strong>{plan.cantidad}</strong> cuotas de{' '}
+                        <strong>{formatearMonto(plan.montoCuota, moneda)}</strong>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        De {formatearPeriodo(plan.desde)} a {formatearPeriodo(plan.hasta)}
+                        {plan.ultimaDifiere && (
+                          <>
+                            {' · '}última: {formatearMonto(plan.montoUltima, moneda)}
+                          </>
+                        )}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Completá el monto y la cantidad de cuotas para ver el plan.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </fieldset>
+        )}
 
         {/* Decisión 4 de gasto-schema.js: link, no upload (todavía no hay
             endpoint de subida). */}

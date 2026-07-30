@@ -81,7 +81,7 @@ expresividad, y falta justo en lo que S3-09 va a liquidar.
 
 | # | Brecha | Riesgo si liquidamos sin resolverla | Recomendación |
 |---|---|---|---|
-| 1 | **Una extraordinaria no se puede dividir en cuotas.** El gasto entra completo en un período. El propio mockup de PRD-06-01 §3.2 dibuja "Pintura fachada (cuota 3/6)" — el modelo no lo soporta | Alto y frecuente: casi ninguna obra se cobra en un solo mes. Sin cuotas, el administrador va a cargar 6 gastos a mano con el mismo concepto, y el total anual del rubro va a quedar mal | Modelar el **plan de cuotas** (gasto padre + N imputaciones por período, o `cuotaActual/cuotaTotal` con monto imputado). **Decidir antes de S3-09**, porque cambia qué gastos toma el motor para un período |
+| 1 | ✅ **RESUELTA en S3-19** (issue #67). `GastoCuota` + `planDeCuotas` en el motor: el gasto sigue siendo la factura y las cuotas son las imputaciones por período. Contrato en PRD-04-02 §1.1.b. Era: *una extraordinaria no se puede dividir en cuotas — el gasto entra completo en un período, aunque el mockup de PRD-06-01 §3.2 dibuje "Pintura fachada (cuota 3/6)"* | Alto y frecuente: casi ninguna obra se cobra en un solo mes. Sin cuotas, el administrador va a cargar 6 gastos a mano con el mismo concepto, y el total anual del rubro va a quedar mal | Modelar el **plan de cuotas** (gasto padre + N imputaciones por período, o `cuotaActual/cuotaTotal` con monto imputado). **Decidir antes de S3-09**, porque cambia qué gastos toma el motor para un período |
 | 2 | **La exención del art. 2049 es binaria, la ley la admite parcial** | Medio: un reglamento que diga "PB abona el 50% del ascensor" hoy no se puede representar. El workaround (cargar dos gastos) desvirtúa el importe del proveedor | Permitir un **porcentaje por UF o por grupo** en la categoría B/C. Se puede diferir a S4+ si el motor deja el seam (`coeficienteEfectivo` ya existe conceptualmente) |
 | 3 | **Sin respaldo documental**: qué cláusula del reglamento habilita el reparto B/C, qué acta de asamblea aprobó la obra | Medio-legal: es lo primero que se discute cuando un propietario impugna. Además el QR de la Ley 941 tiene que llevar a la documentación del período | Campo opcional de **referencia** (cláusula / acta + link al PDF) en el gasto extraordinario y en el servicio/sector del edificio. Barato y evita un rediseño después |
 | 4 | **Fondo de reserva ausente.** PRD-06-04 §4.1 lo promete como "cálculo automático en liquidación" y el motor no lo tiene | Medio: es un ítem esperado de la expensa (5–10% de la ordinaria en la práctica) y cambia el importe a cobrar | Definir si entra en S3 (como ítem de la liquidación) o si se declara fuera de alcance explícitamente. **No dejarlo implícito** |
@@ -92,10 +92,10 @@ expresividad, y falta justo en lo que S3-09 va a liquidar.
 
 Se puede construir el generador y la preview **ahora**, con dos condiciones:
 
-1. **Resolver la brecha 1 (cuotas) antes de escribir el motor de liquidación**, o dejar
-   explícito en el PRD que S3 liquida solo gastos de imputación única y que el plan de cuotas es
-   una tarea propia. Es la única brecha que, si aparece después, obliga a rehacer la selección
-   de gastos por período.
+1. ~~**Resolver la brecha 1 (cuotas) antes de escribir el motor de liquidación**~~ — **hecho en
+   S3-19**, antes de S3-09: la selección de gastos del período ya es una selección de
+   *imputaciones* (`imputacionDelPeriodo`), así que S3-09 se escribe sobre el modelo definitivo y
+   no hay que rehacerla.
 2. **Decidir la brecha 4 (fondo de reserva)** — dentro o fuera de S3, pero por escrito.
 
 Las brechas 2, 3 y 5 son aditivas: no cambian lo que la liquidación de S3 calcula, y pueden

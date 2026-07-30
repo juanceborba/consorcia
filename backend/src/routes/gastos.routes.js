@@ -86,6 +86,30 @@
 //    columna "Cargado por" del listado: con varios gestores cargando gastos del
 //    mismo edificio, "quién cargó esto" es la primera pregunta cuando un monto
 //    no cierra. Ver `autoresDe` para por qué no es un `include`.
+//
+// 11. AGREGADO EN S3-19 — CUOTAS. Un gasto extraordinario puede declarar
+//     `cuotasTotal`: el alta genera su plan con `planDeCuotas` (montos derivados,
+//     Σ = el total de la factura) y el gasto pasa a imputarse una cuota por
+//     período. Consecuencias en este archivo:
+//
+//     a. `?periodo=` deja de ser `gasto.periodo = P`. Un gasto en cuotas
+//        pertenece a los N períodos de su plan, así que el filtro es "de
+//        imputación única en P, O con una cuota en P" (ver `filtroDePeriodo`).
+//        Sin esto, la obra desaparecería de todos los meses menos el primero.
+//
+//     b. Con `?periodo=` activo, la fila trae `montoImputado` = el monto de la
+//        cuota de ese período (y `cuota: { numero, cuotasTotal }` para el rótulo
+//        "cuota k/N"), y los `totales` suman IMPUTADOS. Es lo que hace que el
+//        total del filtro sea el mismo número que va a repartir la liquidación de
+//        ese período; el total de la factura sigue disponible en `monto`. Sin
+//        `?periodo=` no hay imputación que mostrar: la fila es la factura y los
+//        totales suman `monto`, como antes de S3-19.
+//
+//     c. El candado del PUT/DELETE no cambia y ya cubre las cuotas: los
+//        `LiquidacionDetalle` referencian el `gastoId`, así que un gasto con
+//        CUALQUIER cuota liquidada cae en el mismo `409 LIQUIDACION_APROBADA`.
+//        Editar el plan (o el monto, o el período) REGENERA las cuotas enteras:
+//        un plan a medio editar es peor que uno recalculado.
 
 import { Router } from 'express';
 import Decimal from 'decimal.js';
@@ -99,8 +123,10 @@ import {
   editarGastoSchema,
   listarGastosSchema,
   incoherenciaCategoria,
+  incoherenciaCuotas,
 } from '../schemas/gasto.schema.js';
 import { rubroUsable } from '../services/rubros.js';
+import { planDeCuotas, LiquidacionError } from '../core/liquidacion.engine.js';
 
 // ---------------------------------------------------------------------------
 // Constantes y helpers
@@ -131,10 +157,27 @@ const CAMPOS = {
   createdBy: true,
   proveedor: { select: { id: true, razonSocial: true, activo: true } },
   rubro: { select: { id: true, nombre: true, parentId: true, activo: true } },
+  // Decisión 11: el plan de cuotas viaja con el gasto (son a lo sumo 120 filas
+  // chicas y la UI necesita los períodos para mostrar el plan completo).
+  cuotas: {
+    select: { id: true, numero: true, cuotasTotal: true, periodo: true, monto: true },
+    orderBy: { numero: 'asc' },
+  },
 };
 
 // Decisión 6: el monto sale como string, nunca como número.
-const serializar = (g) => ({ ...g, monto: new Decimal(g.monto).toFixed(2) });
+// Decisión 11: `cuotasTotal` es null cuando el gasto es de imputación única, que
+// es lo que la UI necesita para decidir si dibuja el rótulo "cuota k/N".
+const serializar = (g) => ({
+  ...g,
+  monto: new Decimal(g.monto).toFixed(2),
+  ...(g.cuotas
+    ? {
+        cuotasTotal: g.cuotas.length > 0 ? g.cuotas[0].cuotasTotal : null,
+        cuotas: g.cuotas.map((c) => ({ ...c, monto: new Decimal(c.monto).toFixed(2) })),
+      }
+    : {}),
+});
 
 const noEncontrado = () => ({
   error: { code: 'GASTO_NO_ENCONTRADO', message: 'El gasto no existe' },
@@ -189,7 +232,7 @@ async function proveedorUsable(organizacionId, proveedorId) {
 // Corre las tres validaciones que no puede hacer Zod (dependen de la DB y de la
 // organización). Devuelve la respuesta de error o null si todo cierra.
 async function validacionesCruzadas(organizacionId, gasto) {
-  const incoherencia = incoherenciaCategoria(gasto);
+  const incoherencia = incoherenciaCategoria(gasto) ?? incoherenciaCuotas(gasto);
   if (incoherencia) return { status: 422, body: validacionFallida(incoherencia) };
 
   if (!(await proveedorUsable(organizacionId, gasto.proveedorId))) {
@@ -199,6 +242,21 @@ async function validacionesCruzadas(organizacionId, gasto) {
     return { status: 422, body: rubroInvalido() };
   }
   return null;
+}
+
+// Decisión 11: las filas de `gasto_cuotas` de un plan, derivadas por el motor.
+// `cuotasTotal` nulo/ausente = imputación única = ningún registro (el default).
+function filasDeCuotas({ cuotasTotal, monto, periodo }, organizacionId) {
+  if (!cuotasTotal) return [];
+  // `monto` puede llegar como string (body validado) o como el Decimal de Prisma
+  // (gasto persistido): el motor usa SU decimal.js, así que el puente es el string.
+  return planDeCuotas(String(monto), cuotasTotal, periodo).map((c) => ({
+    organizacionId,
+    numero: c.numero,
+    cuotasTotal: c.cuotasTotal,
+    periodo: c.periodo,
+    monto: c.monto,
+  }));
 }
 
 // Liquidaciones del gasto en un estado congelante (decisión 2).
@@ -255,6 +313,132 @@ function segmentarPorCategoria(filas) {
     };
   }
   return segmentos;
+}
+
+// ─── Decisión 11: el período de un gasto en cuotas ───
+
+// Un gasto "pertenece" a un período si se imputa entero ahí (sin plan de cuotas)
+// o si alguna de sus cuotas cae en ese período. Va en `AND` y no en `OR` para no
+// pisar el `OR` del buscador `q`.
+const filtroDePeriodo = (periodo) => ({
+  AND: [{ OR: [{ periodo, cuotas: { none: {} } }, { cuotas: { some: { periodo } } }] }],
+});
+
+// La imputación de un gasto a un período: la cuota que le toca, o el gasto
+// entero. Espejo de `imputacionDelPeriodo` del motor, sobre la fila ya
+// serializada (el motor trabaja con Decimal, esto con los strings de salida).
+function imputacionDeFila(gasto, periodo) {
+  if (!periodo) return { montoImputado: null, cuota: null };
+  const cuota = (gasto.cuotas ?? []).find((c) => c.periodo === periodo);
+  if (!cuota) return { montoImputado: gasto.monto, cuota: null };
+  return {
+    montoImputado: cuota.monto,
+    cuota: { id: cuota.id, numero: cuota.numero, cuotasTotal: cuota.cuotasTotal },
+  };
+}
+
+// Acumulador de los tres cortes de `totales` (total, por tipo, por categoría)
+// sobre una lista de imputaciones { monto, esOrdinario, categoria }. Existe
+// porque con `?periodo=` los totales suman MONTOS IMPUTADOS, y el monto imputado
+// de un gasto en cuotas vive en `gasto_cuotas`: no hay un `groupBy` de Prisma que
+// agrupe por un campo del gasto sumando una columna de la relación. La cantidad
+// de filas es la de un período de un edificio (decenas), así que sumarlas con
+// decimal.js en memoria es exacto y barato.
+function acumular(imputaciones) {
+  const cero = () => ({ cantidad: 0, monto: new Decimal(0) });
+  const acc = {
+    total: cero(),
+    porTipo: { ordinarios: cero(), extraordinarios: cero() },
+    porCategoria: { A: cero(), B: cero(), C: cero() },
+  };
+
+  for (const { monto, esOrdinario, categoria } of imputaciones) {
+    const valor = new Decimal(monto);
+    for (const celda of [
+      acc.total,
+      acc.porTipo[esOrdinario ? 'ordinarios' : 'extraordinarios'],
+      acc.porCategoria[categoria],
+    ]) {
+      celda.cantidad += 1;
+      celda.monto = celda.monto.plus(valor);
+    }
+  }
+  return acc;
+}
+
+const cerrar = (celda) => ({ cantidad: celda.cantidad, monto: celda.monto.toFixed(2) });
+
+/**
+ * Los `totales` del filtro completo (decisión 5), en sus tres cortes.
+ *
+ * Dos caminos, por una razón de tamaño y no de gusto:
+ *
+ * - SIN `?periodo=`: el conjunto no está acotado (puede ser el histórico entero
+ *   del edificio) y no hay imputación que resolver — la fila ES la factura. Se
+ *   agrega en SQL, igual que antes de S3-19.
+ * - CON `?periodo=`: los totales suman MONTOS IMPUTADOS, y el de un gasto en
+ *   cuotas está en `gasto_cuotas`. El conjunto es un período de un edificio
+ *   (decenas de filas), así que se traen las tres columnas que hacen falta y se
+ *   suman con decimal.js. Los tres cortes salen del mismo recorrido, así que
+ *   reconcilian por construcción (total = ordinarios + extraordinarios = A+B+C).
+ */
+async function totalesDelFiltro(where, periodo) {
+  if (!periodo) {
+    const [agregado, porTipo, porCategoria] = await Promise.all([
+      prisma.gasto.aggregate({ where, _count: { _all: true }, _sum: { monto: true } }),
+      // Decisión 8: el mismo total, partido en ordinarios y extraordinarios.
+      prisma.gasto.groupBy({
+        by: ['esOrdinario'],
+        where,
+        _count: { _all: true },
+        _sum: { monto: true },
+      }),
+      // Decisión 10: y el mismo total, partido por categoría A/B/C.
+      prisma.gasto.groupBy({
+        by: ['categoria'],
+        where,
+        _count: { _all: true },
+        _sum: { monto: true },
+      }),
+    ]);
+
+    return {
+      cantidad: agregado._count._all,
+      monto: new Decimal(agregado._sum.monto ?? 0).toFixed(2),
+      ...segmentarPorTipo(porTipo),
+      porCategoria: segmentarPorCategoria(porCategoria),
+    };
+  }
+
+  const filas = await prisma.gasto.findMany({
+    where,
+    select: {
+      monto: true,
+      esOrdinario: true,
+      categoria: true,
+      // Solo la cuota del período: es la que se imputa.
+      cuotas: { where: { periodo }, select: { monto: true } },
+    },
+  });
+
+  const acc = acumular(
+    filas.map((g) => ({
+      monto: g.cuotas.length > 0 ? g.cuotas[0].monto : g.monto,
+      esOrdinario: g.esOrdinario,
+      categoria: g.categoria,
+    }))
+  );
+
+  return {
+    ...cerrar(acc.total),
+    ordinarios: cerrar(acc.porTipo.ordinarios),
+    extraordinarios: cerrar(acc.porTipo.extraordinarios),
+    porCategoria: {
+      A: cerrar(acc.porCategoria.A),
+      B: cerrar(acc.porCategoria.B),
+      C: cerrar(acc.porCategoria.C),
+    },
+  };
 }
 
 // Decisión 9: quién cargó cada gasto, resuelto en una query por página.
@@ -334,7 +518,8 @@ gastosDeEdificioRouter.get(
         edificioId: req.edificio.id,
         // Los soft-deleted no se listan nunca (siguen en la DB por Ley 941).
         deletedAt: null,
-        ...(periodo ? { periodo } : {}),
+        // Decisión 11: un gasto en cuotas pertenece a los N períodos de su plan.
+        ...(periodo ? filtroDePeriodo(periodo) : {}),
         ...(categoria ? { categoria } : {}),
         ...(esOrdinario !== undefined ? { esOrdinario } : {}),
         ...(proveedorId ? { proveedorId } : {}),
@@ -358,23 +543,8 @@ gastosDeEdificioRouter.get(
           : {}),
       };
 
-      const [agregado, porTipo, porCategoria, gastos] = await Promise.all([
-        // Decisión 5: los totales son del filtro completo, no de la página.
-        prisma.gasto.aggregate({ where, _count: { _all: true }, _sum: { monto: true } }),
-        // Decisión 8: el mismo total, partido en ordinarios y extraordinarios.
-        prisma.gasto.groupBy({
-          by: ['esOrdinario'],
-          where,
-          _count: { _all: true },
-          _sum: { monto: true },
-        }),
-        // Decisión 10: y el mismo total, partido por categoría A/B/C.
-        prisma.gasto.groupBy({
-          by: ['categoria'],
-          where,
-          _count: { _all: true },
-          _sum: { monto: true },
-        }),
+      const [totales, gastos] = await Promise.all([
+        totalesDelFiltro(where, periodo),
         prisma.gasto.findMany({
           where,
           select: CAMPOS,
@@ -386,7 +556,6 @@ gastosDeEdificioRouter.get(
         }),
       ]);
 
-      const total = agregado._count._all;
       // Decisión 7: `editable` por fila, en UNA query para toda la página.
       // Decisión 9: los nombres de quienes cargaron, en otra query para la página.
       const [congelados, autores] = await Promise.all([
@@ -394,18 +563,23 @@ gastosDeEdificioRouter.get(
         autoresDe(gastos.map((g) => g.createdBy)),
       ]);
       return res.json({
-        data: gastos.map((g) => ({
-          ...serializar(g),
-          editable: !congelados.has(g.id),
-          creadoPor: autores.get(g.createdBy) ?? null,
-        })),
-        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-        totales: {
-          cantidad: total,
-          monto: new Decimal(agregado._sum.monto ?? 0).toFixed(2),
-          ...segmentarPorTipo(porTipo),
-          porCategoria: segmentarPorCategoria(porCategoria),
+        data: gastos.map((g) => {
+          const fila = serializar(g);
+          return {
+            ...fila,
+            // Decisión 11: con `?periodo=`, lo que esta fila aporta a ESE período.
+            ...imputacionDeFila(fila, periodo),
+            editable: !congelados.has(g.id),
+            creadoPor: autores.get(g.createdBy) ?? null,
+          };
+        }),
+        pagination: {
+          page,
+          limit,
+          total: totales.cantidad,
+          totalPages: Math.ceil(totales.cantidad / limit),
         },
+        totales,
       });
     } catch (err) {
       return next(err);
@@ -426,18 +600,28 @@ gastosDeEdificioRouter.post(
       const invalido = await validacionesCruzadas(req.organizacionId, req.body);
       if (invalido) return res.status(invalido.status).json(invalido.body);
 
+      // Decisión 11: `cuotasTotal` no es una columna del gasto — es la entrada
+      // del plan, y las cuotas se crean en la misma transacción implícita del
+      // `create` anidado (un gasto con plan a medias no debe existir).
+      const { cuotasTotal, ...campos } = req.body;
+      const cuotas = filasDeCuotas({ ...campos, cuotasTotal }, req.organizacionId);
+
       const gasto = await prisma.gasto.create({
         data: {
-          ...req.body,
+          ...campos,
           organizacionId: req.organizacionId,
           edificioId: req.edificio.id,
           createdBy: req.user.id,
+          ...(cuotas.length > 0 ? { cuotas: { create: cuotas } } : {}),
         },
         select: CAMPOS,
       });
       return res.status(201).json(serializar(gasto));
     } catch (err) {
       if (err.code === 'P2003') return res.status(422).json(referenciaCaida());
+      if (err instanceof LiquidacionError) {
+        return res.status(422).json(validacionFallida(err.message));
+      }
       return next(err);
     }
   }
@@ -537,19 +721,50 @@ router.put(
       // Las validaciones cruzadas corren sobre el gasto RESULTANTE: cambiar
       // solo `categoria` a B tiene que exigir el `servicioEspecifico` que ya
       // estaba (o el que venga en el mismo PUT).
-      const resultante = { ...req.gasto, ...req.body };
+      // Decisión 11: `cuotasTotal` del gasto persistido sale de sus cuotas, no de
+      // una columna, así que el "gasto resultante" tiene que armarlo a mano para
+      // que `incoherenciaCuotas` vea el plan que va a quedar (p. ej. pasar a
+      // ordinario un gasto que ya tiene plan tiene que fallar).
+      const cuotasTotalActual = req.gasto.cuotas?.[0]?.cuotasTotal ?? null;
+      const resultante = {
+        ...req.gasto,
+        cuotasTotal: cuotasTotalActual,
+        ...req.body,
+      };
       const invalido = await validacionesCruzadas(req.organizacionId, resultante);
       if (invalido) return res.status(invalido.status).json(invalido.body);
 
-      const gasto = await prisma.gasto.update({
-        where: { id: req.gasto.id },
-        data: req.body,
-        select: CAMPOS,
+      const { cuotasTotal: _ignorado, ...campos } = req.body;
+
+      // Decisión 11: el plan se REGENERA cuando cambia cualquiera de sus tres
+      // entradas (monto, período o cantidad de cuotas). Un plan a medio editar
+      // —con la primera mitad al monto viejo— es peor que uno recalculado, y las
+      // cuotas ya liquidadas no llegan acá: las frena el 409 del candado.
+      const regenerar =
+        'cuotasTotal' in req.body || 'monto' in req.body || 'periodo' in req.body;
+
+      const cuotas = regenerar ? filasDeCuotas(resultante, req.organizacionId) : null;
+
+      const gasto = await prisma.$transaction(async (tx) => {
+        if (regenerar) {
+          await tx.gastoCuota.deleteMany({ where: { gastoId: req.gasto.id } });
+        }
+        return tx.gasto.update({
+          where: { id: req.gasto.id },
+          data: {
+            ...campos,
+            ...(cuotas && cuotas.length > 0 ? { cuotas: { create: cuotas } } : {}),
+          },
+          select: CAMPOS,
+        });
       });
       return res.json(serializar(gasto));
     } catch (err) {
       if (err.code === 'P2025') return res.status(404).json(noEncontrado());
       if (err.code === 'P2003') return res.status(422).json(referenciaCaida());
+      if (err instanceof LiquidacionError) {
+        return res.status(422).json(validacionFallida(err.message));
+      }
       return next(err);
     }
   }

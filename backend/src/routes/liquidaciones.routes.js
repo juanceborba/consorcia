@@ -108,7 +108,11 @@ import {
   calcularLiquidacionSchema,
   listarLiquidacionesSchema,
 } from '../schemas/liquidacion.schema.js';
-import { LiquidacionEngine, LiquidacionError } from '../core/liquidacion.engine.js';
+import {
+  LiquidacionEngine,
+  LiquidacionError,
+  imputacionDelPeriodo,
+} from '../core/liquidacion.engine.js';
 import {
   sumarCoeficientes,
   validarParaLiquidacion,
@@ -238,6 +242,11 @@ async function preview(liquidacion) {
     select: {
       unidadId: true,
       gastoId: true,
+      // S3-19: el rótulo "cuota k/N" sale del SNAPSHOT del detalle, no del plan
+      // vigente: si el plan se editó después, el recibo emitido sigue diciendo lo
+      // que decía cuando se emitió.
+      cuotaNumero: true,
+      cuotasTotal: true,
       coeficienteAplicado: true,
       montoAsignado: true,
       unidad: { select: { id: true, numero: true, tipo: true, m2: true, coeficiente: true } },
@@ -281,6 +290,9 @@ async function preview(liquidacion) {
         gastoId: d.gastoId,
         pesoAplicado: coeficiente(d.coeficienteAplicado),
         montoAsignado: monto.toFixed(2),
+        // S3-19: null en un gasto de imputación única.
+        cuotaNumero: d.cuotaNumero,
+        cuotasTotal: d.cuotasTotal,
       });
     }
   }
@@ -374,10 +386,21 @@ liquidacionesDeEdificioRouter.post(
       });
       if (vigente) return res.status(409).json(periodoYaLiquidado(vigente));
 
-      // PASO 1 del §2: validar los gastos del período (los soft-deleted no
+      // PASO 1 del §2: validar las IMPUTACIONES del período (los soft-deleted no
       // participan — para la API ya no existen, S3-02 decisión 3).
-      const gastos = await prisma.gasto.findMany({
-        where: { organizacionId, edificioId, periodo, deletedAt: null },
+      //
+      // S3-19: lo que se liquida es una imputación, no siempre un gasto entero.
+      // El período incluye los gastos de imputación única de ese período MÁS los
+      // gastos en cuotas cuya cuota cae ahí, y de esos se reparte el monto de la
+      // cuota con la categoría/servicio/sector del gasto padre. Un gasto sin plan
+      // se comporta exactamente como antes.
+      const gastosDelPeriodo = await prisma.gasto.findMany({
+        where: {
+          organizacionId,
+          edificioId,
+          deletedAt: null,
+          OR: [{ periodo, cuotas: { none: {} } }, { cuotas: { some: { periodo } } }],
+        },
         select: {
           id: true,
           monto: true,
@@ -386,12 +409,24 @@ liquidacionesDeEdificioRouter.post(
           servicioEspecifico: true,
           sectorEspecifico: true,
           esOrdinario: true,
+          periodo: true,
+          cuotas: {
+            where: { periodo },
+            select: { id: true, numero: true, cuotasTotal: true, periodo: true, monto: true },
+          },
         },
         // Orden estable: el ajuste de centavos del motor depende del orden en
         // que se distribuyen los gastos, así que recalcular el mismo período
         // tiene que dar exactamente los mismos detalles.
         orderBy: [{ fechaGasto: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       });
+
+      // `imputacionDelPeriodo` devuelve null si al gasto no le toca nada en el
+      // período; con el `where` de arriba eso no debería pasar, y el filtro es la
+      // red que evita repartir un gasto que no corresponde si alguna vez difieren.
+      const gastos = gastosDelPeriodo
+        .map((g) => imputacionDelPeriodo(g, periodo))
+        .filter((imputacion) => imputacion !== null);
 
       if (gastos.length === 0) return res.status(422).json(sinGastos(periodo));
 
@@ -443,6 +478,10 @@ liquidacionesDeEdificioRouter.post(
               organizacionId,
               unidadId: d.unidadId,
               gastoId: d.gastoId,
+              // S3-19: snapshot de la cuota imputada (null = imputación única).
+              gastoCuotaId: d.gastoCuotaId,
+              cuotaNumero: d.cuotaNumero,
+              cuotasTotal: d.cuotasTotal,
               coeficienteAplicado: d.coeficienteAplicado,
               montoAsignado: d.montoAsignado,
             })),

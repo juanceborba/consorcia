@@ -487,6 +487,9 @@ model Gasto {
 
   // Fechas
   fechaGasto      DateTime @map("fecha_gasto")
+  // Período de imputación del gasto. Si el gasto tiene un plan de cuotas
+  // (S3-19), `periodo` es el del comprobante y el de la PRIMERA cuota; los
+  // períodos que se liquidan salen de `cuotas`, no de acá.
   periodo         String   // "2026-07"
 
   // Relaciones
@@ -494,6 +497,7 @@ model Gasto {
   proveedor       Proveedor @relation(fields: [proveedorId], references: [id])
   rubro           Rubro     @relation(fields: [rubroId], references: [id])
   liquidaciones   LiquidacionDetalle[]
+  cuotas          GastoCuota[]
 
   // Timestamps
   createdAt       DateTime @default(now()) @map("created_at")
@@ -508,6 +512,46 @@ model Gasto {
   @@index([organizacionId, edificioId, proveedorId])
   @@index([organizacionId, edificioId, rubroId])
   @@map("gastos")
+}
+
+// Plan de cuotas de un gasto (S3-19, brecha 1 del research
+// `docs/investigacion/ordinarias-extraordinarias-y-categorias.md`): una obra de
+// $X en N cuotas se imputa X/N por período en vez de caer entera en uno solo.
+//
+// El `Gasto` sigue siendo LA FACTURA (su `monto` es el total del comprobante del
+// proveedor y reconcilia con él); las cuotas son las IMPUTACIONES por período.
+// Un gasto sin filas acá es de imputación única y se comporta como antes de
+// S3-19 — ese es el default y no hay que configurar nada para liquidar.
+//
+// Invariante (test automático, cero tolerancia): Σ`monto` de las cuotas de un
+// gasto = `gasto.monto`. El ajuste de centavos de la división va en la ÚLTIMA
+// cuota, igual que el motor lo hace en la última UF alcanzada.
+model GastoCuota {
+  id              String   @id @default(uuid())
+  organizacionId  String   @map("organizacion_id")
+  gastoId         String   @map("gasto_id")
+
+  numero          Int      // 1..cuotasTotal
+  cuotasTotal     Int      @map("cuotas_total")
+  periodo         String   // "2026-08" — el período al que se imputa ESTA cuota
+  monto           Decimal  @db.Decimal(12, 2)
+
+  // Relaciones
+  gasto           Gasto    @relation(fields: [gastoId], references: [id], onDelete: Cascade)
+  liquidaciones   LiquidacionDetalle[]
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Una cuota k por gasto, y un solo período por gasto: dos cuotas del mismo
+  // gasto en el mismo período romperían la unicidad de `LiquidacionDetalle`
+  // (organizacion, liquidacion, unidad, gasto).
+  @@unique([organizacionId, gastoId, numero])
+  @@unique([organizacionId, gastoId, periodo])
+  @@index([organizacionId, gastoId])
+  @@index([organizacionId, periodo])
+  @@map("gasto_cuotas")
 }
 
 // NOTA RLS: `proveedores`, `rubros` y `rubro_visibilidad` son híbridas (ítems
@@ -570,6 +614,15 @@ model LiquidacionDetalle {
   unidadId        String   @map("unidad_id")
   gastoId         String   @map("gasto_id")
 
+  // Cuota del plan que este detalle imputa (S3-19). NULL = gasto de imputación
+  // única (el caso por default). `cuotaNumero`/`cuotasTotal` son el SNAPSHOT del
+  // rótulo "cuota k/N" al momento de liquidar, no una vista de `GastoCuota`:
+  // un recibo emitido no puede pasar de "3/6" a "3/8" porque después se editó
+  // el plan (misma regla que `coeficienteAplicado`).
+  gastoCuotaId    String?  @map("gasto_cuota_id")
+  cuotaNumero     Int?     @map("cuota_numero")
+  cuotasTotal     Int?     @map("cuotas_total")
+
   // Distribución
   coeficienteAplicado Decimal @map("coeficiente_aplicado") @db.Decimal(10, 6)
   montoAsignado   Decimal  @db.Decimal(12, 2)
@@ -578,6 +631,7 @@ model LiquidacionDetalle {
   liquidacion     Liquidacion @relation(fields: [liquidacionId], references: [id])
   unidad          Unidad   @relation(fields: [unidadId], references: [id])
   gasto           Gasto    @relation(fields: [gastoId], references: [id])
+  gastoCuota      GastoCuota? @relation(fields: [gastoCuotaId], references: [id])
 
   // Timestamps
   createdAt       DateTime @default(now()) @map("created_at")

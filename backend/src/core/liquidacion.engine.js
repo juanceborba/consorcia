@@ -40,6 +40,15 @@
 //    donde S3-20 va a resolver el esquema de reparto configurado por el edificio
 //    (exención parcial, coeficiente propio de un sector, partes iguales, cargo a
 //    una sola UF). Diseño: `docs/investigacion/esquemas-de-reparto.md`.
+//
+// 6. S3-19 — CUOTAS: lo que el motor distribuye es una IMPUTACIÓN, no
+//    necesariamente un gasto entero. Un gasto de imputación única es su propia
+//    imputación (el caso por default, idéntico a antes); un gasto con plan de
+//    cuotas aporta al período la cuota que le toca, con el monto de la cuota y el
+//    reparto (categoría / servicio / sector) del gasto padre. El eje de las
+//    cuotas es TEMPORAL —en qué períodos se imputa y cuánto— y por eso no toca
+//    los pesos: son dos ejes ortogonales (`docs/investigacion/
+//    ordinarias-extraordinarias-y-categorias.md`, brecha 1).
 
 import Decimal from 'decimal.js';
 
@@ -80,6 +89,109 @@ function unidadAlcanzada(gasto, unidad) {
     default:
       return false;
   }
+}
+
+// ─── El eje temporal: plan de cuotas (S3-19) ───
+//
+// Ortogonal al reparto: las cuotas deciden EN QUÉ PERÍODOS y CUÁNTO se imputa;
+// los pesos deciden entre QUÉ UF se reparte cada imputación. Un gasto sin plan
+// se imputa entero en su propio período (el default).
+
+const PERIODO_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
+
+/**
+ * Suma `meses` a un período "YYYY-MM". Aritmética entera sobre el mes absoluto:
+ * cero dependencia de `Date`, cero zonas horarias.
+ */
+function sumarPeriodo(periodo, meses) {
+  const match = PERIODO_RE.exec(periodo);
+  if (!match) {
+    throw new LiquidacionError('PERIODO_INVALIDO', `Período inválido: ${periodo} (se espera YYYY-MM)`, {
+      periodo,
+    });
+  }
+  const absoluto = Number(match[1]) * 12 + (Number(match[2]) - 1) + meses;
+  const anio = Math.floor(absoluto / 12);
+  const mes = absoluto - anio * 12 + 1;
+  return `${String(anio).padStart(4, '0')}-${String(mes).padStart(2, '0')}`;
+}
+
+/**
+ * Divide un monto en N cuotas mensuales consecutivas desde `primerPeriodo`.
+ *
+ * El monto de cada cuota se trunca al centavo hacia abajo y **el resto acumulado
+ * se vuelca en la última cuota**, misma política que el ajuste de centavos del
+ * reparto (nota 4). Garantía dura: Σ cuotas = monto EXACTO, sin tolerancia.
+ *
+ * @returns {Array} [{ numero, cuotasTotal, periodo, monto }] con monto a 2 dec.
+ * @throws {LiquidacionError} CUOTAS_INVALIDAS | PERIODO_INVALIDO
+ */
+function planDeCuotas(montoTotal, cuotasTotal, primerPeriodo) {
+  if (!Number.isInteger(cuotasTotal) || cuotasTotal < 2) {
+    throw new LiquidacionError(
+      'CUOTAS_INVALIDAS',
+      `La cantidad de cuotas debe ser un entero ≥ 2 (recibido: ${cuotasTotal})`,
+      { cuotasTotal }
+    );
+  }
+
+  const total = new Decimal(montoTotal).toDecimalPlaces(2);
+  // Truncar (no redondear) evita que la suma de las N-1 primeras supere el total
+  // y deje la última cuota en negativo.
+  const base = total.div(cuotasTotal).toDecimalPlaces(2, Decimal.ROUND_DOWN);
+
+  const cuotas = [];
+  let acumulado = new Decimal(0);
+
+  for (let numero = 1; numero <= cuotasTotal; numero += 1) {
+    const esUltima = numero === cuotasTotal;
+    const monto = esUltima ? total.minus(acumulado) : base;
+    acumulado = acumulado.plus(monto);
+
+    cuotas.push({
+      numero,
+      cuotasTotal,
+      periodo: sumarPeriodo(primerPeriodo, numero - 1),
+      monto: monto.toFixed(2),
+    });
+  }
+
+  if (!acumulado.equals(total)) {
+    throw new LiquidacionError(
+      'CUOTAS_INVALIDAS',
+      `Desbalance en el plan de cuotas: ${acumulado} vs ${total}`,
+      { suma: acumulado.toString(), montoTotal: total.toString() }
+    );
+  }
+
+  return cuotas;
+}
+
+/**
+ * La imputación de un gasto a un período, o `null` si no le toca nada.
+ *
+ * - Gasto sin plan de cuotas → se imputa entero si `gasto.periodo` es el período.
+ * - Gasto con plan → se imputa la cuota de ese período, por el monto de la cuota
+ *   y con el reparto (categoría / servicio / sector) del gasto padre.
+ *
+ * El resultado es lo que consume `calcularLiquidacion`: un gasto de imputación
+ * única ES su propia imputación, así que el camino viejo queda intacto.
+ */
+function imputacionDelPeriodo(gasto, periodo) {
+  const cuotas = gasto.cuotas ?? [];
+
+  if (cuotas.length === 0) {
+    return gasto.periodo === periodo ? { ...gasto, montoImputado: gasto.monto, cuota: null } : null;
+  }
+
+  const cuota = cuotas.find((c) => c.periodo === periodo);
+  if (!cuota) return null;
+
+  return {
+    ...gasto,
+    montoImputado: cuota.monto,
+    cuota: { id: cuota.id ?? null, numero: cuota.numero, cuotasTotal: cuota.cuotasTotal },
+  };
 }
 
 // ─── La primitiva del reparto (S3-18) ───
@@ -187,7 +299,11 @@ class LiquidacionEngine {
    * según las categorías A/B/C del reglamento de PH.
    *
    * @param {Object} gasto - { monto: string|number, categoria: 'A'|'B'|'C',
-   *   servicioEspecifico?: string, sectorEspecifico?: string, moneda?: string }
+   *   servicioEspecifico?: string, sectorEspecifico?: string, moneda?: string,
+   *   montoImputado?: string|number }
+   *   `montoImputado` (S3-19) es lo que se reparte cuando el gasto se imputa por
+   *   cuotas: el reparto es el del gasto padre, el monto es el de la cuota. Si no
+   *   viene, se reparte `monto` (imputación única, el caso por default).
    * @param {Array} unidades - [{ id, coeficiente, categoriaB?: string[], categoriaC?: string }]
    * @returns {Array} - [{ unidadId, coeficiente, monto, moneda }] con monto
    *   exacto a 2 decimales; la suma de montos es EXACTAMENTE el total (cero
@@ -197,7 +313,7 @@ class LiquidacionEngine {
    */
   static calcularDistribucion(gasto, unidades) {
     // Objetivo de la distribución: total al centavo (ver nota 3 del header).
-    const montoTotal = new Decimal(gasto.monto).toDecimalPlaces(2);
+    const montoTotal = new Decimal(gasto.montoImputado ?? gasto.monto).toDecimalPlaces(2);
 
     // ─── VALIDACIÓN 1: Suma de coeficientes = 1 ───
     const sumaCoef = unidades.reduce(
@@ -235,10 +351,16 @@ class LiquidacionEngine {
   }
 
   /**
-   * Calcula una liquidación completa para un período: distribuye cada gasto
-   * y acumula totales ordinarios/extraordinarios (separación obligatoria,
-   * Ley 941 — PRD-02-05 §4.1). Los nombres de los detalles siguen el modelo
-   * LiquidacionDetalle de schema.prisma.
+   * Calcula una liquidación completa para un período: distribuye cada
+   * imputación y acumula totales ordinarios/extraordinarios (separación
+   * obligatoria, Ley 941 — PRD-02-05 §4.1). Los nombres de los detalles siguen
+   * el modelo LiquidacionDetalle de schema.prisma.
+   *
+   * @param {Array} gastos - las IMPUTACIONES del período (S3-19). Un gasto de
+   *   imputación única es su propia imputación; uno con plan de cuotas llega con
+   *   `montoImputado` = el monto de la cuota y `cuota` = { id, numero,
+   *   cuotasTotal }. Lo que suma a los totales y lo que se reparte es SIEMPRE el
+   *   monto imputado al período, nunca el total de la factura.
    */
   static async calcularLiquidacion(edificioId, periodo, gastos, unidades) {
     const liquidacion = {
@@ -253,21 +375,29 @@ class LiquidacionEngine {
 
     for (const gasto of gastos) {
       const distribucion = this.calcularDistribucion(gasto, unidades);
+      const cuota = gasto.cuota ?? null;
 
       for (const detalle of distribucion) {
         liquidacion.detalles.push({
           unidadId: detalle.unidadId,
           gastoId: gasto.id,
+          // Snapshot del rótulo "cuota k/N": lo que se emitió no cambia si
+          // después se edita el plan.
+          gastoCuotaId: cuota?.id ?? null,
+          cuotaNumero: cuota?.numero ?? null,
+          cuotasTotal: cuota?.cuotasTotal ?? null,
           coeficienteAplicado: detalle.coeficiente,
           montoAsignado: detalle.monto,
         });
       }
 
-      // Acumular totales
+      // Acumular totales sobre el monto IMPUTADO al período (en un gasto en
+      // cuotas, sumar `monto` metería la obra entera en un solo mes).
+      const imputado = new Decimal(gasto.montoImputado ?? gasto.monto);
       if (gasto.esOrdinario) {
-        liquidacion.totalOrdinarias = liquidacion.totalOrdinarias.plus(gasto.monto);
+        liquidacion.totalOrdinarias = liquidacion.totalOrdinarias.plus(imputado);
       } else {
-        liquidacion.totalExtraordinarias = liquidacion.totalExtraordinarias.plus(gasto.monto);
+        liquidacion.totalExtraordinarias = liquidacion.totalExtraordinarias.plus(imputado);
       }
     }
 
@@ -293,4 +423,12 @@ class LiquidacionError extends Error {
   }
 }
 
-export { LiquidacionEngine, LiquidacionError, distribuir, pesosDe };
+export {
+  LiquidacionEngine,
+  LiquidacionError,
+  distribuir,
+  pesosDe,
+  planDeCuotas,
+  imputacionDelPeriodo,
+  sumarPeriodo,
+};

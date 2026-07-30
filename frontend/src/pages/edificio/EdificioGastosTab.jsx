@@ -498,16 +498,25 @@ export default function EdificioGastosTab() {
   // celda, a su cabecera y al pie, así la alineación no se repite en tres lugares.
   const columns = useMemo(() => {
     const definiciones = [
-      columnHelper.accessor('concepto', {
+      columnHelper.accessor((g) => g, {
+        id: 'concepto',
         header: 'Concepto',
-        cell: (info) => (
-          <span
-            className="block max-w-56 truncate font-medium"
-            title={info.getValue()}
-          >
-            {info.getValue()}
-          </span>
-        ),
+        // S3-19: el rótulo "cuota k/N" va junto al concepto, igual que en el
+        // recibo (PRD-06-01 §3.2). Solo aparece con un período filtrado, que es
+        // cuando existe una cuota imputada de la que hablar.
+        cell: (info) => {
+          const gasto = info.getValue();
+          return (
+            <span className="flex max-w-56 flex-col" title={gasto.concepto}>
+              <span className="truncate font-medium">{gasto.concepto}</span>
+              {gasto.cuota && (
+                <span className="text-xs text-muted-foreground">
+                  cuota {gasto.cuota.numero}/{gasto.cuota.cuotasTotal}
+                </span>
+              )}
+            </span>
+          );
+        },
       }),
       columnHelper.accessor((g) => g.proveedor?.razonSocial ?? '—', {
         id: 'proveedor',
@@ -525,9 +534,24 @@ export default function EdificioGastosTab() {
         id: 'monto',
         header: 'Monto',
         meta: { className: 'text-right tabular-nums' },
+        // S3-19: con un período filtrado, el monto de la fila es el IMPUTADO a
+        // ese período — el número que la liquidación va a repartir y el que suma
+        // el total del filtro. En un gasto en cuotas el total de la factura queda
+        // debajo, porque los dos importan: uno es lo que se cobra este mes, el
+        // otro es lo que se le debe al proveedor.
         cell: (info) => {
           const gasto = info.getValue();
-          return formatearMonto(gasto.monto, gasto.moneda);
+          const imputado = gasto.montoImputado ?? gasto.monto;
+          return (
+            <span className="flex flex-col">
+              <span>{formatearMonto(imputado, gasto.moneda)}</span>
+              {gasto.cuota && (
+                <span className="text-xs font-normal text-muted-foreground">
+                  de {formatearMonto(gasto.monto, gasto.moneda)}
+                </span>
+              )}
+            </span>
+          );
         },
       }),
       columnHelper.accessor((g) => g, {

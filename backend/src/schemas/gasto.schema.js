@@ -18,6 +18,13 @@
 //    en el instante actual, cargar el gasto del día a la mañana funciona y a la
 //    noche no (según cómo el navegador arme la fecha). El fin del día UTC acepta
 //    hoy en cualquier huso de Argentina y sigue rechazando mañana.
+//
+// 3. S3-19 — `cuotasTotal` es el ÚNICO campo del plan de cuotas que entra por la
+//    API: el resto (los períodos y el monto de cada cuota) lo deriva el motor con
+//    `planDeCuotas(monto, cuotasTotal, periodo)`, que es determinístico. Dejar
+//    que el cliente mande los montos abriría la puerta a un plan que no suma el
+//    total de la factura, que es justo la invariante que hay que defender.
+//    `cuotasTotal: null` en una edición borra el plan (vuelve a imputación única).
 
 import { z } from 'zod';
 import Decimal from 'decimal.js';
@@ -113,7 +120,28 @@ const camposGasto = {
   comprobanteUrl: opcional(z.string().trim().url('comprobanteUrl: URL inválida').max(500)),
   fechaGasto: fechaGastoSchema,
   periodo: periodoSchema,
+  // Decisión 3: plan de cuotas. `periodo` es el de la primera cuota y las N-1
+  // siguientes son los meses consecutivos. El tope de 120 son 10 años: más que
+  // eso no es un plan de pago de una obra, es un error de tipeo.
+  cuotasTotal: opcional(
+    z.coerce
+      .number({ invalid_type_error: 'cuotasTotal: número entero' })
+      .int('cuotasTotal: número entero')
+      .min(2, 'cuotasTotal: mínimo 2 cuotas (sin plan, el gasto se imputa entero en su período)')
+      .max(120, 'cuotasTotal: máximo 120 cuotas')
+  ),
 };
+
+// Coherencia del plan de cuotas con el tipo de gasto (S3-19). El alcance de la
+// tarea es la brecha 1 del research: una OBRA que se cobra en N meses. Una
+// ordinaria es, por definición, el gasto corriente del mes (CCyC arts. 2046 inc.
+// c y 2048) y prorratearla escondería el gasto real de cada período.
+export function incoherenciaCuotas({ cuotasTotal, esOrdinario }) {
+  if (cuotasTotal && esOrdinario) {
+    return 'cuotasTotal: solo un gasto extraordinario se imputa en cuotas (una ordinaria es el gasto corriente del período)';
+  }
+  return null;
+}
 
 // Coherencia categoría ↔ campo específico. Se aplica sobre el objeto YA
 // resuelto (creación: valores del body; edición: merge con lo persistido), así

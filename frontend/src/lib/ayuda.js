@@ -312,6 +312,17 @@ export const AYUDA_TOPICS = {
           'Ningún gasto se carga sin proveedor: es lo que permite seguir a quién se le paga y ver el ranking de gastos por proveedor. Si el proveedor no está en el directorio, se crea desde el mismo formulario con "Crear proveedor" y queda elegido, sin perder lo que ya cargaste.',
       },
       {
+        titulo: 'Cobrar una obra en cuotas',
+        cuerpo:
+          'Un gasto extraordinario se puede repartir en cuotas mensuales: se carga UNA vez por el total de la factura y se tilda "Cobrar en cuotas". El sistema arma el plan desde el período elegido y cada liquidación cobra la cuota que le toca, con el rótulo "cuota 3/6" en la lista y en el recibo. El monto que se muestra al filtrar por un período es el de la cuota de ese mes; el total de la factura queda debajo.',
+        items: [
+          'Solo los extraordinarios: una ordinaria es el gasto corriente del mes y prorratearla escondería el gasto real de cada período.',
+          'Las cuotas suman siempre el total exacto de la factura; los centavos del redondeo caen en la última.',
+          'Cambiar el monto, el período o la cantidad de cuotas rearma el plan completo.',
+          'Si una cuota ya está en una liquidación aprobada, el gasto queda congelado como cualquier otro.',
+        ],
+      },
+      {
         titulo: 'Un gasto liquidado ya no se edita',
         cuerpo:
           'Cuando la liquidación del período está aprobada, sus gastos quedan congelados: editar o eliminar uno cambiaría un recibo ya emitido. Las acciones de esas filas aparecen deshabilitadas. Para corregir un gasto así hay que anular la liquidación, corregirlo y volver a generarla.',
