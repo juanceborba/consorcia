@@ -23,6 +23,8 @@ import { Tabs, TabsList, TabsTab } from '@/components/ui/tabs';
 const TABS = [
   { value: 'overview', label: 'Resumen' },
   { value: 'unidades', label: 'Unidades' },
+  { value: 'gastos', label: 'Gastos' },
+  { value: 'liquidaciones', label: 'Liquidaciones' },
   { value: 'configuracion', label: 'Configuración' },
 ];
 
@@ -73,11 +75,17 @@ export default function EdificioDetallePage() {
     );
   }
 
+  // El tab activo es el PRIMER segmento después del id del edificio, no el
+  // último del path: desde S3-09 hay rutas de segundo nivel dentro de un tab
+  // (`/edificios/:id/liquidaciones/:liquidacionId`) y tomar el último dejaba
+  // el id de la liquidación como "tab", cayendo al fallback y marcando
+  // Unidades mientras se ve una liquidación.
   // /edificios/:id a secas redirige a /unidades (ver router); el fallback
   // evita un value inválido en Tabs durante ese instante.
-  const ultimoSegmento = location.pathname.split('/').pop();
-  const tabActual = TABS.some((t) => t.value === ultimoSegmento)
-    ? ultimoSegmento
+  const segmentos = location.pathname.split('/').filter(Boolean);
+  const segmentoDelTab = segmentos[segmentos.indexOf(id) + 1];
+  const tabActual = TABS.some((t) => t.value === segmentoDelTab)
+    ? segmentoDelTab
     : 'unidades';
 
   return (

@@ -1,9 +1,9 @@
 # GENERADO por app/state/engine.py — no editar a mano
 sprint: S3
 titulo: "Gastos + motor contable"
-generado: 2026-07-29T21:56:27Z
-total: 17
-done: 7
+generado: 2026-07-30T20:21:54Z
+total: 22
+done: 21
 tareas:
   - id: S3-01
     titulo: "Ajustes de schema + policies Cerbos"
@@ -21,12 +21,12 @@ tareas:
     seccion: Backend
     status: done
     depende_de: [S3-01, S3-12, S3-13]
-    desbloquea: [S3-04, S3-07, S3-08, S3-15]
+    desbloquea: [S3-04, S3-07, S3-08, S3-15, S3-19]
     issue: 32
     lote: A
     fuente: [PRD-04-02]
     claimed_by: null
-    score: 15.2
+    score: 18.2
   - id: S3-03
     titulo: "Motor de distribución (core puro)"
     seccion: Backend
@@ -43,12 +43,12 @@ tareas:
     seccion: Backend
     status: done
     depende_de: [S3-02, S3-03]
-    desbloquea: [S3-05, S3-09]
+    desbloquea: [S3-05, S3-09, S3-21]
     issue: 34
     lote: C
     fuente: [PRD-04-03]
     claimed_by: null
-    score: 9.4
+    score: 12.4
   - id: S3-05
     titulo: "Recibos PDF + QR (Ley 941)"
     seccion: Backend
@@ -63,7 +63,7 @@ tareas:
   - id: S3-06
     titulo: "Tests de API del slice"
     seccion: Backend
-    status: ready
+    status: done
     depende_de: [S3-05]
     desbloquea: [S3-11]
     issue: 36
@@ -74,7 +74,7 @@ tareas:
   - id: S3-07
     titulo: "Lista de gastos + filtros"
     seccion: "Frontend — features"
-    status: ready
+    status: done
     depende_de: [S3-02]
     desbloquea: [S3-08, S3-16]
     issue: 37
@@ -85,7 +85,7 @@ tareas:
   - id: S3-08
     titulo: "Form nuevo gasto"
     seccion: "Frontend — features"
-    status: stale
+    status: done
     depende_de: [S3-02, S3-07]
     desbloquea: [S3-11]
     issue: 38
@@ -96,7 +96,7 @@ tareas:
   - id: S3-09
     titulo: "Liquidación: generar + preview"
     seccion: "Frontend — features"
-    status: ready
+    status: done
     depende_de: [S3-04]
     desbloquea: [S3-10]
     issue: 39
@@ -107,7 +107,7 @@ tareas:
   - id: S3-10
     titulo: "Workflow aprobación + recibos"
     seccion: "Frontend — features"
-    status: stale
+    status: done
     depende_de: [S3-05, S3-09]
     desbloquea: [S3-11]
     issue: 40
@@ -118,7 +118,7 @@ tareas:
   - id: S3-11
     titulo: "Tests E2E + smoke + docs"
     seccion: Cierre
-    status: stale
+    status: ready
     depende_de: [S3-06, S3-08, S3-10]
     desbloquea: []
     issue: 41
@@ -151,7 +151,7 @@ tareas:
   - id: S3-14
     titulo: "UI gestión proveedores y rubros"
     seccion: "Frontend — features"
-    status: ready
+    status: done
     depende_de: [S3-12, S3-13]
     desbloquea: []
     issue: 62
@@ -162,7 +162,7 @@ tareas:
   - id: S3-15
     titulo: "Endpoint dashboard de gastos"
     seccion: Backend
-    status: ready
+    status: done
     depende_de: [S3-02]
     desbloquea: [S3-16]
     issue: 63
@@ -173,22 +173,77 @@ tareas:
   - id: S3-16
     titulo: "Dashboard de gastos (UI)"
     seccion: "Frontend — features"
-    status: stale
+    status: done
     depende_de: [S3-07, S3-15]
-    desbloquea: [S3-17]
+    desbloquea: [S3-17, S3-22]
     issue: 64
     lote: G
     fuente: [PRD-04-02]
     claimed_by: null
-    score: 7.6
+    score: 10.6
   - id: S3-17
     titulo: "Tests E2E dashboard + smoke"
     seccion: "Frontend — features"
-    status: stale
+    status: done
     depende_de: [S3-16]
-    desbloquea: []
+    desbloquea: [S3-22]
     issue: 65
     lote: G
     fuente: [PRD-04-02, PRD-04-03, PRD-02-05, PRD-02-04, PRD-07-02, PRD-07-03, PRD-07-04]
     claimed_by: null
-    score: 4.7
+    score: 7.7
+  - id: S3-18
+    titulo: "Motor de reparto por pesos por unidad (seam)"
+    seccion: Backend
+    status: done
+    depende_de: []
+    desbloquea: [S3-20]
+    issue: 66
+    lote: D
+    fuente: [PRD-02-05]
+    claimed_by: null
+    score: 7.8
+  - id: S3-19
+    titulo: "Cuotas de gastos extraordinarios"
+    seccion: Backend
+    status: done
+    depende_de: [S3-02]
+    desbloquea: []
+    issue: 67
+    lote: D
+    fuente: [PRD-04-02, PRD-06-01]
+    claimed_by: null
+    score: 4.9
+  - id: S3-20
+    titulo: "Esquemas de reparto configurables por edificio"
+    seccion: Backend
+    status: done
+    depende_de: [S3-18]
+    desbloquea: []
+    issue: 68
+    lote: G
+    fuente: [PRD-02-05, PRD-04-01]
+    claimed_by: null
+    score: 5.0
+  - id: S3-21
+    titulo: "Fondo de reserva en la liquidacion"
+    seccion: Backend
+    status: done
+    depende_de: [S3-04]
+    desbloquea: []
+    issue: 69
+    lote: G
+    fuente: [PRD-06-04]
+    claimed_by: null
+    score: 5.1
+  - id: S3-22
+    titulo: "Separar el tablero de gastos del tab operativo"
+    seccion: "Frontend — features"
+    status: done
+    depende_de: [S3-16, S3-17]
+    desbloquea: []
+    issue: null
+    lote: G
+    fuente: [PRD-04-02, PRD-07-03]
+    claimed_by: null
+    score: 5.2

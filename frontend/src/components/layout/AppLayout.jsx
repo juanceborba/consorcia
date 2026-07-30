@@ -3,7 +3,7 @@
 // activo en S1) y header con organización, selector de edificio de trabajo
 // y menú de usuario con logout.
 import { useEffect } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { Building2, ChevronsUpDown, LogOut, UserRound } from 'lucide-react';
 import { SIN_ROLES, useAuthStore } from '@/stores/auth.store';
 import { useEdificioStore } from '@/stores/edificio.store';
@@ -28,15 +28,63 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
+// Pantallas de ALCANCE ORGANIZACIÓN: no trabajan sobre un edificio, así que el
+// selector de edificio del header no se muestra (S3-22b).
+//
+// POR QUÉ: el selector no es decorativo — cambia el contexto de trabajo Y
+// navega. En una pantalla que no depende del edificio eso es peor que inútil:
+// ofrece un control que, o no hace nada visible, o te saca de donde estabas. En
+// Reportes hay además un segundo selector, el del alcance del reporte, y dos
+// controles con el mismo ícono y distinto efecto en la misma pantalla es la
+// receta para elegir el equivocado.
+//
+// Es una lista de prefijos y no un flag por ruta porque el layout no conoce las
+// rutas hijas; se extiende agregando el prefijo del módulo nuevo.
+const RUTAS_SIN_EDIFICIO = [
+  '/configuracion/proveedores', // directorio de la organización (S3-14)
+  '/configuracion/rubros', // árbol de la organización (S3-14)
+  '/configuracion/usuarios', // nómina de staff de la organización (S4-07)
+  '/reportes', // el alcance vive dentro del reporte (S3-22)
+];
+
+const esPantallaDeOrganizacion = (pathname) =>
+  RUTAS_SIN_EDIFICIO.some(
+    (prefijo) => pathname === prefijo || pathname.startsWith(`${prefijo}/`),
+  );
+
 // Módulos del sidebar (PRD-07-03 §4). "Usuarios" (S4-07) solo se muestra a
 // org_admin: Cerbos no le da al gestor ni lectura de la nómina, así que el
 // gestor vería un link que siempre responde 403 (know-how
 // pattern/require-role-guards-ui).
 const MODULOS = [
   { nombre: 'Edificios', path: '/edificios', activo: true },
-  { nombre: 'Gastos', activo: false },
+  // Gastos vive como tab del edificio (S3-07), así que el link del sidebar
+  // necesita el edificio de trabajo del header: `path` se resuelve abajo con el
+  // `edificioId` del store y el módulo queda inactivo mientras no haya ninguno
+  // seleccionado. La sección top-level `/gastos` de PRD-07-03 §2.1 es la vista
+  // consolidada de la organización (Business+) y llega con el dashboard (S3-16).
+  {
+    nombre: 'Gastos',
+    activo: true,
+    pathDeEdificio: (id) => `/edificios/${id}/gastos`,
+    // Lo que se muestra cuando no hay edificio de trabajo: el módulo existe, lo
+    // que falta es el contexto — no es el "próximamente" del resto.
+    inactivo: { badge: 'Elegí edificio', title: 'Elegí un edificio en el header' },
+  },
   { nombre: 'Liquidaciones', activo: false },
   { nombre: 'Cobranzas', activo: false },
+  // Configuración de la organización que alimenta la carga de gastos (S3-14).
+  // Sin `roles`: las policies `proveedor.yaml`/`rubro.yaml` le dan lectura al
+  // gestor, así que el link le responde 200 (a diferencia de "Usuarios", donde
+  // Cerbos no le da ni la nómina). Lo que no ve el gestor son las acciones de
+  // escritura, que las pantallas ocultan por rol.
+  { nombre: 'Proveedores', path: '/configuracion/proveedores', activo: true },
+  { nombre: 'Rubros', path: '/configuracion/rubros', activo: true },
+  // Módulo Reportes (S3-16, PRD-07-03 §4.1). SIN `roles` desde S3-22: el
+  // tablero de gastos se abre por edificio —lo mismo que el gestor ya lee en su
+  // tab— y lo único de org_admin/Business+ es el alcance "Todos los edificios",
+  // que el selector ofrece deshabilitado con el motivo.
+  { nombre: 'Reportes', path: '/reportes', activo: true },
   {
     nombre: 'Usuarios',
     path: '/configuracion/usuarios',
@@ -58,6 +106,10 @@ export default function AppLayout() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  // El selector de edificio solo se muestra donde el edificio es el contexto de
+  // trabajo (ver RUTAS_SIN_EDIFICIO).
+  const mostrarSelectorDeEdificio = !esPantallaDeOrganizacion(pathname);
   // El residente puro no tiene organización activa: /api/edificios y
   // /api/organizaciones/me le responden 403 SIN_ORGANIZACION_ACTIVA. Su
   // contexto sale de sus vínculos (GET /api/me/unidades), así que las queries
@@ -96,6 +148,17 @@ export default function AppLayout() {
     : MODULOS.filter(
         (modulo) =>
           !modulo.roles || modulo.roles.some((rol) => roles.includes(rol)),
+      ).map((modulo) =>
+        // Módulos scopeados al edificio de trabajo (Gastos, S3-07): sin edificio
+        // seleccionado no hay ruta a la que ir, así que el link se apaga en vez
+        // de mandar a una URL incompleta.
+        modulo.pathDeEdificio
+          ? {
+              ...modulo,
+              path: edificioId ? modulo.pathDeEdificio(edificioId) : undefined,
+              activo: Boolean(edificioId),
+            }
+          : modulo,
       );
 
   const handleLogout = async () => {
@@ -139,11 +202,11 @@ export default function AppLayout() {
               <span
                 key={modulo.nombre}
                 className="flex cursor-not-allowed items-center justify-between rounded-md px-3 py-2 text-sm text-sidebar-foreground/40"
-                title="Disponible próximamente"
+                title={modulo.inactivo?.title ?? 'Disponible próximamente'}
               >
                 {modulo.nombre}
                 <Badge variant="secondary" className="text-[10px]">
-                  {residente ? 'S5' : 'S2+'}
+                  {modulo.inactivo?.badge ?? (residente ? 'S5' : 'S2+')}
                 </Badge>
               </span>
             ),
@@ -166,56 +229,65 @@ export default function AppLayout() {
             </span>
           )}
 
-          {/* Selector de edificio de trabajo */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={cargando || edificios.length === 0}
-                />
-              }
-            >
-              <Building2 className="size-4" />
-              <span className="max-w-40 truncate">
-                {cargando
-                  ? 'Cargando…'
-                  : (edificioActual?.nombre ?? 'Sin edificios')}
-              </span>
-              <ChevronsUpDown className="size-4 opacity-60" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>
-                  {residente ? 'Mi edificio' : 'Edificio de trabajo'}
-                </DropdownMenuLabel>
-                {edificios.map((edificio) => (
-                  <DropdownMenuItem
-                    key={edificio.id}
-                    onClick={() => {
-                      setEdificioId(edificio.id);
-                      // El residente no tiene acceso al detalle de staff:
-                      // su vista es la lectura de sus propias UFs.
-                      navigate(
-                        residente
-                          ? '/mis-unidades'
-                          : `/edificios/${edificio.id}/unidades`,
-                      );
-                    }}
-                  >
-                    <span
-                      className={cn(
-                        edificio.id === edificioId && 'font-semibold',
-                      )}
+          {/* Selector de edificio de trabajo: solo en las pantallas que
+              trabajan sobre un edificio. */}
+          {mostrarSelectorDeEdificio && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    // El nombre accesible dice QUÉ control es y qué edificio
+                    // tiene puesto: el texto visible es solo el nombre, que sin
+                    // el prefijo no distingue este selector del de organización.
+                    aria-label={`${
+                      residente ? 'Mi edificio' : 'Edificio de trabajo'
+                    }: ${edificioActual?.nombre ?? 'Sin edificios'}`}
+                    disabled={cargando || edificios.length === 0}
+                  />
+                }
+              >
+                <Building2 className="size-4" />
+                <span className="max-w-40 truncate">
+                  {cargando
+                    ? 'Cargando…'
+                    : (edificioActual?.nombre ?? 'Sin edificios')}
+                </span>
+                <ChevronsUpDown className="size-4 opacity-60" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>
+                    {residente ? 'Mi edificio' : 'Edificio de trabajo'}
+                  </DropdownMenuLabel>
+                  {edificios.map((edificio) => (
+                    <DropdownMenuItem
+                      key={edificio.id}
+                      onClick={() => {
+                        setEdificioId(edificio.id);
+                        // El residente no tiene acceso al detalle de staff:
+                        // su vista es la lectura de sus propias UFs.
+                        navigate(
+                          residente
+                            ? '/mis-unidades'
+                            : `/edificios/${edificio.id}/unidades`,
+                        );
+                      }}
                     >
-                      {edificio.nombre}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                      <span
+                        className={cn(
+                          edificio.id === edificioId && 'font-semibold',
+                        )}
+                      >
+                        {edificio.nombre}
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
 
           <div className="ml-auto">
             {/* Menú de usuario */}

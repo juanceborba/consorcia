@@ -108,12 +108,24 @@ import {
   calcularLiquidacionSchema,
   listarLiquidacionesSchema,
 } from '../schemas/liquidacion.schema.js';
-import { LiquidacionEngine, LiquidacionError } from '../core/liquidacion.engine.js';
+import {
+  LiquidacionEngine,
+  LiquidacionError,
+  imputacionDelPeriodo,
+} from '../core/liquidacion.engine.js';
 import {
   sumarCoeficientes,
   validarParaLiquidacion,
   errorCoeficientes,
 } from '../services/coeficientes.js';
+import { SELECT_DETALLE, itemDeDetalle, agruparItems } from '../core/detalle-agrupado.js';
+import { resolutorDeEsquemas } from '../services/esquemas-reparto.js';
+import {
+  calcularAporte,
+  explicarRegla,
+  reglaVigente,
+  valorDeLaRegla,
+} from '../services/fondo-reserva.js';
 import { emitirRecibos, serializarRecibo, ReciboError } from '../services/recibos.js';
 
 // ---------------------------------------------------------------------------
@@ -178,6 +190,8 @@ const estadoInvalido = (accion, estadoActual) => ({
   },
 });
 
+// Una sola definición del árbol del detalle, compartida con la emisión de
+// recibos (`core/detalle-agrupado.js`): la preview y el PDF muestran lo mismo.
 const dinero = (valor) => new Decimal(valor).toFixed(2);
 const coeficiente = (valor) => new Decimal(valor).toFixed(6);
 
@@ -191,6 +205,12 @@ const CAMPOS = {
   fechaLiquidacion: true,
   totalOrdinarias: true,
   totalExtraordinarias: true,
+  // S3-21: el fondo es el tercer subtotal, con el snapshot de la regla que lo
+  // produjo (la regla puede cambiar después; lo emitido no).
+  totalFondoReserva: true,
+  reglaFondoReservaId: true,
+  fondoReservaBase: true,
+  fondoReservaValor: true,
   totalGeneral: true,
   matriculaRPA: true,
   createdAt: true,
@@ -203,7 +223,21 @@ const serializar = (l) => ({
   ...l,
   totalOrdinarias: dinero(l.totalOrdinarias),
   totalExtraordinarias: dinero(l.totalExtraordinarias),
+  totalFondoReserva: dinero(l.totalFondoReserva),
   totalGeneral: dinero(l.totalGeneral),
+  // Cómo se lee el aporte: "5,00% de las expensas ordinarias". Sale del
+  // snapshot y no de la regla vigente, por la misma razón que el monto.
+  fondoReserva: l.fondoReservaBase
+    ? {
+        base: l.fondoReservaBase,
+        valor: l.fondoReservaValor === null ? null : String(l.fondoReservaValor),
+        descripcion: explicarRegla({
+          base: l.fondoReservaBase,
+          porcentaje: l.fondoReservaValor,
+          montoFijo: l.fondoReservaValor,
+        }),
+      }
+    : null,
 });
 
 // Recurso Cerbos: scope doble org + edificio (contrato en cerbos/policies/liquidacion.yaml).
@@ -232,24 +266,33 @@ const recursoLiquidacion = (req) => ({
 // El detalle se agrega en memoria con decimal.js sobre los `LiquidacionDetalle`
 // persistidos, separando ordinarias de extraordinarias por `gasto.esOrdinario`
 // (Ley 941: la separación es obligatoria y tiene que poder mostrarse por UF).
+//
+// Cada UF sale con dos vistas del MISMO dato, y las dos las arma
+// `core/detalle-agrupado.js` para que no puedan divergir entre sí ni contra el
+// PDF del recibo (decisión 1 de ese módulo):
+//
+//   `pesos`     — la lista plana, un renglón por gasto con la participación
+//                 aplicada. Es la vista de AUDITORÍA del reparto: es lo que el
+//                 administrador recorre para ver que ninguna UF paga lo que no
+//                 le toca (S3-18).
+//   `secciones` — el árbol ordinarias/extraordinarias → rubro → subrubro con
+//                 subtotales. Es la vista del PROPIETARIO: la que se dibuja en
+//                 la preview y la que imprime el recibo.
+//
+// Van las dos porque responden preguntas distintas y ninguna se deriva barato
+// de la otra en el cliente; los ítems del árbol son los mismos objetos de
+// `pesos`, así que no hay dos verdades, hay dos índices sobre una.
 async function preview(liquidacion) {
   const detalles = await prisma.liquidacionDetalle.findMany({
     where: { organizacionId: liquidacion.organizacionId, liquidacionId: liquidacion.id },
-    select: {
-      unidadId: true,
-      gastoId: true,
-      coeficienteAplicado: true,
-      montoAsignado: true,
-      unidad: { select: { id: true, numero: true, tipo: true, m2: true, coeficiente: true } },
-      gasto: { select: { id: true, esOrdinario: true } },
-    },
+    select: SELECT_DETALLE,
   });
 
   const porUnidad = new Map();
   const gastos = new Set();
 
   for (const d of detalles) {
-    gastos.add(d.gastoId);
+    if (d.gastoId) gastos.add(d.gastoId);
 
     if (!porUnidad.has(d.unidadId)) {
       porUnidad.set(d.unidadId, {
@@ -260,13 +303,26 @@ async function preview(liquidacion) {
         coeficiente: coeficiente(d.unidad.coeficiente),
         ordinarias: new Decimal(0),
         extraordinarias: new Decimal(0),
+        // S3-21: lo que esta UF aporta al fondo del período.
+        fondoReserva: new Decimal(0),
+        // S3-18: el peso que el motor aplicó A CADA GASTO de esta UF. No es
+        // redundante con `coeficiente`: en un gasto B/C es el coeficiente
+        // renormalizado entre las alcanzadas, y cuando existan los esquemas de
+        // reparto (S3-20) puede ser cualquier otra cosa que fije el reglamento
+        // (exención parcial, coeficiente propio del sector, partes iguales).
+        // Mostrarlo es lo que le permite al administrador ver ANTES de aprobar
+        // que el reparto es el que su reglamento manda.
+        pesos: [],
       });
     }
 
     const fila = porUnidad.get(d.unidadId);
     const monto = new Decimal(d.montoAsignado);
-    if (d.gasto.esOrdinario) fila.ordinarias = fila.ordinarias.plus(monto);
+    if (d.tipo === 'FONDO_RESERVA') fila.fondoReserva = fila.fondoReserva.plus(monto);
+    else if (d.gasto.esOrdinario) fila.ordinarias = fila.ordinarias.plus(monto);
     else fila.extraordinarias = fila.extraordinarias.plus(monto);
+    // Solo los pesos que participan: un 0 en una UF no alcanzada es ruido.
+    if (new Decimal(d.coeficienteAplicado).gt(0)) fila.pesos.push(itemDeDetalle(d));
   }
 
   const unidades = [...porUnidad.values()]
@@ -275,7 +331,9 @@ async function preview(liquidacion) {
       ...u,
       ordinarias: u.ordinarias.toFixed(2),
       extraordinarias: u.extraordinarias.toFixed(2),
-      total: u.ordinarias.plus(u.extraordinarias).toFixed(2),
+      fondoReserva: u.fondoReserva.toFixed(2),
+      total: u.ordinarias.plus(u.extraordinarias).plus(u.fondoReserva).toFixed(2),
+      secciones: agruparItems(u.pesos),
     }));
 
   return {
@@ -358,10 +416,21 @@ liquidacionesDeEdificioRouter.post(
       });
       if (vigente) return res.status(409).json(periodoYaLiquidado(vigente));
 
-      // PASO 1 del §2: validar los gastos del período (los soft-deleted no
+      // PASO 1 del §2: validar las IMPUTACIONES del período (los soft-deleted no
       // participan — para la API ya no existen, S3-02 decisión 3).
-      const gastos = await prisma.gasto.findMany({
-        where: { organizacionId, edificioId, periodo, deletedAt: null },
+      //
+      // S3-19: lo que se liquida es una imputación, no siempre un gasto entero.
+      // El período incluye los gastos de imputación única de ese período MÁS los
+      // gastos en cuotas cuya cuota cae ahí, y de esos se reparte el monto de la
+      // cuota con la categoría/servicio/sector del gasto padre. Un gasto sin plan
+      // se comporta exactamente como antes.
+      const gastosDelPeriodo = await prisma.gasto.findMany({
+        where: {
+          organizacionId,
+          edificioId,
+          deletedAt: null,
+          OR: [{ periodo, cuotas: { none: {} } }, { cuotas: { some: { periodo } } }],
+        },
         select: {
           id: true,
           monto: true,
@@ -370,12 +439,33 @@ liquidacionesDeEdificioRouter.post(
           servicioEspecifico: true,
           sectorEspecifico: true,
           esOrdinario: true,
+          periodo: true,
+          // S3-20: el override del gasto es la primera opción de la resolución.
+          esquemaRepartoId: true,
+          cuotas: {
+            where: { periodo },
+            select: { id: true, numero: true, cuotasTotal: true, periodo: true, monto: true },
+          },
         },
         // Orden estable: el ajuste de centavos del motor depende del orden en
         // que se distribuyen los gastos, así que recalcular el mismo período
         // tiene que dar exactamente los mismos detalles.
         orderBy: [{ fechaGasto: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       });
+
+      // `imputacionDelPeriodo` devuelve null si al gasto no le toca nada en el
+      // período; con el `where` de arriba eso no debería pasar, y el filtro es la
+      // red que evita repartir un gasto que no corresponde si alguna vez difieren.
+      // S3-20: el esquema de reparto de cada gasto se resuelve ACÁ (la resolución
+      // pega a la DB; el motor recibe el esquema ya elegido, igual que recibe la
+      // imputación ya elegida). Un resolutor por liquidación, así los N gastos se
+      // resuelven contra la MISMA foto de la configuración del edificio.
+      const resolver = await resolutorDeEsquemas(organizacionId, edificioId);
+
+      const gastos = gastosDelPeriodo
+        .map((g) => imputacionDelPeriodo(g, periodo))
+        .filter((imputacion) => imputacion !== null)
+        .map((imputacion) => ({ ...imputacion, esquema: resolver(imputacion) }));
 
       if (gastos.length === 0) return res.status(422).json(sinGastos(periodo));
 
@@ -397,12 +487,35 @@ liquidacionesDeEdificioRouter.post(
         return res.status(422).json(errorCoeficientes(sumarCoeficientes(unidades.map((u) => u.coeficiente))));
       }
 
+      // S3-21: la regla del fondo VIGENTE EN EL PERÍODO (no la actual), con su
+      // esquema propio si lo tiene y, si no, el general del edificio — que es lo
+      // que ya devuelve el resolutor para un gasto sin esquema propio.
+      const regla = await reglaVigente(organizacionId, edificioId, periodo);
+      const esquemaDelFondo = regla
+        ? resolver({ esquemaRepartoId: regla.esquemaRepartoId, categoria: 'A' })
+        : null;
+
       // PASO 2: el motor determinístico (decimal.js, cero floats).
       const calculada = await LiquidacionEngine.calcularLiquidacion(
         edificioId,
         periodo,
         gastos,
-        unidades
+        unidades,
+        {
+          fondoReserva: regla
+            ? {
+                aporte: calcularAporte(regla, {
+                  totalOrdinarias: gastos
+                    .filter((g) => g.esOrdinario)
+                    .reduce((suma, g) => suma.plus(new Decimal(g.montoImputado ?? g.monto)), new Decimal(0)),
+                  totalExtraordinarias: gastos
+                    .filter((g) => !g.esOrdinario)
+                    .reduce((suma, g) => suma.plus(new Decimal(g.montoImputado ?? g.monto)), new Decimal(0)),
+                }),
+                esquema: esquemaDelFondo,
+              }
+            : undefined,
+        }
       );
 
       // Decisión 6: la matrícula RPA es de la organización y se copia acá.
@@ -420,13 +533,26 @@ liquidacionesDeEdificioRouter.post(
           estado: 'BORRADOR',
           totalOrdinarias: calculada.totalOrdinarias,
           totalExtraordinarias: calculada.totalExtraordinarias,
+          totalFondoReserva: calculada.totalFondoReserva,
+          // Snapshot de la regla aplicada (S3-21).
+          reglaFondoReservaId: regla?.id ?? null,
+          fondoReservaBase: regla?.base ?? null,
+          fondoReservaValor: valorDeLaRegla(regla),
           totalGeneral: calculada.totalGeneral,
           matriculaRPA: organizacion.matriculaRPA,
           detalles: {
             create: calculada.detalles.map((d) => ({
               organizacionId,
+              tipo: d.tipo,
               unidadId: d.unidadId,
               gastoId: d.gastoId,
+              // S3-19: snapshot de la cuota imputada (null = imputación única).
+              gastoCuotaId: d.gastoCuotaId,
+              cuotaNumero: d.cuotaNumero,
+              cuotasTotal: d.cuotasTotal,
+              // S3-20: snapshot del esquema aplicado (null = por coeficiente).
+              esquemaRepartoId: d.esquemaRepartoId,
+              esquemaNombre: d.esquemaNombre,
               coeficienteAplicado: d.coeficienteAplicado,
               montoAsignado: d.montoAsignado,
             })),

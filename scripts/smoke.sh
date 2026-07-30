@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# scripts/smoke.sh — Smoke E2E de los slices S1+S2+S4 contra el stack dockerizado
+# scripts/smoke.sh — Smoke E2E de los slices S1+S2+S3+S4 contra el stack dockerizado
 # Flujo: health → login (admin y gestor) → listados de edificios → detalle
 # con unidades → slice S2 (alta de edificio, bulk de unidades con invariante
 # de coeficientes, PATCH, DELETE soft delete) → slice S4 (invitaciones, staff,
 # residentes, cambio de organización) → casos del seed multi-caso (S4-10:
 # segundo gestor, Org B aislada, residente multi-consorcio, invitación
-# pendiente) → refresh (rotación) → logout.
+# pendiente) → dashboard de gastos (S3-15/S3-16: los dos alcances, la exclusión
+# de los modos de período y los tres 403 distinguibles) → refresh (rotación) →
+# logout.
 # Cada paso imprime ✓/✗ y el script sale con 1 si algo falla. Lo que crea lo
 # limpia al final (el edificio de prueba queda dado de baja con soft delete).
 #
@@ -45,7 +47,7 @@ req() {
   BODY=$(sed '$d' <<< "$resp")
 }
 
-echo "Smoke ConsorcIA (S1-14 + S2-12 + S4-02/03/04/05 + S4-10) contra $BASE_URL"
+echo "Smoke ConsorcIA (S1-14 + S2-12 + S3-17 + S4-02/03/04/05 + S4-10) contra $BASE_URL"
 echo
 
 # --- 1. Health ----------------------------------------------------------------
@@ -530,6 +532,87 @@ for r in "$GESTOR2_REFRESH" "$ORGB_REFRESH" "$MULTI_REFRESH" "${MULTIORG_REFRESH
          "${RESIDENTE_REFRESH:-}" "${MULTI58_REFRESH:-}"; do
   [ -n "$r" ] && req POST /api/auth/logout '' "{\"refreshToken\":\"$r\"}"
 done
+
+# --- 3.10 Dashboard de gastos (S3-15/S3-16, PRD-04-02 §3.4) --------------------
+# Los dos alcances del MISMO agregado: el del edificio (`gasto:read`, lo ve
+# también el gestor de ese edificio) y el consolidado de la organización, que es
+# de org_admin y Business+. Lo que se verifica acá y no en los tests unitarios es
+# el contrato tal como lo consume el frontend: la reconciliación de los KPIs, la
+# exclusión de los modos de período y los tres 403 distinguibles.
+echo "3.10 Dashboard de gastos (S3-15/S3-16)"
+
+req GET "/api/edificios/$EDIFICIO_ID/gastos/dashboard" "$ADMIN_TOKEN"
+check "GET dashboard del edificio (admin) → 200" 200 "$STATUS"
+check "sin params, el modo es todo el histórico" "todo" \
+  "$(json_eval 'd.filtro.modo' <<< "$BODY")"
+# Cero tolerancia, igual que en la liquidación: los subtotales de los KPIs suman
+# el total al centavo (si no, la pantalla se contradice con su propia tabla).
+check "total = ordinarias + extraordinarias (al centavo)" "true" \
+  "$(json_eval '(Number(d.kpis.totalOrdinarias) + Number(d.kpis.totalExtraordinarias)).toFixed(2) === Number(d.kpis.total).toFixed(2)' <<< "$BODY")"
+# En modo histórico la serie sale de los meses que tienen gasto; los 12 puntos
+# fijos (incluidos los vacíos) son del modo período, que es el que grafica la
+# ventana móvil del selector.
+check "la evolución mensual es una serie" "true" \
+  "$(json_eval 'Array.isArray(d.evolucionMensual)' <<< "$BODY")"
+check "el alcance declara sus unidades" "true" \
+  "$(json_eval 'd.filtro.unidades > 0' <<< "$BODY")"
+# Decisión 6 de §3.4: el rollup a rubro raíz llega hecho del backend.
+check "porRubro viene rolleado a rubro raíz con sus subrubros" "true" \
+  "$(json_eval 'd.porRubro.every(r => Array.isArray(r.subrubros))' <<< "$BODY")"
+
+req GET "/api/edificios/$EDIFICIO_ID/gastos/dashboard?todo=1" "$ADMIN_TOKEN"
+check "?todo=1 → modo todo" "todo" "$(json_eval 'd.filtro.modo' <<< "$BODY")"
+
+PERIODO_HOY=$(node -e 'console.log(new Date().toISOString().slice(0,7))')
+req GET "/api/edificios/$EDIFICIO_ID/gastos/dashboard?periodo=$PERIODO_HOY" "$ADMIN_TOKEN"
+check "?periodo=$PERIODO_HOY → modo periodo" "periodo" "$(json_eval 'd.filtro.modo' <<< "$BODY")"
+check "en modo período la evolución trae los 12 meses de la ventana" 12 \
+  "$(json_eval 'd.evolucionMensual.length' <<< "$BODY")"
+
+# Precisión 2 de §3.4: los tres modos son excluyentes. El frontend lo garantiza
+# en `useFiltrosGastos`; el contrato lo rechaza igual.
+req GET "/api/edificios/$EDIFICIO_ID/gastos/dashboard?periodo=$PERIODO_HOY&todo=1" "$ADMIN_TOKEN"
+check "período + todo=1 → 422" 422 "$STATUS"
+check "con el código del contrato" "VALIDACION_FALLIDA" "$(json_eval 'd.error.code' <<< "$BODY")"
+
+req GET "/api/edificios/$EDIFICIO_ID/gastos/dashboard?periodo=$PERIODO_HOY&desde=2026-01-01" "$ADMIN_TOKEN"
+check "período + rango → 422" 422 "$STATUS"
+
+req GET "/api/edificios/$EDIFICIO_ID/gastos/dashboard"
+check "dashboard sin token → 401" 401 "$STATUS"
+
+# El gestor lee el dashboard de SU edificio (mismo permiso que la lista): el id
+# sale de SU listado, que es el único edificio que tiene asignado.
+req GET /api/edificios "$GESTOR_TOKEN"
+EDIFICIO_GESTOR=$(json_eval 'd[0].id' <<< "$BODY")
+req GET "/api/edificios/$EDIFICIO_GESTOR/gastos/dashboard" "$GESTOR_TOKEN"
+check "dashboard del edificio asignado (gestor) → 200" 200 "$STATUS"
+
+# Consolidado: Org A está en plan business (el seed lo deja así a propósito).
+req GET "/api/organizaciones/me/gastos/dashboard" "$ADMIN_TOKEN"
+check "GET consolidado de la organización (admin, business) → 200" 200 "$STATUS"
+check "abarca los 2 edificios activos de la org" 2 \
+  "$(json_eval 'd.filtro.edificios.length' <<< "$BODY")"
+check "y sus KPIs también reconcilian" "true" \
+  "$(json_eval '(Number(d.kpis.totalOrdinarias) + Number(d.kpis.totalExtraordinarias)).toFixed(2) === Number(d.kpis.total).toFixed(2)' <<< "$BODY")"
+
+# …pero NO el consolidado: "todos los edificios" es la vista del administrador
+# (decisión 2 de la ruta). Cerbos responde antes que el gate de plan.
+req GET "/api/organizaciones/me/gastos/dashboard" "$GESTOR_TOKEN"
+check "consolidado (gestor) → 403" 403 "$STATUS"
+check "por rol, no por plan" "ACCESO_DENEGADO" "$(json_eval 'd.error.code' <<< "$BODY")"
+
+# Org B es starter: el consolidado es Business+ y el error dice qué falta.
+req GET "/api/organizaciones/me/gastos/dashboard" "$ORGB_TOKEN"
+check "consolidado (org_admin de Org B, starter) → 403" 403 "$STATUS"
+check "por plan insuficiente" "PLAN_INSUFICIENTE" "$(json_eval 'd.error.code' <<< "$BODY")"
+check "y el error trae los dos planes para el copy" "starter business" \
+  "$(json_eval 'd.error.planActual + " " + d.error.planRequerido' <<< "$BODY")"
+
+# El tenant sale del JWT: el id del path es una aserción que se verifica.
+req GET "/api/organizaciones/00000000-0000-0000-0000-000000000000/gastos/dashboard" "$ADMIN_TOKEN"
+check "consolidado de otra organización → 403" 403 "$STATUS"
+check "con FUERA_DE_ORGANIZACION" "FUERA_DE_ORGANIZACION" "$(json_eval 'd.error.code' <<< "$BODY")"
 
 # --- Limpieza de seguridad -----------------------------------------------------
 # Si algo falló antes del DELETE del slice S2, el edificio de prueba queda

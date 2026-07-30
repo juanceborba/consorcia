@@ -18,6 +18,13 @@
 //    en el instante actual, cargar el gasto del día a la mañana funciona y a la
 //    noche no (según cómo el navegador arme la fecha). El fin del día UTC acepta
 //    hoy en cualquier huso de Argentina y sigue rechazando mañana.
+//
+// 3. S3-19 — `cuotasTotal` es el ÚNICO campo del plan de cuotas que entra por la
+//    API: el resto (los períodos y el monto de cada cuota) lo deriva el motor con
+//    `planDeCuotas(monto, cuotasTotal, periodo)`, que es determinístico. Dejar
+//    que el cliente mande los montos abriría la puerta a un plan que no suma el
+//    total de la factura, que es justo la invariante que hay que defender.
+//    `cuotasTotal: null` en una edición borra el plan (vuelve a imputación única).
 
 import { z } from 'zod';
 import Decimal from 'decimal.js';
@@ -113,7 +120,33 @@ const camposGasto = {
   comprobanteUrl: opcional(z.string().trim().url('comprobanteUrl: URL inválida').max(500)),
   fechaGasto: fechaGastoSchema,
   periodo: periodoSchema,
+  // Decisión 3: plan de cuotas. `periodo` es el de la primera cuota y las N-1
+  // siguientes son los meses consecutivos. El tope de 120 son 10 años: más que
+  // eso no es un plan de pago de una obra, es un error de tipeo.
+  // S3-20: el esquema de reparto propio del gasto. NULL/ausente = el gasto adopta
+  // lo que el edificio tenga configurado para su categoría/servicio/sector, y si
+  // no hay nada, el coeficiente de siempre. Que el esquema sea de ESTE edificio
+  // se valida en la ruta (depende de la DB).
+  esquemaRepartoId: opcional(z.string().uuid('esquemaRepartoId: UUID requerido')),
+  cuotasTotal: opcional(
+    z.coerce
+      .number({ invalid_type_error: 'cuotasTotal: número entero' })
+      .int('cuotasTotal: número entero')
+      .min(2, 'cuotasTotal: mínimo 2 cuotas (sin plan, el gasto se imputa entero en su período)')
+      .max(120, 'cuotasTotal: máximo 120 cuotas')
+  ),
 };
+
+// Coherencia del plan de cuotas con el tipo de gasto (S3-19). El alcance de la
+// tarea es la brecha 1 del research: una OBRA que se cobra en N meses. Una
+// ordinaria es, por definición, el gasto corriente del mes (CCyC arts. 2046 inc.
+// c y 2048) y prorratearla escondería el gasto real de cada período.
+export function incoherenciaCuotas({ cuotasTotal, esOrdinario }) {
+  if (cuotasTotal && esOrdinario) {
+    return 'cuotasTotal: solo un gasto extraordinario se imputa en cuotas (una ordinaria es el gasto corriente del período)';
+  }
+  return null;
+}
 
 // Coherencia categoría ↔ campo específico. Se aplica sobre el objeto YA
 // resuelto (creación: valores del body; edición: merge con lo persistido), así
@@ -156,20 +189,64 @@ const booleanoDeQuery = z.preprocess((v) => {
   return v;
 }, z.boolean());
 
+// Los filtros que el dashboard (§3.4) comparte con la lista (§2). Se declaran
+// una vez porque S3-16 los lee de la MISMA URL para las dos vistas: si el
+// dashboard aceptara un subconjunto, filtrar por rubro movería la lista y dejaría
+// los KPIs quietos.
+const filtrosComunes = {
+  periodo: periodoSchema.optional(),
+  categoria: z.enum(['A', 'B', 'C']).optional(),
+  proveedorId: z.string().uuid('proveedorId inválido').optional(),
+  rubroId: z.string().uuid('rubroId inválido').optional(),
+  createdBy: z.string().uuid('createdBy inválido').optional(),
+  desde: z.coerce.date({ invalid_type_error: 'desde: fecha inválida' }).optional(),
+  hasta: z.coerce.date({ invalid_type_error: 'hasta: fecha inválida' }).optional(),
+  q: z.string().trim().min(1).max(100).optional(),
+};
+
+const rangoCoherente = (f) => !(f.desde && f.hasta) || f.desde <= f.hasta;
+
 export const listarGastosSchema = z
   .object({
-    periodo: periodoSchema.optional(),
-    categoria: z.enum(['A', 'B', 'C']).optional(),
+    ...filtrosComunes,
     esOrdinario: booleanoDeQuery.optional(),
-    proveedorId: z.string().uuid('proveedorId inválido').optional(),
-    rubroId: z.string().uuid('rubroId inválido').optional(),
-    desde: z.coerce.date({ invalid_type_error: 'desde: fecha inválida' }).optional(),
-    hasta: z.coerce.date({ invalid_type_error: 'hasta: fecha inválida' }).optional(),
-    q: z.string().trim().min(1).max(100).optional(),
     page: z.coerce.number().int().positive().default(1),
     limit: z.coerce.number().int().positive().max(100).default(50),
   })
-  .refine((f) => !(f.desde && f.hasta) || f.desde <= f.hasta, {
+  .refine(rangoCoherente, {
     path: ['desde'],
     message: 'desde: no puede ser posterior a hasta',
   });
+
+// Query del dashboard (§3.4): `?periodo=` | `?desde=&hasta=` | `?todo=1`, más los
+// filtros comunes con la lista.
+//
+// DECISIONES:
+//
+// 1. Los tres modos son EXCLUYENTES y se rechaza la combinación con 422 en vez de
+//    elegir uno por precedencia. `?periodo=2026-07&todo=1` no tiene una lectura
+//    obvia, y un dashboard que devuelve un total distinto al que el usuario cree
+//    haber pedido es peor que un error.
+// 2. Sin ningún modo, el default es `todo`: es lo que hace la lista sin filtros y
+//    lo que hace que un `GET` pelado del endpoint sea útil en vez de un 422. La
+//    pantalla arranca en "últimos 12 meses" (§3.2), pero eso lo manda la UI.
+// 3. `esOrdinario` NO es filtro del dashboard: el KPI ordinarias/extraordinarias
+//    (§3.1) es justamente el corte por ese eje, y filtrarlo dejaría el otro
+//    subtotal en cero mostrando un desglose que no desglosa nada.
+export const dashboardGastosSchema = z
+  .object({
+    ...filtrosComunes,
+    todo: booleanoDeQuery.optional(),
+  })
+  .refine(rangoCoherente, {
+    path: ['desde'],
+    message: 'desde: no puede ser posterior a hasta',
+  })
+  .refine(
+    (f) => [f.periodo !== undefined, f.desde !== undefined || f.hasta !== undefined, f.todo === true]
+      .filter(Boolean).length <= 1,
+    {
+      path: ['periodo'],
+      message: 'elegir UN modo de período: periodo, desde/hasta o todo=1',
+    }
+  );

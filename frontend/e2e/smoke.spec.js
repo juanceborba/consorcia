@@ -22,9 +22,13 @@ test('smoke S1: login → edificios → detalle → logout', async ({ page }) =>
   await test.step('la lista muestra 2 cards de edificios', async () => {
     await page.getByRole('link', { name: 'Edificios' }).click();
     await expect(page).toHaveURL(/\/edificios$/);
-    // Excluye el link "Nuevo edificio" (/edificios/nuevo, agregado en S2-06)
+    // Excluye el link "Nuevo edificio" (/edificios/nuevo, agregado en S2-06) y
+    // se acota a `main`: el sidebar tiene su propio link a /edificios/:id/gastos
+    // desde S3-07 y contarlo daba 3 cards donde el seed tiene 2.
     await expect(
-      page.locator('a[href^="/edificios/"]:not([href="/edificios/nuevo"])'),
+      page
+        .getByRole('main')
+        .locator('a[href^="/edificios/"]:not([href="/edificios/nuevo"])'),
     ).toHaveCount(2);
   });
 

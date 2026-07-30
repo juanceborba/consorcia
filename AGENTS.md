@@ -2,7 +2,7 @@
 
 ## Qué es esto
 
-Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas viven en un vault de Obsidian **fuera de este repo**: `../../vault` (PRDs en español, `PRD-XX-YY Título.md`). Antes de implementar un módulo, leé su PRD.
+Código de **ConsorcIA** (SaaS de gestión de consorcios). Las specs canónicas viven en un vault de Obsidian **dentro de este repo**: `vault/` (PRDs en español, `PRD-XX-YY Título.md`). Antes de implementar un módulo, leé su PRD. Hasta 2026-07-30 era un repo git aparte al lado de `app/`; se incorporó con `git subtree` porque no tenía remoto y las specs vivían en un solo disco. **Los commits del vault ya no van aparte**: es el mismo repo (pero conviene seguir separando el commit de PRDs del de código, por legibilidad del historial).
 
 ## Estado del proyecto
 
@@ -48,7 +48,7 @@ La verdad del estado vive en `state/` (event-sourced, ver `state/README.md`): lo
 
 ## Regla de sincronización con el vault
 
-Si el código diverge de un PRD (puertos, endpoints, schema, roles), **actualizá el PRD del vault en la misma tarea** — el PRD refleja lo que existe, no el diseño original. Convenciones del vault en `../../vault/AGENTS.md`. Errores del contrato API: `{ error: { code, message } }`.
+Si el código diverge de un PRD (puertos, endpoints, schema, roles), **actualizá el PRD del vault en la misma tarea** — el PRD refleja lo que existe, no el diseño original. Convenciones del vault en `vault/AGENTS.md`. Errores del contrato API: `{ error: { code, message } }`.
 
 ## Regla de frescura de la ayuda contextual
 
@@ -57,6 +57,14 @@ La ayuda contextual (PRD-07-02 §6.5) es parte de la funcionalidad, no un anexo.
 1. Si la tarea cambia funcionalidad cubierta por un topic de ayuda, **el topic se actualiza en la misma tarea**. Si el cambio tiene profundidad en temas que abordan otros topics, se revisan y actualizan los relacionados.
 2. Si la tarea agrega una pantalla o un concepto nuevo de dominio, se evalúa su acceso a ayuda (ícono junto al título, §6.5) — y si corresponde, su topic con sus `pantallas` declaradas.
 3. **Gate automatizado bloqueante:** `npm run check:ayuda` (en `frontend/`, corre también en CI) falla si una pantalla referencia un topic inexistente, si un `relacionados` queda roto, o si una pantalla declarada pierde su acceso a ayuda. El contenido en sí (nivel 1 y 2) lo garantiza la revisión humana/del agente; el gate garantiza la consistencia estructural.
+
+## Regla de frescura del catálogo de usuarios demo
+
+El login (en dev, o con `VITE_DEMO_USUARIOS=1`) muestra el diálogo **"Usuarios de demo"** con las identidades del seed y **qué puede y qué no puede hacer cada rol** (`frontend/src/lib/usuarios-demo.js`). Es documentación viva de la jerarquía de permisos, no un atajo de credenciales:
+
+1. **Si la tarea cambia lo que un rol puede hacer** —una policy de Cerbos, un guard de ruta, un gate de plan, una acción que aparece o desaparece— **se actualiza `usuarios-demo.js` en la misma tarea**. Es la misma regla que la ayuda contextual.
+2. **Gate automatizado bloqueante:** `npm run check:demo` (en `frontend/`, corre en CI) falla si el catálogo ofrece un email que el seed no crea, si el seed crea uno que el catálogo no menciona (hay que agregarlo o declararlo en `USUARIOS_DEMO_OMITIDOS` con su motivo), si el nombre o la password no coinciden con el seed, o si una identidad no declara puede/noPuede. **Corre desde el host o en CI, no dentro del contenedor del frontend**: lee `backend/prisma/seed.js`, que no está montado ahí.
+3. El gate no puede verificar si el contenido de puede/noPuede **sigue siendo cierto**: eso lo garantiza la revisión de la tarea. El E2E `frontend/e2e/usuarios-demo.spec.js` cubre el otro extremo — que la cuenta ofrecida efectivamente entra y ve lo que el diálogo promete.
 
 ## Credenciales demo (seed)
 
@@ -78,7 +86,8 @@ Cubre los 8 casos de PRD-04-11 §10:
 
 Resto de residentes (solo `UnidadUsuario`, sin membresía staff): `propietario1@demo.com` (Torre Palermo PB), `propietario3@demo.com` (San Martín PB), `propietario.sur@demo.com` (Lomas PB). `encargado@demo.com` existe como identidad **sin vínculos** (el rol ENCARGADO es de scope edificio y todavía no tiene modelo; loguea pero Cerbos le niega todo).
 
-- **Organizaciones:** Org A "Administración Demo S.A." (CUIT `30-71234567-8`, 2 edificios / 20 UFs) · Org B "Administración Sur S.R.L." (CUIT `30-71234569-4`, 1 edificio / 5 UFs).
+- **Organizaciones:** Org A "Administración Demo S.A." (CUIT `30-71234567-8`, 2 edificios / 20 UFs, plan **`business`**) · Org B "Administración Sur S.R.L." (CUIT `30-71234569-4`, 1 edificio / 5 UFs, plan **`starter`**). Los planes son deliberados (S3-15): el consolidado de gastos de la organización es Business+, así que Org A lo ejercita y Org B es el caso `403 PLAN_INSUFICIENTE`. Jerarquía: `starter < pro < business < enterprise` (`src/middleware/plan.middleware.js`).
+- **Datos de gastos (S3-22b):** el seed carga **3 proveedores propios** de Org A (uno dado de baja) + 1 de Org B, y **6 gastos del período corriente en Torre Palermo sin liquidar** (3 ordinarios + 3 extraordinarios, categorías A y B). Antes no cargaba ninguno y el tab de Gastos, el reporte y la generación de liquidaciones arrancaban vacíos. **Quedan sin liquidar a propósito**: el DoD del sprint arranca en "generar la liquidación del período" y un período ya liquidado responde 409. Los rubros salen del maestro por nombre y el seed **falla fuerte** si uno no existe.
 - **Invitación pendiente (caso 7):** token fijo → `http://localhost:5173/invitacion/seed-invitacion-pendiente`. Aceptarla define la password de `invitado@demo.com` y la consume; el reseed la vuelve a dejar pendiente.
 - **Aceptación de invitaciones (S4-11, PRD-04-11 §6.3):** la aceptación **nunca** emite sesión ni fija password sobre un `Usuario` preexistente. Solo la invitación que creó la identidad (`Invitacion.creaUsuario`) puede activarla; una invitación a una cuenta ya activada responde `200 { yaActivada: true }` **sin tokens**, y una sobre una identidad que aprovisionó otra organización responde `409 ACTIVACION_NO_DISPONIBLE`. Si escribís un test que inserta invitaciones con Prisma para un email **que ya existe sin password**, seteale `creaUsuario: true` o el accept te va a devolver 409.
 

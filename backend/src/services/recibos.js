@@ -27,11 +27,20 @@
 //    futura). Si la UF no tiene titular cargado el recibo se emite igual con
 //    "Sin titular registrado": bloquear la liquidación entera del edificio por
 //    un padrón incompleto sería peor (el consorcio tiene que poder emitir).
+//
+// 5. **EL DETALLE IMPRESO ES EL MISMO OBJETO QUE MUESTRA LA PREVIEW.** El árbol
+//    ordinarias/extraordinarias → rubro → subrubro lo arma `agruparItems`
+//    (`core/detalle-agrupado.js`), que es también el que consume la pantalla de
+//    la liquidación. Antes este servicio armaba su propia lista plana: dos
+//    definiciones de "cómo se detalla una expensa" que iban a divergir, y un
+//    propietario cuyo PDF no coincide con lo que se le mostró tiene razón en
+//    desconfiar del importe.
 
 import { randomUUID } from 'node:crypto';
 import Decimal from 'decimal.js';
 import prisma from '../db/prisma.js';
 import { generarReciboPDF } from '../core/recibos.generator.js';
+import { SELECT_DETALLE, itemDeDetalle, agruparItems } from '../core/detalle-agrupado.js';
 import { validarRecibo } from '../core/validators/recibo.validator.js';
 import { guardar, segmentoSeguro } from './almacenamiento.js';
 
@@ -88,15 +97,10 @@ export async function emitirRecibos(liquidacion, { fechaEmision = new Date() } =
     }),
     prisma.liquidacionDetalle.findMany({
       where: { organizacionId, liquidacionId: liquidacion.id },
-      select: {
-        unidadId: true,
-        montoAsignado: true,
-        unidad: { select: { id: true, numero: true, tipo: true, m2: true, coeficiente: true } },
-        gasto: { select: { id: true, concepto: true, esOrdinario: true, fechaGasto: true } },
-      },
-      // Orden estable: el detalle impreso de un mismo período no puede cambiar
-      // de orden entre dos emisiones (determinismo del PDF).
-      orderBy: [{ gasto: { fechaGasto: 'asc' } }, { gastoId: 'asc' }],
+      // Decisión 5: el mismo `select` que usa la preview. El orden final lo fija
+      // `agruparItems` (nombre + id en los grupos, fecha + gastoId + cuota en los
+      // ítems), que es lo que sostiene el determinismo del PDF.
+      select: SELECT_DETALLE,
     }),
   ]);
 
@@ -131,38 +135,46 @@ export async function emitirRecibos(liquidacion, { fechaEmision = new Date() } =
     propietariosPorUnidad.set(v.unidadId, lista);
   }
 
-  // Agregación por UF: ítems por gasto + totales (decimal.js puro).
+  // Agregación por UF: ítems por gasto + totales (decimal.js puro). El árbol
+  // impreso (ordinarias/extraordinarias → rubro → subrubro) lo arma
+  // `agruparItems`, el MISMO que dibuja la preview de la liquidación: es lo que
+  // garantiza que el propietario lea en su PDF exactamente el detalle que el
+  // administrador verificó antes de aprobar (decisión 5).
   const porUnidad = new Map();
   for (const d of detalles) {
     if (!porUnidad.has(d.unidadId)) {
       porUnidad.set(d.unidadId, {
         unidad: d.unidad,
-        ordinarias: [],
-        extraordinarias: [],
+        items: [],
         totalOrdinarias: new Decimal(0),
         totalExtraordinarias: new Decimal(0),
+        // S3-21: el aporte de esta UF al fondo del período, tercer subtotal.
+        totalFondoReserva: new Decimal(0),
       });
     }
     const fila = porUnidad.get(d.unidadId);
     const monto = new Decimal(d.montoAsignado);
-    const item = { concepto: d.gasto.concepto, monto: monto.toFixed(2) };
 
-    if (d.gasto.esOrdinario) {
+    if (d.tipo === 'FONDO_RESERVA') {
+      fila.totalFondoReserva = fila.totalFondoReserva.plus(monto);
+    } else if (d.gasto.esOrdinario) {
       fila.totalOrdinarias = fila.totalOrdinarias.plus(monto);
-      if (!monto.isZero()) fila.ordinarias.push(item); // decisión 3
     } else {
       fila.totalExtraordinarias = fila.totalExtraordinarias.plus(monto);
-      if (!monto.isZero()) fila.extraordinarias.push(item);
     }
+
+    // Decisión 3: los detalles en 0 no se imprimen, pero sí suman al total.
+    if (!monto.isZero()) fila.items.push(itemDeDetalle(d));
   }
 
-  const filas = [...porUnidad.values()].sort((a, b) =>
-    a.unidad.numero.localeCompare(b.unidad.numero, 'es')
-  );
+  const filas = [...porUnidad.values()]
+    .sort((a, b) => a.unidad.numero.localeCompare(b.unidad.numero, 'es'))
+    .map((f) => ({ ...f, secciones: agruparItems(f.items) }));
 
   const totalesConsorcio = {
     ordinarias: new Decimal(liquidacion.totalOrdinarias).toFixed(2),
     extraordinarias: new Decimal(liquidacion.totalExtraordinarias).toFixed(2),
+    fondoReserva: new Decimal(liquidacion.totalFondoReserva ?? 0).toFixed(2),
     general: new Decimal(liquidacion.totalGeneral).toFixed(2),
   };
 
@@ -185,11 +197,14 @@ export async function emitirRecibos(liquidacion, { fechaEmision = new Date() } =
       consorcio: edificio,
       unidad: fila.unidad,
       propietarios: propietariosPorUnidad.get(fila.unidad.id) ?? [],
-      ordinarias: fila.ordinarias,
-      extraordinarias: fila.extraordinarias,
+      secciones: fila.secciones,
       totalOrdinarias: fila.totalOrdinarias.toFixed(2),
       totalExtraordinarias: fila.totalExtraordinarias.toFixed(2),
-      totalGeneral: fila.totalOrdinarias.plus(fila.totalExtraordinarias).toFixed(2),
+      totalFondoReserva: fila.totalFondoReserva.toFixed(2),
+      totalGeneral: fila.totalOrdinarias
+        .plus(fila.totalExtraordinarias)
+        .plus(fila.totalFondoReserva)
+        .toFixed(2),
       totalesConsorcio,
       verificacionUrl: urlVerificacion(id),
     };
@@ -230,6 +245,7 @@ export async function emitirRecibos(liquidacion, { fechaEmision = new Date() } =
       matriculaRPA: liquidacion.matriculaRPA,
       totalOrdinarias: datos.totalOrdinarias,
       totalExtraordinarias: datos.totalExtraordinarias,
+      totalFondoReserva: datos.totalFondoReserva,
       totalGeneral: datos.totalGeneral,
       qrData,
       fechaEmision,
@@ -279,6 +295,7 @@ export const serializarRecibo = (r) => ({
   matriculaRPA: r.matriculaRPA,
   totalOrdinarias: new Decimal(r.totalOrdinarias).toFixed(2),
   totalExtraordinarias: new Decimal(r.totalExtraordinarias).toFixed(2),
+  totalFondoReserva: new Decimal(r.totalFondoReserva ?? 0).toFixed(2),
   totalGeneral: new Decimal(r.totalGeneral).toFixed(2),
   fechaEmision: r.fechaEmision,
   bytes: r.bytes,

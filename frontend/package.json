@@ -11,6 +11,7 @@
     "test": "echo \"tests: pendiente de configurar (Vitest)\" && exit 0",
     "test:e2e": "playwright test",
     "check:ayuda": "node scripts/check-ayuda.mjs",
+    "check:demo": "node scripts/check-usuarios-demo.mjs",
     "lint": "echo \"lint: pendiente de configurar\" && exit 0",
     "format": "echo \"format: pendiente de configurar\" && exit 0"
   },
@@ -31,6 +32,7 @@
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.83.0",
     "react-router": "^7.18.1",
+    "recharts": "^3.10.1",
     "shadcn": "^4.16.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",

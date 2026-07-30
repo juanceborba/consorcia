@@ -25,8 +25,15 @@ import EdificioNuevoPage from '@/pages/EdificioNuevoPage';
 import EdificioDetallePage from '@/pages/EdificioDetallePage';
 import EdificioOverviewTab from '@/pages/edificio/EdificioOverviewTab';
 import EdificioUnidadesTab from '@/pages/edificio/EdificioUnidadesTab';
+import EdificioGastosTab from '@/pages/edificio/EdificioGastosTab';
+import EdificioLiquidacionesTab from '@/pages/edificio/EdificioLiquidacionesTab';
+import LiquidacionPreviewTab from '@/pages/edificio/LiquidacionPreviewTab';
 import EdificioConfiguracionTab from '@/pages/edificio/EdificioConfiguracionTab';
 import ConfiguracionUsuariosPage from '@/pages/configuracion/ConfiguracionUsuariosPage';
+import ProveedoresPage from '@/pages/configuracion/ProveedoresPage';
+import ReportesPage from '@/pages/reportes/ReportesPage';
+import ReporteGastosPage from '@/pages/reportes/ReporteGastosPage';
+import RubrosPage from '@/pages/configuracion/RubrosPage';
 import './index.css';
 
 const router = createBrowserRouter([
@@ -71,6 +78,22 @@ const router = createBrowserRouter([
                   },
                 ],
               },
+              // Módulo Reportes (S3-16): hub + reportes del negocio
+              // (PRD-07-03 §2.1). Bajo `RequireStaff` y NO bajo `RequireRole`
+              // desde S3-22: el tablero de gastos se abre con el alcance de un
+              // edificio, que el gestor lee igual que su listado; lo que sigue
+              // siendo de org_admin y Business+ es la opción "Todos los
+              // edificios", y ese gate lo aplica el backend (precisión 9 de
+              // PRD-04-02 §3.4) mientras la UI la ofrece deshabilitada.
+              { path: '/reportes', element: <ReportesPage /> },
+              { path: '/reportes/gastos', element: <ReporteGastosPage /> },
+              // Directorio de proveedores y árbol de rubros (S3-14,
+              // PRD-04-02 §1.3/§1.4). A diferencia de /configuracion/usuarios NO
+              // van detrás de RequireRole: las policies `proveedor.yaml` y
+              // `rubro.yaml` le dan READ al gestor, así que la pantalla le
+              // responde 200 y solo se le ocultan las acciones de escritura.
+              { path: '/configuracion/proveedores', element: <ProveedoresPage /> },
+              { path: '/configuracion/rubros', element: <RubrosPage /> },
               {
                 // Detalle con tabs anidados (S2-07, PRD-07-03 §2):
                 // /edificios/:id redirige a /unidades (tab default).
@@ -80,6 +103,21 @@ const router = createBrowserRouter([
                   { index: true, element: <Navigate to="unidades" replace /> },
                   { path: 'overview', element: <EdificioOverviewTab /> },
                   { path: 'unidades', element: <EdificioUnidadesTab /> },
+                  // Tab de gastos (S3-07). Ruta hija según la convención de
+                  // PRD-07-03 §2.2; ver decisión 1 en EdificioGastosTab.jsx.
+                  { path: 'gastos', element: <EdificioGastosTab /> },
+                  // Liquidaciones (S3-09): lista + preview. La preview es una
+                  // ruta propia y no un estado de la lista (decisión 2 de
+                  // EdificioLiquidacionesTab.jsx): se linkea desde el diálogo de
+                  // generación y desde el error de período ya liquidado.
+                  {
+                    path: 'liquidaciones',
+                    element: <EdificioLiquidacionesTab />,
+                  },
+                  {
+                    path: 'liquidaciones/:liquidacionId',
+                    element: <LiquidacionPreviewTab />,
+                  },
                   {
                     path: 'configuracion',
                     element: <EdificioConfiguracionTab />,

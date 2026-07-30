@@ -255,6 +255,59 @@ describe('liquidaciones (S3-04)', () => {
     const cochera = data.unidades.find((u) => u.numero === 'Coch-1');
     const departamento = data.unidades.find((u) => u.numero === '1A');
     assert.ok(new Decimal(cochera.total).lt(departamento.total));
+
+    // S3-18: la preview expone el PESO que el motor aplicó a cada gasto de la
+    // UF, para que el administrador vea el reparto antes de aprobar. La cochera
+    // participa de 2 de los 3 gastos (no del B), el departamento de los 3.
+    assert.equal(departamento.pesos.length, 3);
+    assert.equal(cochera.pesos.length, 2);
+    // En un gasto B el peso es el coeficiente RENORMALIZADO entre las UF
+    // alcanzadas, así que es mayor que el coeficiente general de la UF.
+    const pesos = departamento.pesos.map((p) => new Decimal(p.pesoAplicado));
+    assert.ok(
+      pesos.some((peso) => peso.gt(departamento.coeficiente)),
+      'el gasto B renormaliza: el peso supera al coeficiente general'
+    );
+    // Y el peso de cada gasto es el que explica su monto asignado.
+    for (const p of departamento.pesos) {
+      assert.ok(new Decimal(p.monto).gt(0));
+    }
+
+    // S3-09: la MISMA información, agrupada como la lee el propietario
+    // (ordinarias/extraordinarias → rubro → subrubro). Es lo que dibuja la
+    // preview y lo que imprime el recibo, así que tiene que cerrar al centavo
+    // con el total de la UF y contener exactamente los mismos ítems.
+    const items = departamento.secciones.flatMap((s) =>
+      s.rubros.flatMap((r) => r.subrubros.flatMap((sub) => sub.items))
+    );
+    assert.equal(items.length, departamento.pesos.length);
+    const sumaSecciones = departamento.secciones.reduce(
+      (acc, s) => acc.plus(s.total),
+      new Decimal(0)
+    );
+    assert.equal(sumaSecciones.toFixed(2), departamento.total);
+
+    // Los subtotales de cada nivel suman su contenido: son los números que el
+    // propietario chequea contra su total.
+    for (const s of departamento.secciones) {
+      const sumaRubros = s.rubros.reduce((acc, r) => acc.plus(r.total), new Decimal(0));
+      assert.equal(sumaRubros.toFixed(2), s.total);
+      for (const r of s.rubros) {
+        const sumaSubs = r.subrubros.reduce((acc, sub) => acc.plus(sub.total), new Decimal(0));
+        assert.equal(sumaSubs.toFixed(2), r.total);
+        for (const sub of r.subrubros) {
+          const sumaItems = sub.items.reduce((acc, i) => acc.plus(i.monto), new Decimal(0));
+          assert.equal(sumaItems.toFixed(2), sub.total);
+        }
+      }
+    }
+
+    // Cada ítem lleva el gasto identificado, no solo su id: es lo que el
+    // propietario lee en el recibo.
+    for (const i of items) {
+      assert.ok(i.concepto, 'el ítem nombra el gasto');
+      assert.equal(typeof i.esOrdinario, 'boolean');
+    }
   });
 
   it('el preview de GET /api/liquidaciones/:id coincide con el del alta', async () => {

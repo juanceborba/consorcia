@@ -16,6 +16,86 @@ export const queryKeys = {
     lists: (filters) => [...queryKeys.gastos.all, 'list', filters],
     detail: (id) => [...queryKeys.gastos.all, 'detail', id],
     porPeriodo: (periodo) => [...queryKeys.gastos.all, 'periodo', periodo],
+    // Lista del tab `gastos` de un edificio (S3-07). El edificio va antes que
+    // los filtros para poder invalidar todas las páginas y combinaciones de
+    // filtros de un edificio con un prefijo (`[...all, 'edificio', id]`).
+    porEdificio: (edificioId, filtros) => [
+      ...queryKeys.gastos.all,
+      'edificio',
+      edificioId,
+      filtros,
+    ],
+    // Agregados del dashboard (S3-15, consumidos por S3-16). El `alcance` es
+    // 'edificio:<id>' o 'organizacion': son dos endpoints distintos y con la
+    // misma key se pisarían al alternar entre el tab del edificio y el reporte
+    // consolidado. Comparten el prefijo `dashboard` para que un alta de gasto
+    // los invalide juntos (`queryKeys.gastos.all` ya lo hace hoy).
+    dashboard: (alcance, filtros) => [
+      ...queryKeys.gastos.all,
+      'dashboard',
+      alcance,
+      filtros,
+    ],
+  },
+  // Directorio de proveedores de la organización activa (S3-12/14). No lleva el
+  // id de la organización: el endpoint la saca del JWT y el cambio de
+  // organización activa hace `queryClient.clear()` (S4-09).
+  proveedores: {
+    all: ['proveedores'],
+    lists: (filtros) => [...queryKeys.proveedores.all, 'list', filtros],
+    detail: (id) => [...queryKeys.proveedores.all, 'detail', id],
+  },
+  // Árbol de rubros mergeado para la organización activa (S3-13/14). `incluirOcultos`
+  // es parte de la key: la pantalla de administración y el selector del form de
+  // gasto piden árboles distintos y no pueden compartir cache.
+  rubros: {
+    all: ['rubros'],
+    arbol: (incluirOcultos = false) => [
+      ...queryKeys.rubros.all,
+      'arbol',
+      { incluirOcultos },
+    ],
+  },
+  // Esquemas de reparto de un edificio (S3-20). Una sola key para la pantalla de
+  // configuración y para el selector del gasto: el endpoint devuelve la lista y
+  // la configuración juntas (decisión 2 de esquemas-reparto.routes.js) y las dos
+  // pantallas necesitan la misma foto — cambiar el esquema general tiene que
+  // reflejarse en el selector del gasto sin un refetch aparte.
+  esquemasReparto: {
+    all: ['esquemas-reparto'],
+    porEdificio: (edificioId) => [
+      ...queryKeys.esquemasReparto.all,
+      'edificio',
+      edificioId,
+    ],
+    detail: (id) => [...queryKeys.esquemasReparto.all, 'detail', id],
+  },
+  // Reglas del fondo de reserva de un edificio (S3-21). Van aparte de los
+  // esquemas aunque se muestren juntas: invalidar el alta de una regla no tiene
+  // por qué refetchear los esquemas de reparto.
+  fondoReserva: {
+    all: ['fondo-reserva'],
+    porEdificio: (edificioId) => [...queryKeys.fondoReserva.all, 'edificio', edificioId],
+  },
+  // Liquidaciones de un edificio (S3-09). La lista lleva el edificio antes que
+  // los filtros para poder invalidar todas sus páginas con un prefijo; el
+  // `detail` es la preview completa (cabecera + resumen + detalle por UF) y se
+  // usa dos veces en la misma pantalla: para la liquidación que se está viendo
+  // y para la del período anterior, que alimenta la columna de variación.
+  liquidaciones: {
+    all: ['liquidaciones'],
+    porEdificio: (edificioId, filtros) => [
+      ...queryKeys.liquidaciones.all,
+      'edificio',
+      edificioId,
+      filtros,
+    ],
+    detail: (id) => [...queryKeys.liquidaciones.all, 'detail', id],
+    // Recibos emitidos de una liquidación (S3-10). Cuelgan de la liquidación y
+    // no de un `recibos.all` propio: no existe una lista de recibos por fuera
+    // de la liquidación que los emitió, y así "generar recibos" invalida el
+    // detalle y sus recibos con el mismo prefijo.
+    recibos: (id) => [...queryKeys.liquidaciones.all, 'detail', id, 'recibos'],
   },
   // Contexto propio del usuario logueado (S4-12): no lleva scope de
   // organización porque el endpoint agrega por `usuarioId` (PRD-04-11 §5.5).

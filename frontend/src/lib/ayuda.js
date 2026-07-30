@@ -99,6 +99,82 @@ export const AYUDA_TOPICS = {
     ],
   },
 
+  // Esquemas de reparto (S3-20, PRD-02-05 · CCyC art. 2049, último párrafo).
+  // Topic de la sección de Configuración del edificio. Es el concepto más denso
+  // de S3: la semántica del peso cambia con la base y no se puede deducir
+  // mirando la pantalla, así que se explica con los tres casos completos.
+  'edificios/esquemas-reparto': {
+    ruta: ['Edificios', 'Esquemas de reparto'],
+    titulo: 'Esquemas de reparto',
+    relacionados: [
+      'edificios/unidades',
+      'edificios/unidades/categorias-gastos',
+      'gastos/carga',
+    ],
+    pantallas: ['src/components/esquemas/EsquemasRepartoSection.jsx'],
+    secciones: [
+      {
+        titulo: '¿Para qué sirven?',
+        cuerpo:
+          'Por default cada gasto se reparte según el coeficiente de cada unidad, y en la mayoría de los consorcios eso alcanza. Un esquema de reparto es la excepción que define el reglamento de copropiedad: "planta baja abona el 50% del ascensor", "la Torre A tiene su propia tabla", "esto se paga por unidad y no por coeficiente". Si tu edificio no necesita ninguna de esas cosas, no configures nada: sin esquemas, la app liquida por coeficiente.',
+      },
+      {
+        titulo: 'La autoridad es el reglamento, no la administración',
+        cuerpo:
+          'El Código Civil y Comercial (art. 2049, último párrafo) permite eximir parcialmente a las unidades que no tienen acceso a un servicio o a un sector, pero quien lo define es el reglamento de copropiedad. Por eso cada esquema tiene un campo para la cláusula que lo habilita y un link al documento: es lo primero que se pide cuando un propietario impugna lo que se le cobró.',
+      },
+      {
+        titulo: 'La base: qué significa el peso que cargás',
+        cuerpo:
+          'Cada esquema elige una base, y la base cambia cómo se lee la tabla de pesos. Es lo único que conviene tener claro antes de crear el primero.',
+        items: [
+          'Coeficiente: el peso es un factor sobre el coeficiente de la unidad. 0,5 hace que esa unidad pague la mitad de lo que le tocaría, 0 la exime del todo. Una unidad sin peso cargado paga el 100% de su coeficiente.',
+          'Partes iguales: el peso es un factor sobre 1, y el reparto va por unidad y no por coeficiente (todas pagan lo mismo). Una unidad sin peso cargado paga una parte entera.',
+          'Pesos propios: el peso es el valor absoluto que trae el reglamento — la "segunda tabla de coeficientes", que no es proporcional a la general. Acá una unidad sin peso cargado NO participa del reparto.',
+        ],
+      },
+      {
+        titulo: 'El alcance: a quiénes les llega',
+        cuerpo:
+          'El alcance se aplica antes que la base: la unidad que queda afuera no paga nada, sea cual sea su peso. Además es lo que hace que el esquema se aplique solo.',
+        items: [
+          'Todas las unidades: es el alcance del esquema general del edificio.',
+          'Servicio (categoría B): los gastos de ese servicio lo usan automáticamente.',
+          'Sector (categoría C): los gastos de ese sector lo usan automáticamente.',
+          'Solo las unidades de la tabla: ningún gasto lo toma solo — hay que elegirlo a mano en el gasto. Es el caso del cargo por una rotura que pagan tres unidades.',
+        ],
+      },
+      {
+        titulo: 'Cargá solo las excepciones',
+        cuerpo:
+          'La tabla muestra todas las unidades del edificio, pero se completan únicamente las que se apartan del reparto normal. El esquema "todas al 100% menos planta baja al 50%" es un solo peso cargado: el de planta baja. El resto queda vacío y va con el default de la base.',
+      },
+      {
+        titulo: 'Qué esquema usa cada gasto',
+        cuerpo:
+          'La app elige solo, en este orden, y el primero que aplica gana.',
+        items: [
+          'El que hayas elegido a mano en el gasto (el campo "Esquema de reparto" del formulario).',
+          'El esquema del servicio o del sector del gasto, si el edificio tiene uno para ese servicio o sector.',
+          'El esquema general del edificio, y solo para los gastos de categoría A. Un gasto de categoría B sin esquema propio no cae al general: se reparte por coeficiente entre las unidades que tienen el servicio.',
+          'Si nada de lo anterior aplica, el coeficiente de siempre.',
+        ],
+      },
+      {
+        titulo: 'Editar un esquema no cambia lo ya emitido',
+        cuerpo:
+          'Cada liquidación guarda el reparto con el que se calculó, así que editar o desactivar un esquema no reescribe un recibo emitido: cambia lo que se va a liquidar de acá en adelante. Por eso un esquema que ya se usó no se borra — queda desactivado, y deja de ofrecerse y de aplicarse solo. Los gastos que lo habían elegido a mano lo siguen usando: cambiarles el reparto por debajo sería mover plata sin que nadie lo pida.',
+      },
+      {
+        titulo: '¿Quién puede hacer qué?',
+        items: [
+          'Crear, editar y eliminar esquemas y elegir el general: el administrador de la organización.',
+          'El gestor los ve (los necesita para entender un importe) pero no los modifica: cambian cuánto paga cada propietario en todas las liquidaciones futuras.',
+        ],
+      },
+    ],
+  },
+
   // Roles y accesos (PRD-04-11 §2/§3: identidad global, staff vs residentes,
   // multi-organización). Topic del backoffice de staff (/configuracion/usuarios).
   'usuarios/roles': {
@@ -168,13 +244,311 @@ export const AYUDA_TOPICS = {
     ],
   },
 
+  // Directorio híbrido de proveedores (PRD-04-02 §1.3). Topic de
+  // /configuracion/proveedores.
+  'gastos/proveedores': {
+    ruta: ['Gastos', 'Proveedores'],
+    titulo: 'Proveedores',
+    relacionados: ['gastos/rubros'],
+    pantallas: ['src/pages/configuracion/ProveedoresPage.jsx'],
+    secciones: [
+      {
+        titulo: '¿Para qué sirve el directorio?',
+        cuerpo:
+          'Todo gasto se carga a nombre de un proveedor: no se puede guardar un gasto sin elegir uno. El directorio es la lista de con quiénes trabaja tu organización, y tenerlo cargado es lo que después permite ver cuánto se le pagó a cada uno en el período.',
+      },
+      {
+        titulo: 'Globales y propios',
+        cuerpo:
+          'El directorio mezcla dos orígenes, y cada fila lo aclara con un badge.',
+        items: [
+          'Global: viene del catálogo de la plataforma y lo comparten todas las administraciones. Lo podés usar en tus gastos, pero no editarlo ni borrarlo — lo mantiene ConsorcIA.',
+          'Propio: lo cargó tu organización. Solo lo ve tu organización y lo podés editar y dar de baja.',
+        ],
+      },
+      {
+        titulo: 'El CUIT y los duplicados',
+        cuerpo:
+          'El CUIT es opcional (el plomero del barrio suele no tener uno a mano), pero si lo cargás tiene que ir con el formato 30-12345678-9 y no puede repetirse en tu directorio: es lo que evita terminar con el mismo proveedor dos veces y los totales partidos entre ambos. Si el CUIT ya existe, la app te lo avisa en el campo.',
+      },
+      {
+        titulo: 'Rubro habitual',
+        cuerpo:
+          'Es opcional y funciona como atajo: al cargar un gasto de ese proveedor, la app propone ese rubro y te ahorra elegirlo. Siempre lo podés cambiar en el gasto.',
+      },
+      {
+        titulo: 'Dar de baja no siempre borra',
+        cuerpo:
+          'Si el proveedor todavía no tiene gastos, se elimina. Si ya tiene, no se borra: queda desactivado. Los gastos son documentación del consorcio que la Ley 941 obliga a conservar, y borrar al proveedor dejaría gastos históricos sin poder decir a quién se le pagaron. Un proveedor desactivado deja de ofrecerse al cargar gastos nuevos, y podés reactivarlo cuando quieras (tildá "Mostrar desactivados" para encontrarlo).',
+      },
+      {
+        titulo: '¿Quién puede hacer qué?',
+        items: [
+          'Crear, editar y dar de baja proveedores: el administrador de la organización.',
+          'El gestor ve el directorio (lo necesita para cargar gastos) pero no lo modifica.',
+        ],
+      },
+    ],
+  },
+
+  // Árbol de rubros: maestro + visibilidad + propios (PRD-04-02 §1.4). Topic de
+  // /configuracion/rubros.
+  'gastos/rubros': {
+    ruta: ['Gastos', 'Rubros'],
+    titulo: 'Rubros y subrubros',
+    relacionados: ['gastos/proveedores', 'edificios/unidades/categorias-gastos'],
+    pantallas: ['src/pages/configuracion/RubrosPage.jsx'],
+    secciones: [
+      {
+        titulo: '¿Qué es un rubro?',
+        cuerpo:
+          'Es la clasificación del gasto por su naturaleza: plomería, energía eléctrica, sueldos. Sirve para analizar en qué se gasta la plata del consorcio — es lo que después alimenta el "gasto por rubro" del dashboard.',
+      },
+      {
+        titulo: 'No confundir con las categorías A/B/C',
+        cuerpo:
+          'Son dos clasificaciones distintas y ninguna reemplaza a la otra. El rubro dice QUÉ se compró (plomería); la categoría dice QUIÉN lo paga (todas las unidades, solo las que tienen ese servicio, o solo las del sector). Un mismo rubro puede aparecer en gastos de categorías distintas: una reparación de plomería general es A, la del ascensor es B.',
+      },
+      {
+        titulo: 'Dos niveles: rubro y subrubro',
+        cuerpo:
+          'El árbol tiene exactamente dos niveles: el rubro agrupa (Mantenimiento) y el subrubro precisa (Plomería, Electricidad, Pintura). El gasto se carga siempre contra el nivel más específico — un subrubro, o un rubro que no tenga subrubros.',
+      },
+      {
+        titulo: 'El árbol de la plataforma y el tuyo',
+        cuerpo:
+          'Arrancás con un árbol que trae ConsorcIA, marcado como "Maestro": está pensado para un consorcio típico y se actualiza con el producto. No se edita ni se borra, pero lo adaptás de dos maneras.',
+        items: [
+          'Ocultar lo que no usás (el ícono del ojo): deja de aparecer al cargar gastos, sin tocar los gastos ya cargados con ese rubro. Ocultar un rubro oculta también sus subrubros.',
+          'Agregar los tuyos: un rubro nuevo de primer nivel, o un subrubro propio colgado de un rubro de la plataforma. Quedan marcados como "Propio" y esos sí los editás y los borrás.',
+        ],
+      },
+      {
+        titulo: 'Nombres repetidos',
+        cuerpo:
+          'No puede haber dos rubros con el mismo nombre en el mismo nivel, ni siquiera si uno es de la plataforma y el otro tuyo: en el selector del gasto serían indistinguibles. Si el nombre ya está tomado, la app te lo avisa en el campo — revisá si el que buscás ya existe en el maestro y está oculto.',
+      },
+      {
+        titulo: 'Eliminar no siempre borra',
+        cuerpo:
+          'Un rubro propio sin gastos se elimina. Si ya tiene gastos, no se borra: queda oculto, para que los gastos históricos sigan diciendo a qué rubro pertenecen (Ley 941). Y un rubro con subrubros no se elimina hasta sacar los subrubros: borrarlo ascendería a sus hijos a primer nivel y desarmaría la clasificación con la que se cargaron los gastos.',
+      },
+      {
+        titulo: '¿Quién puede hacer qué?',
+        items: [
+          'Ocultar, crear, editar y eliminar rubros: el administrador de la organización.',
+          'El gestor ve el árbol (lo necesita para cargar gastos) pero no lo modifica.',
+        ],
+      },
+    ],
+  },
+
+  // Carga de gastos (S3-08, PRD-04-02 §1.1/§4.2). Es el topic del tab `gastos`
+  // del edificio: explica los cuatro datos que el formulario pide y que no son
+  // obvios (proveedor, rubro, categoría, período vs fecha) y por qué un gasto
+  // liquidado no se toca.
+  'gastos/carga': {
+    ruta: ['Gastos', 'Cargar un gasto'],
+    titulo: 'Cargar un gasto',
+    relacionados: [
+      'edificios/unidades/categorias-gastos',
+      'edificios/esquemas-reparto',
+      'gastos/proveedores',
+      'gastos/rubros',
+      // S3-09: el destino de todo gasto es la liquidación del período.
+      'liquidaciones',
+      // S3-22: el análisis de esos gastos vive en Reportes, no en este tab.
+      'reportes/gastos',
+    ],
+    // S3-22: el tab volvió a ser la pantalla de trabajo con los gastos, así que
+    // su ícono de ayuda abre este topic otra vez (además del formulario).
+    pantallas: [
+      'src/components/gastos/GastoFormDialog.jsx',
+      'src/pages/edificio/EdificioGastosTab.jsx',
+    ],
+    secciones: [
+      {
+        titulo: '¿Qué es un gasto?',
+        cuerpo:
+          'Cada erogación del consorcio se carga como un gasto del edificio: el sueldo del encargado, el seguro, una reparación. Al liquidar el período, el sistema toma todos los gastos cargados y los reparte entre las unidades. Lo que no está cargado no se cobra.',
+      },
+      {
+        titulo: 'Período y fecha no son lo mismo',
+        cuerpo:
+          'La fecha del gasto es cuándo se hizo (la de la factura). El período es en qué liquidación entra. Suelen coincidir, pero no siempre: una factura del 28 de junio que llegó tarde se puede cargar con fecha de junio y período de julio, y así se cobra en las expensas de julio.',
+      },
+      {
+        titulo: 'Rubro y categoría son dos cosas distintas',
+        cuerpo:
+          'El rubro (Mantenimiento › Plomería) sirve para analizar en qué gasta el consorcio. La categoría A/B/C decide QUIÉNES lo pagan. Un mismo rubro puede tener gastos de categorías distintas: la reparación de un ascensor es "Mantenimiento" y categoría B; la del portón, "Mantenimiento" y categoría A.',
+        items: [
+          'A — lo pagan todas las unidades, según su coeficiente.',
+          'B — solo las unidades que tienen ese servicio tildado.',
+          'C — solo las unidades del sector.',
+        ],
+      },
+      {
+        titulo: 'Por qué el servicio y el sector son un desplegable',
+        cuerpo:
+          'Las opciones de las categorías B y C salen de lo que declaran las unidades del edificio. Si el gasto apuntara a un servicio que ninguna unidad tiene, no habría entre quiénes repartirlo y fallaría la liquidación de todo el mes. Si te falta una opción, agregala primero en la unidad que corresponda: aparece acá enseguida.',
+      },
+      {
+        titulo: 'El proveedor es obligatorio',
+        cuerpo:
+          'Ningún gasto se carga sin proveedor: es lo que permite seguir a quién se le paga y ver el ranking de gastos por proveedor. Si el proveedor no está en el directorio, se crea desde el mismo formulario con "Crear proveedor" y queda elegido, sin perder lo que ya cargaste.',
+      },
+      {
+        titulo: 'Cobrar una obra en cuotas',
+        cuerpo:
+          'Un gasto extraordinario se puede repartir en cuotas mensuales: se carga UNA vez por el total de la factura y se tilda "Cobrar en cuotas". El sistema arma el plan desde el período elegido y cada liquidación cobra la cuota que le toca, con el rótulo "cuota 3/6" en la lista y en el recibo. El monto que se muestra al filtrar por un período es el de la cuota de ese mes; el total de la factura queda debajo.',
+        items: [
+          'Solo los extraordinarios: una ordinaria es el gasto corriente del mes y prorratearla escondería el gasto real de cada período.',
+          'Las cuotas suman siempre el total exacto de la factura; los centavos del redondeo caen en la última.',
+          'Cambiar el monto, el período o la cantidad de cuotas rearma el plan completo.',
+          'Si una cuota ya está en una liquidación aprobada, el gasto queda congelado como cualquier otro.',
+        ],
+      },
+      {
+        titulo: 'El esquema de reparto casi nunca se toca',
+        cuerpo:
+          'El campo "Esquema de reparto" viene en "Automático" y así conviene dejarlo: la app ya le aplica al gasto el esquema que el edificio tiene configurado para ese servicio o sector, el general si es de categoría A, o el coeficiente si no hay nada. Elegí uno a mano solo cuando ESTE gasto se reparte distinto de lo habitual —el típico cargo por una rotura que pagan tres unidades—, y creá antes el esquema en Configuración del edificio.',
+      },
+      {
+        titulo: 'Un gasto liquidado ya no se edita',
+        cuerpo:
+          'Cuando la liquidación del período está aprobada, sus gastos quedan congelados: editar o eliminar uno cambiaría un recibo ya emitido. Las acciones de esas filas aparecen deshabilitadas. Para corregir un gasto así hay que anular la liquidación, corregirlo y volver a generarla.',
+      },
+      {
+        titulo: 'Eliminar no borra del sistema',
+        cuerpo:
+          'Al eliminar un gasto deja de contarse en las liquidaciones, pero el registro se conserva: la Ley 941 exige guardar la documentación del consorcio.',
+      },
+    ],
+  },
+
+  // Dashboard de gastos del edificio (S3-16, PRD-04-02 §3). Explica lo que un
+  // administrador no puede deducir mirando los números: qué plata suma cada modo
+  // de período, por qué la evolución muestra 12 meses cuando filtró uno, y por
+  // qué el filtro de tipo mueve la tabla pero no los KPIs. Son las tres preguntas
+  // que genera la pantalla.
+  // Reporte de gastos (S3-16, rescopeado en S3-22). Topic del módulo Reportes:
+  // absorbe el viejo `gastos/dashboard` —que describía el mismo tablero cuando
+  // vivía en el tab del edificio— y le suma lo propio del reporte: el ALCANCE
+  // (un edificio o toda la administración) y por qué no hay listado debajo.
+  'reportes/gastos': {
+    ruta: ['Reportes', 'Gastos'],
+    titulo: 'Reporte de gastos',
+    relacionados: [
+      'gastos/carga',
+      'gastos/rubros',
+      'gastos/proveedores',
+      'edificios/unidades/categorias-gastos',
+      'liquidaciones',
+    ],
+    pantallas: ['src/pages/reportes/ReporteGastosPage.jsx'],
+    secciones: [
+      {
+        titulo: 'Elegí el alcance: un edificio o toda la administración',
+        cuerpo:
+          'El selector de arriba decide sobre qué gastos se calcula todo lo demás. "Todos los edificios" suma los edificios activos de la administración —uno dado de baja no entra, para que el total coincida con la suma de los que ves— y está disponible desde el plan Business, para el administrador de la organización. Con un plan menor, o siendo gestor, el reporte funciona igual edificio por edificio.',
+      },
+      {
+        titulo: 'Los filtros mandan sobre toda la pantalla',
+        cuerpo:
+          'Lo que elegís arriba se aplica a los indicadores y a los cuatro gráficos al mismo tiempo, y queda en la dirección de la página: podés guardarla o mandarla y se abre con el mismo recorte.',
+      },
+      {
+        titulo: 'Un período, un rango de fechas, o todo',
+        cuerpo:
+          'Son tres formas excluyentes de recortar el tiempo y no se combinan. Elegir un período muestra lo IMPUTADO a ese mes: si un gasto se cobra en cuotas, entra la cuota de ese mes y no la factura entera. Un rango de fechas filtra por la fecha del gasto y suma la factura completa. "Todos los períodos" no recorta nada.',
+        items: [
+          'Período = en qué liquidación entra el gasto.',
+          'Fecha del gasto = cuándo se hizo (la de la factura).',
+          'Al elegir un rango, el filtro de período se saca solo: son dos preguntas distintas.',
+        ],
+      },
+      {
+        titulo: 'Por qué la evolución muestra 12 meses',
+        cuerpo:
+          'El gráfico de evolución no usa la ventana del filtro: con un período elegido muestra los 12 meses que terminan en ese período, y el último punto es el total de arriba. Un gráfico de un solo punto no diría nada. Con un rango o con todo el histórico, la serie va del primer mes imputado al último y la suma de sus puntos es el total.',
+      },
+      {
+        titulo: 'Rubro no es lo mismo que categoría',
+        cuerpo:
+          'El rubro (Mantenimiento › Plomería) dice EN QUÉ se gastó y sirve para analizar; la categoría A/B/C dice QUIÉNES lo pagan. Los dos gráficos son cortes independientes de la misma plata: un gasto de "Mantenimiento" puede ser de categoría A o B.',
+        items: [
+          'Clickeá un rubro con subrubros para ver su desglose.',
+          'Clickeá un subrubro (o un rubro sin subrubros) para filtrar todo por él.',
+          'Clickeá una categoría o un proveedor para filtrar por ellos.',
+        ],
+      },
+      {
+        titulo: 'Ordinarias y extraordinarias son el desglose del total',
+        cuerpo:
+          'Las dos tarjetas parten el total del filtro y siempre suman ese total; acá son solo lectura. Para ver los gastos de uno u otro tipo, entrá al detalle del edificio: su lista sí se puede filtrar por tipo.',
+      },
+      {
+        titulo: 'Gasto por UF es un promedio, no la expensa',
+        cuerpo:
+          'Divide el total del filtro por todas las unidades del alcance, incluidas las que están en venta o alquiladas (todas pagan expensas). Sirve como referencia de magnitud: lo que paga cada unidad sale del reparto real de la liquidación, que usa el coeficiente de cada UF y las categorías de cada gasto.',
+      },
+      {
+        titulo: 'La variación compara contra una ventana igual',
+        cuerpo:
+          'El porcentaje al lado del total compara contra el período anterior, o contra un rango de la misma cantidad de días inmediatamente anterior. Si no hay con qué comparar —el mes previo sin gastos, o "todos los períodos"— no se muestra: un porcentaje sin base no es información.',
+      },
+      {
+        titulo: 'Por qué no hay lista de gastos acá',
+        cuerpo:
+          'Este reporte es la mirada agregada; los gastos se cargan, se editan y se listan en la pestaña Gastos de cada edificio. Cuando un número te llame la atención, el link "Ver el detalle" te lleva ahí con los mismos filtros puestos.',
+      },
+    ],
+  },
+
+  // Fondo de reserva (S3-21). Concepto de dominio nuevo: qué es, cómo se
+  // calcula, por qué la regla tiene fecha de vigencia y qué NO se puede hacer
+  // todavía (usarlo), que es lo que evita la pregunta "¿dónde está la plata?".
+  'edificios/fondo-reserva': {
+    ruta: ['Edificios', 'Configuración', 'Fondo de reserva'],
+    titulo: 'Fondo de reserva',
+    relacionados: ['edificios/esquemas-reparto', 'liquidaciones', 'gastos/carga'],
+    pantallas: ['src/components/fondo-reserva/FondoReservaSection.jsx'],
+    secciones: [
+      {
+        titulo: 'Qué es y quién lo paga',
+        cuerpo:
+          'Es el ahorro del consorcio para imprevistos. Contribuir a él es una obligación de todos los propietarios (art. 2046 inc. d del Código Civil y Comercial): no admite las exenciones de las categorías B y C, así que por defecto se reparte entre todas las unidades por su coeficiente.',
+      },
+      {
+        titulo: 'La regla tiene fecha de vigencia, y por eso no se edita',
+        cuerpo:
+          'El porcentaje lo vota una asamblea con fecha. Cambiarlo es cargar una regla nueva desde el período que corresponda: las liquidaciones ya emitidas conservan la regla con la que se calcularon, porque cambiarles el importe hoy sería reescribir un comprobante que el propietario ya recibió.',
+        items: [
+          'La lista es el historial: arriba, la más nueva.',
+          '"Vigente" marca la que rige este mes, que puede no ser la primera.',
+          'Una regla que ya liquidó un período no se puede borrar; una futura sí.',
+        ],
+      },
+      {
+        titulo: 'Cómo se calcula el aporte',
+        cuerpo:
+          'Por defecto es un porcentaje de las expensas ordinarias del período —en la práctica, entre 5% y 10%—. También puede calcularse sobre el total (incluyendo extraordinarias) o ser un importe fijo mensual. En la liquidación y en el recibo aparece como un tercer subtotal, separado de las ordinarias y de las extraordinarias, porque no es ninguna de las dos.',
+      },
+      {
+        titulo: 'Todavía no se puede usar el fondo',
+        cuerpo:
+          'El fondo se acumula con cada liquidación aprobada, pero destinarlo a financiar una obra extraordinaria requiere la cuenta corriente del edificio, que está en desarrollo. Hasta entonces el sistema calcula y cobra el aporte, y el uso del dinero se administra fuera de la aplicación.',
+      },
+    ],
+  },
+
   // Primer topic: categorías A/B/C del alta de unidad (Ley 941,
   // PRD-04-01 §1.4). El reparto que describe es el del motor de liquidación
   // de S3 (S3-03: A → todas las UF, B → UF con ese servicio, C → UF del sector).
   'edificios/unidades/categorias-gastos': {
     ruta: ['Edificios', 'Unidades', 'Categorías de gastos'],
     titulo: 'Categorías de gastos',
-    relacionados: ['edificios/unidades'],
+    relacionados: ['edificios/unidades', 'edificios/esquemas-reparto'],
     pantallas: ['src/pages/edificio/UnidadCategoriasTab.jsx'],
     secciones: [
       {
@@ -212,7 +586,7 @@ export const AYUDA_TOPICS = {
       {
         titulo: 'Cómo se reparten los gastos al liquidar',
         cuerpo:
-          'Al liquidar las expensas del mes, el motor de liquidación toma cada gasto cargado y lo distribuye según su categoría: los de A entre todas las unidades, los de B solo entre las que tienen ese servicio y los de C solo entre las del sector — siempre en proporción al coeficiente de cada unidad. Por eso conviene clasificar bien desde el alta: una categoría mal puesta hace que una unidad pague de más o de menos todos los meses.',
+          'Al liquidar las expensas del mes, el motor de liquidación toma cada gasto cargado y lo distribuye según su categoría: los de A entre todas las unidades, los de B solo entre las que tienen ese servicio y los de C solo entre las del sector — en proporción al coeficiente de cada unidad, salvo que el edificio tenga configurado un esquema de reparto distinto (por ejemplo, planta baja al 50% del ascensor). Por eso conviene clasificar bien desde el alta: una categoría mal puesta hace que una unidad pague de más o de menos todos los meses.',
       },
       {
         titulo: '¿Cuándo conviene cada una?',
@@ -221,6 +595,162 @@ export const AYUDA_TOPICS = {
           'Usá B cuando un servicio no llega a todas las unidades: el caso típico es el ascensor, que planta baja y locales no usan.',
           'Usá C cuando el edificio tiene sectores con gastos propios (torres, pileta, sector comercial). Escribí el nombre del sector igual en todas las unidades que lo comparten.',
         ],
+      },
+    ],
+  },
+
+  // Concepto de liquidación (S3-09, PRD-04-03 §1/§2). Topic del tab
+  // Liquidaciones: qué es, cuándo se hace, en qué estados vive y quién puede.
+  liquidaciones: {
+    ruta: ['Liquidaciones'],
+    titulo: 'Liquidaciones',
+    relacionados: [
+      'liquidaciones/preview',
+      'liquidaciones/recibos',
+      'gastos/carga',
+      'edificios/unidades/categorias-gastos',
+    ],
+    pantallas: ['src/pages/edificio/EdificioLiquidacionesTab.jsx'],
+    secciones: [
+      {
+        titulo: '¿Qué es liquidar un período?',
+        cuerpo:
+          'Es repartir los gastos de un mes entre las unidades del edificio y dejar registrado cuánto le toca pagar a cada una. La app toma todos los gastos imputados a ese período —incluidas las cuotas de los gastos en cuotas que caen ahí—, los reparte según la categoría de cada gasto y el esquema de reparto que corresponda, y guarda el resultado.',
+      },
+      {
+        titulo: 'Antes de liquidar',
+        items: [
+          'Que estén cargados todos los gastos del período: lo que falte no se puede agregar después sin anular y volver a generar.',
+          'Que ningún gasto quede sin categoría (A, B o C): sin ella no se sabe qué unidades lo pagan.',
+          'Que los coeficientes de las unidades sumen 1,000000: es el único requisito que la app exige de forma bloqueante, porque si no cierran se repartiría más o menos del 100% de cada gasto.',
+        ],
+      },
+      {
+        titulo: 'Los estados de una liquidación',
+        cuerpo:
+          'Una liquidación no se emite de una: pasa por estados, y cada uno dice hasta dónde llegó.',
+        items: [
+          'Borrador: calculada pero no aprobada. Nadie la vio fuera de la administración.',
+          'Aprobada: la administración la dio por buena. Todavía no hay recibos.',
+          'Enviada: con los recibos emitidos y disponibles para las unidades.',
+          'Cobrada: con los cobros imputados.',
+          'Anulada: sin efecto. Es lo único que libera el período para volver a generarlo.',
+        ],
+      },
+      {
+        titulo: 'Cómo avanza de un estado al siguiente',
+        cuerpo:
+          'Los botones están en el detalle de la liquidación, arriba, al lado del estado. Cada uno pide confirmación porque los tres son actos de la administración, no ediciones.',
+        items: [
+          'Aprobar (desde borrador): la administración da por buenos los importes. Desde acá no se editan más los gastos del período.',
+          'Generar recibos (desde aprobada): emite el PDF de cada unidad con su QR y la matrícula RPA. Es la acción "oficial" y deja la liquidación en enviada.',
+          'Anular (desde cualquier estado menos cobrada): deja la liquidación sin efecto y libera el período.',
+        ],
+      },
+      {
+        titulo: 'Un período, una liquidación',
+        cuerpo:
+          'Mientras un período tenga una liquidación que no esté anulada, no se puede generar otra para el mismo mes. Si detectás un error —un gasto que faltaba, una categoría mal puesta— el camino es anular la que existe, corregir y volver a generar. No se sobrescribe: los recibos ya emitidos tienen que seguir diciendo con qué se calcularon (Ley 941).',
+      },
+      {
+        titulo: '¿Quién puede hacer qué?',
+        items: [
+          'Generar, aprobar, emitir los recibos y anular: solo el administrador de la organización (org_admin).',
+          'Ver las liquidaciones, su detalle por unidad y descargar los recibos ya emitidos: también el gestor de los edificios que tiene asignados.',
+        ],
+      },
+    ],
+  },
+
+  // Cómo se lee la preview (S3-09, PRD-04-03 §4.1). Topic de la pantalla de
+  // detalle: qué significan las columnas y el desglose por gasto.
+  'liquidaciones/preview': {
+    ruta: ['Liquidaciones', 'Detalle'],
+    titulo: 'Cómo leer una liquidación',
+    relacionados: [
+      'liquidaciones',
+      'liquidaciones/recibos',
+      'edificios/esquemas-reparto',
+      'edificios/unidades/categorias-gastos',
+    ],
+    pantallas: ['src/pages/edificio/LiquidacionPreviewTab.jsx'],
+    secciones: [
+      {
+        titulo: 'Ordinarias y extraordinarias van separadas',
+        cuerpo:
+          'Los gastos habituales del consorcio (sueldos, seguros, limpieza) son expensas ordinarias; las obras y los gastos no recurrentes son extraordinarias. La Ley 941 exige mostrarlas por separado, y la distinción también decide quién las absorbe cuando la unidad está alquilada: las ordinarias suelen ir al inquilino y las extraordinarias al propietario.',
+      },
+      {
+        titulo: 'La tabla por unidad',
+        cuerpo:
+          'Una fila por unidad funcional, con lo que le toca de ordinarias, de extraordinarias y el total. La fila TOTAL del pie suma todas las filas y tiene que coincidir al centavo con el total general de las tarjetas de arriba; si alguna vez no coincide, la app lo avisa y esa liquidación no se aprueba.',
+      },
+      {
+        titulo: 'El desglose de cada unidad',
+        cuerpo:
+          'Tocando una fila se abre el detalle: un renglón por cada gasto del período que esa unidad paga, con la participación que le tocó de ese gasto y el monto. La participación es la porción de ESE gasto, no el coeficiente de la unidad: en un gasto de categoría B o C solo participan las unidades alcanzadas, así que las participaciones se reparten entre ellas y suman 1.',
+      },
+      {
+        titulo: 'Con qué esquema se repartió cada gasto',
+        cuerpo:
+          'Si un gasto se repartió con un esquema del reglamento (por ejemplo, planta baja al 50% del ascensor), el renglón lo dice con el nombre del esquema. Si no dice nada, se repartió en proporción al coeficiente según la categoría del gasto, que es lo normal. Es la forma de verificar antes de aprobar que el reparto es el que manda el reglamento de copropiedad.',
+      },
+      {
+        titulo: 'La variación contra el período anterior',
+        cuerpo:
+          'Cuando el edificio ya tiene una liquidación anterior sin anular, aparece una columna con cuánto varió el total de cada unidad respecto de esa liquidación. Se compara contra la última vigente, que no siempre es el mes inmediato anterior. Una variación grande no es necesariamente un error —una obra aprobada por asamblea sube las expensas— pero es lo primero que conviene mirar.',
+      },
+      {
+        titulo: 'Un borrador todavía no se emitió',
+        cuerpo:
+          'Mientras la liquidación esté en borrador no la vio nadie fuera de la administración y se puede anular sin consecuencias. Revisar el detalle acá es el último momento barato para detectar que una unidad está pagando lo que no le toca: después de aprobar, el número se convierte en un recibo con valor legal.',
+      },
+      {
+        titulo: 'Los botones de arriba',
+        cuerpo:
+          'Al lado del estado aparecen las acciones que ese estado permite: sobre un borrador, "Aprobar" y "Anular"; sobre una aprobada, "Generar recibos" y "Anular". Si un botón no está no es que esté deshabilitado: es que la liquidación no está en un estado donde esa acción tenga sentido. Las tres piden confirmación y explican qué deja de poder hacerse después.',
+      },
+    ],
+  },
+
+  // Recibos emitidos (S3-10, PRD-04-03 §2 PASO 5 · PRD-06-01 §3 Ley 941).
+  // Topic de la card de recibos de la preview.
+  'liquidaciones/recibos': {
+    ruta: ['Liquidaciones', 'Recibos'],
+    titulo: 'Los recibos de expensas',
+    relacionados: ['liquidaciones', 'liquidaciones/preview'],
+    pantallas: ['src/components/liquidaciones/RecibosCard.jsx'],
+    secciones: [
+      {
+        titulo: '¿Qué es un recibo acá?',
+        cuerpo:
+          'El comprobante de UNA unidad funcional para UN período: lo que esa unidad tiene que pagar, con el detalle de ordinarias y extraordinarias separadas. La app emite uno por unidad cuando la administración aprieta "Generar recibos" sobre una liquidación aprobada, y cada uno queda guardado como PDF con su número.',
+      },
+      {
+        titulo: 'Qué lleva el PDF (y por qué)',
+        cuerpo:
+          'El contenido no es decorativo: la Ley 941 de CABA define qué tiene que decir un recibo de expensas.',
+        items: [
+          'Los datos del consorcio y la matrícula RPA del administrador en el Registro Público de Administradores.',
+          'Las expensas ordinarias y las extraordinarias por separado.',
+          'Los datos de la unidad: número, coeficiente y m².',
+          'Un QR escaneable que permite verificar el recibo contra los datos de la liquidación que lo emitió.',
+        ],
+      },
+      {
+        titulo: 'Emitir es un acto, no un guardado',
+        cuerpo:
+          'Los recibos se emiten una sola vez por liquidación: no se regeneran ni se sobrescriben. Si aparece un error después de emitirlos, el camino es anular la liquidación, corregir los gastos y volver a liquidar el período — los recibos viejos no se borran, porque son documentación del consorcio y tienen que seguir diciendo con qué se calcularon.',
+      },
+      {
+        titulo: 'Descargar y compartir',
+        cuerpo:
+          'Cada renglón baja el PDF de esa unidad. Por ahora el envío a los propietarios es manual: la app emite y guarda los recibos, y vos los mandás. El envío automático por email con el link de pago llega más adelante.',
+      },
+      {
+        titulo: 'Si un PDF no está disponible',
+        cuerpo:
+          'Puede pasar que el recibo esté registrado (tiene número y totales) pero su archivo no esté en el almacenamiento. La app lo avisa con ese mensaje puntual porque la salida no es reintentar la descarga: hay que anular la liquidación y volver a emitirla.',
       },
     ],
   },

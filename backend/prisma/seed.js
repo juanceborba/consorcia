@@ -149,6 +149,15 @@ async function limpiarOrganizacionDemo(cuit) {
   // propios en ítems GLOBALES/MAESTROS de plataforma visibles para todo el
   // mundo. Los gastos y liquidaciones se borran antes porque referencian
   // proveedor y rubro con FK RESTRICT.
+  // Recibos y cobros ANTES de las liquidaciones y las unidades: los dos las
+  // referencian con FK RESTRICT. Los emite `POST /liquidaciones/:id/enviar`
+  // (S3-05), así que cualquier prueba manual o spec que haya llegado a ENVIADA
+  // deja filas acá y el reseed fallaba con
+  // `P2003 recibos_liquidacion_id_fkey`. Los PDFs quedan en MinIO/disco: son
+  // huérfanos inertes, y borrar objetos de storage desde el seed sería salirse de
+  // su alcance (la limpieza de storage la hace el after() de recibos.test.js).
+  await prisma.recibo.deleteMany({ where: { organizacionId: orgId } });
+  await prisma.cobro.deleteMany({ where: { organizacionId: orgId } });
   await prisma.liquidacionDetalle.deleteMany({
     where: { liquidacion: { organizacionId: orgId } },
   });
@@ -164,6 +173,12 @@ async function limpiarOrganizacionDemo(cuit) {
   await prisma.unidadUsuario.deleteMany({ where: { organizacionId: orgId } });
   await prisma.gestorEdificio.deleteMany({ where: { edificio: { organizacionId: orgId } } });
   await prisma.unidad.deleteMany({ where: { organizacionId: orgId } });
+  // Esquemas de reparto (S3-20) DESPUÉS de gastos y liquidaciones —que los
+  // referencian con FK RESTRICT— y ANTES de los edificios, que también los
+  // referencian con RESTRICT. La configuración cae por CASCADE con el edificio,
+  // pero se borra explícita porque referencia al esquema general con RESTRICT.
+  await prisma.configuracionLiquidacion.deleteMany({ where: { organizacionId: orgId } });
+  await prisma.esquemaReparto.deleteMany({ where: { organizacionId: orgId } });
   await prisma.edificio.deleteMany({ where: { organizacionId: orgId } });
 
   const miembros = await prisma.organizacionUsuario.findMany({
@@ -243,7 +258,11 @@ async function main() {
       nombre: 'Administración Demo S.A.',
       cuit: CUIT_ORG_A,
       matriculaRPA: '12.345-A',
-      plan: 'pro',
+      // S3-15: Business+ es el gate del consolidado de gastos de toda la
+      // organización (PRD-04-02 §3.2). Org A lo tiene para que la opción "Todos
+      // los edificios" sea ejercitable en demo y en los E2E de S3-17; Org B se
+      // queda en `starter`, que es el caso 403 `PLAN_INSUFICIENTE`.
+      plan: 'business',
     },
   });
   const orgB = await prisma.organizacion.create({
@@ -303,6 +322,93 @@ async function main() {
   });
   console.log(`Edificios creados: ${torrePalermo.nombre}, ${sanMartin.nombre} (Org A) · ${lomas.nombre} (Org B)`);
 
+  // --- Proveedores demo (S3-14, PRD-04-02 §1.3) -----------------------------
+  // POR QUÉ EXISTE ESTE BLOQUE: el directorio de proveedores era la única
+  // pantalla del módulo de gastos sin dato demo. Después de cada reseed quedaba
+  // vacío —la limpieza borra los proveedores de la org, ver
+  // `limpiarOrganizacionDemo`— así que la demo empezaba por un empty state y el
+  // spec E2E de S3-14, escrito contra proveedores cargados a mano en una DB de
+  // desarrollo, afirmaba una razón social que ningún seed creaba: quedó rojo
+  // desde entonces (S3-22b).
+  //
+  // Son PROPIOS de la organización (`organizacionId`), no globales de
+  // plataforma: el badge Global/Propio del directorio necesita ejercitar el
+  // caso propio, y un proveedor global de mentira se le aparecería a todas las
+  // organizaciones del sistema.
+  //
+  // El `rubroHabitual` se resuelve por nombre contra el maestro (S3-13), que se
+  // sembró más arriba: es lo que precarga el rubro al elegir el proveedor en el
+  // alta de un gasto.
+  // Falla fuerte si el nombre no está en el maestro: sin esto, un typo se
+  // propaga como `rubroId: null` y Prisma reporta "Argument `edificio` is
+  // missing", que no dice nada sobre la causa real.
+  const rubroMaestroPorNombre = async (nombre) => {
+    const rubro = await prisma.rubro.findFirst({
+      where: { organizacionId: null, nombre },
+      select: { id: true },
+    });
+    if (!rubro) {
+      throw new Error(
+        `Seed: el rubro "${nombre}" no está en el maestro de plataforma (rubros-maestro.js)`
+      );
+    }
+    return rubro.id;
+  };
+
+  const PROVEEDORES_ORG_A = [
+    {
+      razonSocial: 'Ascensores del Plata S.R.L.',
+      cuit: '30-70123456-4',
+      email: 'administracion@ascensoresdelplata.com.ar',
+      telefono: '011 4788-5500',
+      rubroHabitual: 'Mantenimiento preventivo',
+      notas: 'Contrato mensual de mantenimiento de los dos ascensores.',
+    },
+    {
+      razonSocial: 'Limpieza Integral Norte S.A.',
+      cuit: '30-70987654-3',
+      email: 'contacto@limpiezanorte.com.ar',
+      telefono: '011 4555-2020',
+      rubroHabitual: 'Limpieza general',
+    },
+    {
+      razonSocial: 'Seguridad Belgrano S.R.L.',
+      cuit: '27-31234567-9',
+      telefono: '011 4783-1140',
+      rubroHabitual: 'Cámaras y monitoreo',
+      // Un proveedor dado de baja: el directorio lo esconde salvo que se pida
+      // "Mostrar desactivados", y el selector del alta de gastos no lo ofrece.
+      activo: false,
+    },
+  ];
+
+  const proveedoresOrgA = {};
+  for (const proveedor of PROVEEDORES_ORG_A) {
+    const { rubroHabitual, ...datos } = proveedor;
+    proveedoresOrgA[datos.razonSocial] = await prisma.proveedor.create({
+      data: {
+        ...datos,
+        organizacionId: orgA.id,
+        rubroHabitualId: await rubroMaestroPorNombre(rubroHabitual),
+      },
+    });
+  }
+
+  // Org B tiene el suyo: sin al menos uno, el aislamiento entre organizaciones
+  // no se puede ver en la demo (el directorio de A no debe listarlo).
+  await prisma.proveedor.create({
+    data: {
+      organizacionId: orgB.id,
+      razonSocial: 'Servicios del Sur S.R.L.',
+      cuit: '30-71111111-2',
+      rubroHabitualId: await rubroMaestroPorNombre('Limpieza general'),
+    },
+  });
+  console.log(
+    `Proveedores demo: ${PROVEEDORES_ORG_A.length} en ${orgA.nombre} ` +
+      `(uno dado de baja) · 1 en ${orgB.nombre}`
+  );
+
   // --- Unidades (con validación de la invariante de coeficientes) -----------
   async function crearUnidades(edificio, definiciones) {
     const resueltas = resolverCoeficientes(definiciones, edificio.nombre);
@@ -329,6 +435,40 @@ async function main() {
   const unidadesLomas = await crearUnidades(lomas, UNIDADES_LOMAS);
   console.log(
     `Unidades creadas: ${UNIDADES_TORRE_PALERMO.length} + ${UNIDADES_SAN_MARTIN.length} (Org A), ${UNIDADES_LOMAS.length} (Org B)`
+  );
+
+  // --- Esquemas de reparto (S3-20) ------------------------------------------
+  //
+  // UN esquema en UN edificio, a propósito: Torre Palermo tiene la exención
+  // parcial del art. 12 de su reglamento (PB abona el 50% del ascensor) y San
+  // Martín no tiene nada configurado. Así el seed muestra las dos mitades del
+  // diseño: el edificio configurado y el que liquida por coeficiente sin que
+  // nadie haya tocado un setup — que es el default y el caso mayoritario.
+  //
+  // Tampoco se configura `ConfiguracionLiquidacion`: dejar el esquema general en
+  // NULL es lo que demuestra que no hace falta configurar nada para liquidar.
+  const esquemaAscensor = await prisma.esquemaReparto.create({
+    data: {
+      organizacionId: torrePalermo.organizacionId,
+      edificioId: torrePalermo.id,
+      nombre: 'Ascensor (PB al 50%)',
+      base: 'COEFICIENTE',
+      alcance: 'SERVICIO',
+      alcanceValor: 'ascensor',
+      clausulaReglamento: 'art. 12 del reglamento de copropiedad',
+      pesos: {
+        create: [
+          {
+            organizacionId: torrePalermo.organizacionId,
+            unidadId: unidadesPalermo.PB.id,
+            peso: '0.500000',
+          },
+        ],
+      },
+    },
+  });
+  console.log(
+    `Esquemas de reparto: "${esquemaAscensor.nombre}" en ${torrePalermo.nombre} (CCyC art. 2049) · ${sanMartin.nombre} sin configurar (default)`
   );
 
   // --- Usuarios -------------------------------------------------------------
@@ -514,6 +654,138 @@ async function main() {
     admin.email, gestor.email, gestor2.email, adminSur.email, invitado.email,
     multiOrg.email,
   ]);
+
+  // --- Gastos demo, SIN LIQUIDAR (S3-08, PRD-04-02 §1.1) --------------------
+  // POR QUÉ: hasta S3-22b el seed no cargaba un solo gasto, así que el tab de
+  // Gastos, el reporte y la generación de una liquidación arrancaban vacíos y
+  // había que cargar todo a mano para ver cualquiera de las tres pantallas con
+  // datos. Son del PERÍODO CORRIENTE (el default de los filtros) y de Torre
+  // Palermo, el edificio con las 10 UFs.
+  //
+  // NINGUNO ESTÁ LIQUIDADO, a propósito: el recorrido del DoD del sprint
+  // arranca en "generar la liquidación del período" y un período ya liquidado
+  // responde 409. Por eso el seed tampoco crea liquidaciones.
+  //
+  // Tres ordinarios y tres extraordinarios: es el corte que separan los KPIs, el
+  // recibo y la Ley 941 (PRD-04-03), y con un solo lado el desglose se ve igual
+  // que si estuviera roto. Las categorías mezclan A (todas las UFs) y B
+  // (`ascensor`, el único servicio que declaran las unidades del seed): una
+  // categoría C necesitaría sectores declarados en las unidades, y un gasto que
+  // no alcanza a ninguna UF rompe la liquidación entera (DESBALANCE_LIQUIDACION).
+  const periodoCorriente = new Date().toISOString().slice(0, 7);
+  const diaDelPeriodo = (dia) => new Date(`${periodoCorriente}-${dia}T12:00:00Z`);
+
+  const GASTOS_DEMO = [
+    {
+      concepto: 'Sueldo del encargado',
+      descripcion: 'Sueldo y cargas sociales según CCT 589/10 SUTERH',
+      monto: '985400.00',
+      categoria: 'A',
+      esOrdinario: true,
+      dia: '05',
+      proveedor: 'Limpieza Integral Norte S.A.',
+      rubro: 'Sueldos y cargas sociales (CCT 589/10)',
+    },
+    {
+      concepto: 'Mantenimiento mensual de ascensores',
+      monto: '182000.00',
+      categoria: 'B',
+      servicioEspecifico: 'ascensor',
+      esOrdinario: true,
+      dia: '08',
+      proveedor: 'Ascensores del Plata S.R.L.',
+      rubro: 'Mantenimiento preventivo',
+    },
+    {
+      concepto: 'Limpieza de espacios comunes',
+      monto: '134500.00',
+      categoria: 'A',
+      esOrdinario: true,
+      dia: '10',
+      proveedor: 'Limpieza Integral Norte S.A.',
+      rubro: 'Limpieza general',
+    },
+    {
+      // Su proveedor está dado de baja: el listado lo muestra con "dado de
+      // baja" debajo de la razón social (el gasto se conserva, Ley 941).
+      concepto: 'Instalación de cámaras en el hall',
+      descripcion: 'Obra aprobada por asamblea: 4 cámaras y grabador',
+      monto: '480000.00',
+      categoria: 'A',
+      esOrdinario: false,
+      dia: '12',
+      proveedor: 'Seguridad Belgrano S.R.L.',
+      rubro: 'Cámaras y monitoreo',
+    },
+    {
+      concepto: 'Reparación de la bomba del ascensor',
+      monto: '410000.00',
+      categoria: 'B',
+      servicioEspecifico: 'ascensor',
+      esOrdinario: false,
+      dia: '15',
+      proveedor: 'Ascensores del Plata S.R.L.',
+      rubro: 'Reparaciones',
+    },
+    {
+      concepto: 'Impermeabilización de la terraza',
+      descripcion: 'Obra aprobada por asamblea del período anterior',
+      monto: '1250000.00',
+      categoria: 'A',
+      esOrdinario: false,
+      dia: '18',
+      proveedor: 'Limpieza Integral Norte S.A.',
+      rubro: 'Techos e impermeabilización',
+    },
+  ];
+
+  for (const gasto of GASTOS_DEMO) {
+    const { proveedor, rubro, dia, ...datos } = gasto;
+    await prisma.gasto.create({
+      data: {
+        ...datos,
+        organizacionId: orgA.id,
+        edificioId: torrePalermo.id,
+        proveedorId: proveedoresOrgA[proveedor].id,
+        rubroId: await rubroMaestroPorNombre(rubro),
+        periodo: periodoCorriente,
+        fechaGasto: diaDelPeriodo(dia),
+        // La trazabilidad de "cargado por" es parte del listado (S3-08b).
+        createdBy: admin.id,
+      },
+    });
+  }
+
+  // --- Regla del fondo de reserva (S3-21) -----------------------------------
+  // Torre Palermo aporta el 5% de las ordinarias desde hace tres períodos: es el
+  // rango típico (5-10%) y deja la demo con el tercer subtotal visible en la
+  // liquidación y en el recibo. Edificio San Martín queda SIN regla a propósito
+  // —es el caso "el fondo no se cobra"— y los tests de backend lo usan.
+  const vigenciaFondo = new Date();
+  vigenciaFondo.setUTCMonth(vigenciaFondo.getUTCMonth() - 3);
+  await prisma.reglaFondoReserva.create({
+    data: {
+      organizacionId: orgA.id,
+      edificioId: torrePalermo.id,
+      vigenciaDesde: vigenciaFondo.toISOString().slice(0, 7),
+      base: 'ORDINARIAS',
+      porcentaje: '5.00',
+      motivo: 'Asamblea ordinaria — acta 47',
+      createdBy: admin.id,
+    },
+  });
+  console.log(
+    `Fondo de reserva: 5,00% de las ordinarias en ${torrePalermo.nombre} ` +
+      `desde ${vigenciaFondo.toISOString().slice(0, 7)} · ${sanMartin.nombre} sin regla`
+  );
+
+  const totalDemo = GASTOS_DEMO.reduce((suma, g) => suma + Number(g.monto), 0);
+  console.log(
+    `Gastos demo en ${torrePalermo.nombre} (${periodoCorriente}): ` +
+      `${GASTOS_DEMO.filter((g) => g.esOrdinario).length} ordinarios + ` +
+      `${GASTOS_DEMO.filter((g) => !g.esOrdinario).length} extraordinarios, ` +
+      `total $${totalDemo.toLocaleString('es-AR')} — sin liquidar`
+  );
 
   // --- Resumen --------------------------------------------------------------
   console.log('\nStaff: admin@demo.com (org_admin A) · gestor@demo.com (gestor A, Torre Palermo)');

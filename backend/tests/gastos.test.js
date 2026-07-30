@@ -397,6 +397,21 @@ describe('gastos (S3-02)', () => {
     assert.equal(detalle.data.editable, false);
     assert.equal(detalle.data.liquidaciones.length, 1);
     assert.equal(detalle.data.liquidaciones[0].estado, 'APROBADA');
+
+    // Decisión 7 (S3-08): la LISTA trae el mismo flag por fila, para que la UI
+    // apague las acciones de la fila sin pedir el detalle de cada gasto.
+    const noCongelado = await crear(
+      admin.accessToken,
+      torre.id,
+      gastoBase({ concepto: `Suelto ${SUFIJO}`, periodo: PERIODO_LIQUIDADO })
+    );
+    assert.equal(noCongelado.status, 201);
+
+    const lista = await listar(admin.accessToken, torre.id, { periodo: PERIODO_LIQUIDADO });
+    assert.equal(lista.status, 200);
+    const porId = new Map(lista.data.data.map((g) => [g.id, g.editable]));
+    assert.equal(porId.get(alta.data.id), false, 'el gasto liquidado no es editable');
+    assert.equal(porId.get(noCongelado.data.id), true, 'el gasto suelto sí lo es');
   });
 
   it('una liquidación en BORRADOR no congela el gasto', async () => {
@@ -459,12 +474,48 @@ describe('gastos (S3-02)', () => {
       'orden fechaGasto desc'
     );
 
+    // Decisión 8: los totales vienen segmentados y reconcilian con el total.
+    assert.deepEqual(todos.data.totales.ordinarios, { cantidad: 2, monto: '400.75' });
+    assert.deepEqual(todos.data.totales.extraordinarios, { cantidad: 1, monto: '200.25' });
+
+    // Decisión 10: el mismo total partido por categoría. Los dos ejes son
+    // independientes: F2 es B y extraordinario a la vez, y suma en los dos.
+    assert.deepEqual(todos.data.totales.porCategoria.A, { cantidad: 2, monto: '400.75' });
+    assert.deepEqual(todos.data.totales.porCategoria.B, { cantidad: 1, monto: '200.25' });
+    assert.deepEqual(todos.data.totales.porCategoria.C, { cantidad: 0, monto: '0.00' });
+    // Y los dos ejes cierran contra el mismo total.
+    const sumar = (segmentos) =>
+      segmentos.reduce((acc, s) => acc + Number(s.monto), 0).toFixed(2);
+    assert.equal(
+      sumar([todos.data.totales.ordinarios, todos.data.totales.extraordinarios]),
+      todos.data.totales.monto
+    );
+    assert.equal(sumar(Object.values(todos.data.totales.porCategoria)), todos.data.totales.monto);
+
+    // Decisión 9: cada fila dice quién la cargó.
+    const f1 = todos.data.data.find((g) => g.concepto === `F1 ${SUFIJO}`);
+    assert.equal(f1.creadoPor.id, admin.user.id);
+    assert.ok(f1.creadoPor.nombre && f1.creadoPor.apellido, 'nombre y apellido del autor');
+
     const soloA = await listar(admin.accessToken, torre.id, {
       periodo: PERIODO_ALT,
       categoria: 'A',
     });
     assert.equal(soloA.data.pagination.total, 2);
     assert.equal(soloA.data.totales.monto, '400.75');
+    // Un tipo sin gastos en el filtro sigue siendo un segmento en cero, no un hueco.
+    assert.deepEqual(soloA.data.totales.extraordinarios, { cantidad: 0, monto: '0.00' });
+
+    const porAutor = await listar(admin.accessToken, torre.id, {
+      periodo: PERIODO_ALT,
+      createdBy: admin.user.id,
+    });
+    assert.equal(porAutor.data.pagination.total, 3, 'los tres los cargó el admin');
+    const porOtroAutor = await listar(admin.accessToken, torre.id, {
+      periodo: PERIODO_ALT,
+      createdBy: gestor.user.id,
+    });
+    assert.equal(porOtroAutor.data.pagination.total, 0);
 
     const extraordinarios = await listar(admin.accessToken, torre.id, {
       periodo: PERIODO_ALT,

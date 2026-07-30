@@ -24,6 +24,11 @@ import { bulkUnidadesSchema } from '../schemas/unidad.schema.js';
 import { sumarCoeficientes, estadoCoeficientes } from '../services/coeficientes.js';
 import { gastosDeEdificioRouter } from './gastos.routes.js';
 import { liquidacionesDeEdificioRouter } from './liquidaciones.routes.js';
+import {
+  esquemasDeEdificioRouter,
+  configuracionLiquidacionRouter,
+} from './esquemas-reparto.routes.js';
+import { fondoReservaDeEdificioRouter } from './fondo-reserva.routes.js';
 
 const router = Router();
 
@@ -34,6 +39,14 @@ router.use('/:id/gastos', gastosDeEdificioRouter);
 // Liquidaciones del edificio (S3-04): calcular el período y listarlas. Las
 // operaciones sobre una liquidación ya identificada viven en /api/liquidaciones.
 router.use('/:id/liquidaciones', liquidacionesDeEdificioRouter);
+
+// Esquemas de reparto y setup de liquidación del edificio (S3-20). Van acá y no
+// bajo /api/esquemas-reparto porque el reparto es del EDIFICIO: su fuente de
+// autoridad es el reglamento de copropiedad de ese consorcio.
+router.use('/:id/esquemas-reparto', esquemasDeEdificioRouter);
+router.use('/:id/configuracion-liquidacion', configuracionLiquidacionRouter);
+// S3-21: reglas del fondo de reserva, versionadas por período de vigencia.
+router.use('/:id/fondo-reserva', fondoReservaDeEdificioRouter);
 
 // Estado informativo de la suma de coeficientes del edificio (#57): siempre
 // sobre el set COMPLETO de unidades, nunca sobre la página pedida — la UI usa

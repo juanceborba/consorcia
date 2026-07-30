@@ -18,31 +18,41 @@
   - _Depende de: S3-02, S3-03._
 - [x] **S3-05 Recibos PDF + QR (Ley 941).** `src/core/recibos.generator.js` con pdfkit + qrcode según PRD-02-05 §4: header con consorcio/dirección/matrícula RPA, datos de la UF (número, coeficiente, m²), separación ordinarias/extraordinarias con detalle por gasto, total, QR (JSON con matrícula, período, UF, totales, fecha emisión), footer Ley 941. `recibo.validator.js` (§5.2). `POST /api/liquidaciones/:id/enviar` (APROBADA→ENVIADA: genera un PDF por UF, sube a MinIO, persiste referencia), `GET /api/liquidaciones/:id/recibos/:unidadId` (descarga del PDF). Sin envío por email (post-beta).
   - _Depende de: S3-04._
-- [ ] **S3-06 Tests de API del slice.** CRUD gastos feliz + validaciones (B sin servicio → 422, fecha futura → 422); PUT sobre gasto liquidado → 409; calcular → suma de detalles = totalGeneral al centavo (verificación contra cálculo manual con decimal.js en el test); aprobar 2 veces → 409; enviar sin aprobar → 409; gestor crea liquidación → 403; org B no toca gastos/liquidaciones de org A; PDF generado existe y el QR contiene matrícula RPA. Limpiar datos creados.
+- [x] **S3-06 Tests de API del slice.** CRUD gastos feliz + validaciones (B sin servicio → 422, fecha futura → 422); PUT sobre gasto liquidado → 409; calcular → suma de detalles = totalGeneral al centavo (verificación contra cálculo manual con decimal.js en el test); aprobar 2 veces → 409; enviar sin aprobar → 409; gestor crea liquidación → 403; org B no toca gastos/liquidaciones de org A; PDF generado existe y el QR contiene matrícula RPA. Limpiar datos creados.
   - _Depende de: S3-05._
 - [x] **S3-12 CRUD proveedores.** Endpoints del PRD-04-02 §1.3 (`GET/POST /api/proveedores`, `GET/PUT/DELETE /api/proveedores/:id`): la org ve globales + propios activos, buscador `?q=` por razón social/CUIT. Dedup CUIT (409 `CUIT_DUPLICADO`), soft-delete vía `activo=false` si tiene gastos, policies `proveedor.yaml` (org_admin CRUD, gestor read).
   - _Depende de: S3-01._
 - [x] **S3-13 Rubros: seed maestro + endpoints.** Seed del árbol maestro (los 10 rubros del PRD-04-02 §1.4), `GET /api/rubros` con merge maestro+visibilidad+propios, CRUD de propios (`POST /api/rubros`, `PUT /api/rubros/:id`), toggle visibilidad (`PUT /api/rubros/:id/visibilidad`), protección de borrado (`DELETE` solo propios sin gastos; con gastos → `activo=false`). Policies `rubro.yaml`. Tests del merge (ocultar maestro, agregar propio, subrubro propio colgando de rubro maestro).
   - _Depende de: S3-01._
-- [ ] **S3-15 Endpoint dashboard de gastos.** `GET /api/edificios/:id/gastos/dashboard` y `GET /api/organizaciones/:id/gastos/dashboard` (gate plan Business+ → 403 `PLAN_INSUFICIENTE`), query `periodo=YYYY-MM` | `desde&hasta` | `todo=1`, respuesta agregada (KPIs, top 10 proveedores, por rubro, por categoría, evolución mensual) según PRD-04-02 §3.4, con Prisma groupBy + decimal.js (cero floats). Tests contra cálculo manual.
+- [x] **S3-15 Endpoint dashboard de gastos.** `GET /api/edificios/:id/gastos/dashboard` y `GET /api/organizaciones/:id/gastos/dashboard` (gate plan Business+ → 403 `PLAN_INSUFICIENTE`), query `periodo=YYYY-MM` | `desde&hasta` | `todo=1`, respuesta agregada (KPIs, top 10 proveedores, por rubro, por categoría, evolución mensual) según PRD-04-02 §3.4, con Prisma groupBy + decimal.js (cero floats). Tests contra cálculo manual.
   - _Depende de: S3-02._
+- [x] **S3-18 Motor de reparto por pesos por unidad (seam).** Refactor interno de calcularDistribucion a distribuir(monto, pesos) con pesosDe(gasto, unidades) derivando los pesos de la categoria A/B/C como hoy (cero cambio funcional). La preview expone el peso normalizado por UF. Diseño: docs/investigacion/esquemas-de-reparto.md
+  - _Depende de: nada._
+- [x] **S3-19 Cuotas de gastos extraordinarios.** Plan de cuotas + imputacion por periodo, seleccion de gastos del motor por periodo, UI en el form de gasto y rotulo cuota k/N en la lista y el recibo. Brecha 1 del research.
+  - _Depende de: S3-02._
+- [x] **S3-20 Esquemas de reparto configurables por edificio.** Modelos EsquemaReparto + EsquemaRepartoUnidad + ConfiguracionLiquidacion, resolucion en el motor (esquema del gasto -> del edificio -> default actual), CRUD, UI de configuracion del edificio y override en el gasto, seed y E2E. Resuelve exencion parcial, coeficiente propio por sector, partes iguales y cargo particular a una UF.
+  - _Depende de: S3-18._
+- [x] **S3-21 Fondo de reserva en la liquidacion.** Porcentaje configurable por edificio, item propio en liquidacion y recibo, y uso del fondo para financiar una extraordinaria. Brecha 4 del research.
+  - _Depende de: S3-04._
 
 ## Frontend — features
 
-- [ ] **S3-07 Lista de gastos + filtros.** Ruta según PRD-07-03 (tab `gastos` del detalle de edificio). DataTable (patrones S2): concepto, monto (formato es-AR), categoría (badges A/B/C), tipo (ordinario/extraordinario), período; fila TOTAL del filtro activo; filtros por período (default: mes actual), categoría y tipo; paginación del backend; empty state + skeleton.
+- [x] **S3-07 Lista de gastos + filtros.** Ruta según PRD-07-03 (tab `gastos` del detalle de edificio). DataTable (patrones S2): concepto, monto (formato es-AR), categoría (badges A/B/C), tipo (ordinario/extraordinario), período; fila TOTAL del filtro activo; filtros por período (default: mes actual), categoría y tipo; paginación del backend; empty state + skeleton.
   - _Depende de: S3-02._
-- [ ] **S3-08 Form nuevo gasto.** RHF + Zod patrones §6.1: concepto, descripción, monto + moneda, categoría (select que condiciona: B → select de servicios del edificio, C → select de sectores), radio ordinario/extraordinario, fechaGasto (default hoy), período (default mes actual). Edición inline o modal para gastos no liquidados; delete con ConfirmDialog. Comprobante: campo opcional (upload a MinIO si hay endpoint disponible; si no, queda diferido — documentar en el issue).
+- [x] **S3-08 Form nuevo gasto.** RHF + Zod patrones §6.1: concepto, descripción, monto + moneda, categoría (select que condiciona: B → select de servicios del edificio, C → select de sectores), radio ordinario/extraordinario, fechaGasto (default hoy), período (default mes actual). Edición inline o modal para gastos no liquidados; delete con ConfirmDialog. Comprobante: campo opcional (upload a MinIO si hay endpoint disponible; si no, queda diferido — documentar en el issue).
   - _Depende de: S3-02, S3-07._
-- [ ] **S3-09 Liquidación: generar + preview.** Botón "Generar liquidación" (selector de período) → POST calcular → vista preview según PRD-04-03 §4.1: cards de resumen (ordinarias, extraordinarias, total, cantidad de gastos/UFs), tabla por UF (ordinarias, extraordinarias, total), comparación % vs período anterior si existe liquidación previa. Manejo de 422 `SIN_GASTOS` con CTA a cargar gastos.
+- [x] **S3-09 Liquidación: generar + preview.** Botón "Generar liquidación" (selector de período) → POST calcular → vista preview según PRD-04-03 §4.1: cards de resumen (ordinarias, extraordinarias, total, cantidad de gastos/UFs), tabla por UF (ordinarias, extraordinarias, total), comparación % vs período anterior si existe liquidación previa. Manejo de 422 `SIN_GASTOS` con CTA a cargar gastos.
   - _Depende de: S3-04._
-- [ ] **S3-10 Workflow aprobación + recibos.** Acciones según estado: BORRADOR → Aprobar (ConfirmDialog) / Anular; APROBADA → "Generar recibos" (ConfirmDialog, es la acción "oficial"); ENVIADA → lista de recibos por UF con descarga de PDF. Badge de estado en la lista de liquidaciones (tokens S2-05). Optimistic update con rollback en las transiciones.
+- [x] **S3-10 Workflow aprobación + recibos.** Acciones según estado: BORRADOR → Aprobar (ConfirmDialog) / Anular; APROBADA → "Generar recibos" (ConfirmDialog, es la acción "oficial"); ENVIADA → lista de recibos por UF con descarga de PDF. Badge de estado en la lista de liquidaciones (tokens S2-05). Optimistic update con rollback en las transiciones.
   - _Depende de: S3-05, S3-09._
-- [ ] **S3-14 UI gestión proveedores y rubros.** Lista de proveedores con buscador (razón social/CUIT), alta/edición, badge Global/Propio; árbol de rubros con toggles de visibilidad y alta/edición de propios. Actualizar S3-08 (form gasto): selector de proveedor con autocomplete + alta inline, selector rubro→subrubro en cascada.
+- [x] **S3-14 UI gestión proveedores y rubros.** Lista de proveedores con buscador (razón social/CUIT), alta/edición, badge Global/Propio; árbol de rubros con toggles de visibilidad y alta/edición de propios. Actualizar S3-08 (form gasto): selector de proveedor con autocomplete + alta inline, selector rubro→subrubro en cascada.
   - _Depende de: S3-12, S3-13._
-- [ ] **S3-16 Dashboard de gastos (UI).** El tab `gastos` del detalle de edificio pasa a ser dashboard (PRD-04-02 §3): barra de filtros (edificio incl. "Todos" si Business+, período 12 meses/desde-hasta/todo), KPI cards, charts Recharts (evolución line, por rubro bar con drill-down, por categoría pie), top 10 proveedores; debajo la lista de S3-07 compartiendo filtros vía URL/search params + store.
+- [x] **S3-16 Dashboard de gastos (UI).** El tab `gastos` del detalle de edificio pasa a ser dashboard (PRD-04-02 §3): barra de filtros (edificio incl. "Todos" si Business+, período 12 meses/desde-hasta/todo), KPI cards, charts Recharts (evolución line, por rubro bar con drill-down, por categoría pie), top 10 proveedores; debajo la lista de S3-07 compartiendo filtros vía URL/search params + store.
   - _Depende de: S3-07, S3-15._
-- [ ] **S3-17 Tests E2E dashboard + smoke.** Playwright: filtros reactivos actualizan KPIs y lista; consolidado 403 en plan starter. Extender `scripts/smoke.sh`.
+- [x] **S3-17 Tests E2E dashboard + smoke.** Playwright: filtros reactivos actualizan KPIs y lista; consolidado 403 en plan starter. Extender `scripts/smoke.sh`.
   - _Depende de: S3-16._
+- [x] **S3-22 Separar el tablero de gastos del tab operativo.** Corrige la fusión de S3-16: el tab `/edificios/:id/gastos` vuelve a ser la pantalla operativa (filtros + totalizador segmentado + listado + carga, sin KPIs ni charts) y el dashboard interactivo vive solo en Reportes → `/reportes/gastos`, con selector de alcance (un edificio o toda la administración, esta última Business+ y org_admin). El guard de /reportes baja a RequireStaff. Actualiza PRD-04-02 §3 (que definía el dashboard COMO el tab), PRD-07-03 §2.2, la ayuda contextual y los specs E2E.
+  - _Depende de: S3-16, S3-17._
 
 ## Cierre
 
@@ -76,6 +86,11 @@ S3-02 ──► S3-15
 S3-07 ──► S3-16
 S3-15 ──► S3-16
 S3-16 ──► S3-17
+S3-02 ──► S3-19
+S3-18 ──► S3-20
+S3-04 ──► S3-21
+S3-16 ──► S3-22
+S3-17 ──► S3-22
 ```
 
 **Lotes paralelos sugeridos:** Lote A (S3-01), Lote B (S3-12 + S3-13 + S3-03, en paralelo tras A), Lote C (S3-02), Lote D (S3-04→05→06), Lote E (S3-07→08 + S3-14), Lote F (S3-09→10), Lote G (S3-15→16→17), Lote H (S3-11).
