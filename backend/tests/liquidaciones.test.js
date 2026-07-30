@@ -255,6 +255,23 @@ describe('liquidaciones (S3-04)', () => {
     const cochera = data.unidades.find((u) => u.numero === 'Coch-1');
     const departamento = data.unidades.find((u) => u.numero === '1A');
     assert.ok(new Decimal(cochera.total).lt(departamento.total));
+
+    // S3-18: la preview expone el PESO que el motor aplicó a cada gasto de la
+    // UF, para que el administrador vea el reparto antes de aprobar. La cochera
+    // participa de 2 de los 3 gastos (no del B), el departamento de los 3.
+    assert.equal(departamento.pesos.length, 3);
+    assert.equal(cochera.pesos.length, 2);
+    // En un gasto B el peso es el coeficiente RENORMALIZADO entre las UF
+    // alcanzadas, así que es mayor que el coeficiente general de la UF.
+    const pesos = departamento.pesos.map((p) => new Decimal(p.pesoAplicado));
+    assert.ok(
+      pesos.some((peso) => peso.gt(departamento.coeficiente)),
+      'el gasto B renormaliza: el peso supera al coeficiente general'
+    );
+    // Y el peso de cada gasto es el que explica su monto asignado.
+    for (const p of departamento.pesos) {
+      assert.ok(new Decimal(p.montoAsignado).gt(0));
+    }
   });
 
   it('el preview de GET /api/liquidaciones/:id coincide con el del alta', async () => {

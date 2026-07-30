@@ -260,6 +260,14 @@ async function preview(liquidacion) {
         coeficiente: coeficiente(d.unidad.coeficiente),
         ordinarias: new Decimal(0),
         extraordinarias: new Decimal(0),
+        // S3-18: el peso que el motor aplicó A CADA GASTO de esta UF. No es
+        // redundante con `coeficiente`: en un gasto B/C es el coeficiente
+        // renormalizado entre las alcanzadas, y cuando existan los esquemas de
+        // reparto (S3-20) puede ser cualquier otra cosa que fije el reglamento
+        // (exención parcial, coeficiente propio del sector, partes iguales).
+        // Mostrarlo es lo que le permite al administrador ver ANTES de aprobar
+        // que el reparto es el que su reglamento manda.
+        pesos: [],
       });
     }
 
@@ -267,6 +275,14 @@ async function preview(liquidacion) {
     const monto = new Decimal(d.montoAsignado);
     if (d.gasto.esOrdinario) fila.ordinarias = fila.ordinarias.plus(monto);
     else fila.extraordinarias = fila.extraordinarias.plus(monto);
+    // Solo los pesos que participan: un 0 en una UF no alcanzada es ruido.
+    if (new Decimal(d.coeficienteAplicado).gt(0)) {
+      fila.pesos.push({
+        gastoId: d.gastoId,
+        pesoAplicado: coeficiente(d.coeficienteAplicado),
+        montoAsignado: monto.toFixed(2),
+      });
+    }
   }
 
   const unidades = [...porUnidad.values()]

@@ -31,6 +31,15 @@
 // 4. El ajuste de centavos se aplica a la ÚLTIMA UF ALCANZADA (coeficiente
 //    efectivo > 0), no a la última del array: ajustar una UF excluida por
 //    categoría B/C le asignaría un monto que no le corresponde.
+//
+// 5. REFACTOR DE S3-18 (sin cambio de comportamiento): el reparto se expresa con
+//    una sola primitiva —`distribuir(monto, pesos)` sobre los pesos que devuelve
+//    `pesosDe(gasto, unidades)`—, en vez de tener la categoría A/B/C metida en el
+//    cálculo. Hoy los pesos se derivan de A/B/C exactamente como antes, así que
+//    los resultados son idénticos al centavo; lo que queda abierto es el punto
+//    donde S3-20 va a resolver el esquema de reparto configurado por el edificio
+//    (exención parcial, coeficiente propio de un sector, partes iguales, cargo a
+//    una sola UF). Diseño: `docs/investigacion/esquemas-de-reparto.md`.
 
 import Decimal from 'decimal.js';
 
@@ -73,6 +82,105 @@ function unidadAlcanzada(gasto, unidad) {
   }
 }
 
+// ─── La primitiva del reparto (S3-18) ───
+//
+// `pesosDe` traduce la clasificación del gasto a un PESO por unidad funcional, y
+// `distribuir` reparte la plata en proporción a esos pesos. Todo el reparto del
+// dominio se expresa así (ver `docs/investigacion/esquemas-de-reparto.md`):
+//
+//   A                        → peso = coeficiente de cada UF
+//   B / C                    → peso = coeficiente en las alcanzadas, 0 en el resto
+//   exención parcial         → peso = coeficiente × 0.5 (S3-20)
+//   coeficiente propio       → peso = el del reglamento para ese sector (S3-20)
+//   partes iguales           → peso = 1 en las alcanzadas (S3-20)
+//   cargo a una sola UF      → peso = 1 en esa UF (S3-20)
+//
+// Los pesos son CRUDOS: `distribuir` normaliza por Σpesos. Eso reproduce
+// exactamente el comportamiento anterior — en A la suma de coeficientes es 1 y
+// normalizar es un no-op; en B/C la suma es la de las alcanzadas, que es la
+// "renormalización" de la nota 2. Un solo camino de código para los dos casos.
+
+// Pesos derivados de la categoría A/B/C, que es lo único que hay hoy. Cuando
+// exista `EsquemaReparto` (S3-20) este es el único punto que cambia: la
+// resolución pasa a ser esquema del gasto → esquema del edificio → esta función
+// como default.
+function pesosDe(gasto, unidades) {
+  const pesos = new Map();
+  for (const unidad of unidades) {
+    pesos.set(
+      unidad.id,
+      unidadAlcanzada(gasto, unidad) ? new Decimal(unidad.coeficiente) : new Decimal(0)
+    );
+  }
+  return pesos;
+}
+
+// Reparte `montoTotal` en proporción a `pesos` (Map<unidadId, Decimal>), al
+// centavo y con suma exacta. El orden del Map define el orden del resultado y,
+// con él, cuál es la "última UF alcanzada" que absorbe el ajuste de centavos.
+function distribuir(montoTotal, pesos, { moneda = 'ARS', contexto = {} } = {}) {
+  const total = new Decimal(montoTotal).toDecimalPlaces(2);
+  const sumaPesos = [...pesos.values()].reduce((sum, p) => sum.plus(p), new Decimal(0));
+
+  if (sumaPesos.lte(0)) {
+    throw new LiquidacionError(
+      'DESBALANCE_LIQUIDACION',
+      contexto.categoria
+        ? `No hay unidades alcanzadas por el gasto (categoría ${contexto.categoria}).`
+        : 'No hay unidades alcanzadas por el gasto.',
+      contexto
+    );
+  }
+
+  const distribucion = [];
+  let ultimaAlcanzada = -1;
+
+  for (const [unidadId, peso] of pesos) {
+    // Peso normalizado: es el "coeficiente aplicado" que se persiste en el
+    // detalle y que la preview muestra. Es la única defensa de auditoría, así
+    // que se guarda como se usó, no recalculado después.
+    const pesoNormalizado = peso.div(sumaPesos);
+    if (pesoNormalizado.gt(0)) ultimaAlcanzada = distribucion.length;
+
+    distribucion.push({
+      unidadId,
+      coeficiente: pesoNormalizado.toString(),
+      monto: total.times(pesoNormalizado).toFixed(2), // EXACTO a 2 decimales
+      moneda,
+    });
+  }
+
+  // ─── VALIDACIÓN: Suma de montos = montoTotal (cero tolerancia) ───
+  const sumaMontos = distribucion.reduce(
+    (sum, d) => sum.plus(new Decimal(d.monto)),
+    new Decimal(0)
+  );
+
+  if (!sumaMontos.equals(total)) {
+    // Ajuste de centavos: la diferencia (siempre múltiplo de 0.01) se imputa a
+    // la última UF alcanzada (nota 4 del header).
+    const diferencia = total.minus(sumaMontos);
+    const ultima = distribucion[ultimaAlcanzada];
+    ultima.monto = new Decimal(ultima.monto).plus(diferencia).toFixed(2);
+
+    // Revalidar
+    const sumaAjustada = distribucion.reduce(
+      (sum, d) => sum.plus(new Decimal(d.monto)),
+      new Decimal(0)
+    );
+
+    if (!sumaAjustada.equals(total)) {
+      throw new LiquidacionError(
+        'DESBALANCE_LIQUIDACION',
+        `Desbalance en liquidación después de ajuste: ${sumaAjustada} vs ${total}`,
+        { sumaMontos: sumaAjustada.toString(), montoTotal: total.toString() }
+      );
+    }
+  }
+
+  return distribucion;
+}
+
 class LiquidacionEngine {
   /**
    * Calcula la distribución de un gasto entre las unidades de un edificio
@@ -90,7 +198,6 @@ class LiquidacionEngine {
   static calcularDistribucion(gasto, unidades) {
     // Objetivo de la distribución: total al centavo (ver nota 3 del header).
     const montoTotal = new Decimal(gasto.monto).toDecimalPlaces(2);
-    const distribucion = [];
 
     // ─── VALIDACIÓN 1: Suma de coeficientes = 1 ───
     const sumaCoef = unidades.reduce(
@@ -115,71 +222,16 @@ class LiquidacionEngine {
       );
     }
 
-    // ─── CÁLCULO: coeficientes efectivos (renormalizados en B/C, nota 2) ───
-    const sumaCoefAlcanzadas = unidades.reduce(
-      (sum, u) => (unidadAlcanzada(gasto, u) ? sum.plus(new Decimal(u.coeficiente)) : sum),
-      new Decimal(0)
-    );
-
-    if (sumaCoefAlcanzadas.isZero()) {
-      throw new LiquidacionError(
-        'DESBALANCE_LIQUIDACION',
-        `No hay unidades alcanzadas por el gasto (categoría ${gasto.categoria}).`,
-        {
-          categoria: gasto.categoria,
-          servicio: servicioDelGasto(gasto),
-          sector: sectorDelGasto(gasto),
-        }
-      );
-    }
-
-    let ultimaAlcanzada = -1;
-
-    unidades.forEach((unidad, i) => {
-      // Coeficiente efectivo: crudo en A; renormalizado entre alcanzadas en B/C.
-      const coefAplicable = unidadAlcanzada(gasto, unidad)
-        ? new Decimal(unidad.coeficiente).div(sumaCoefAlcanzadas)
-        : new Decimal(0);
-
-      if (coefAplicable.gt(0)) ultimaAlcanzada = i;
-
-      distribucion.push({
-        unidadId: unidad.id,
-        coeficiente: coefAplicable.toString(),
-        monto: montoTotal.times(coefAplicable).toFixed(2), // EXACTO a 2 decimales
-        moneda: gasto.moneda || 'ARS',
-      });
+    return distribuir(montoTotal, pesosDe(gasto, unidades), {
+      moneda: gasto.moneda || 'ARS',
+      // Contexto para el error de "nadie alcanzado", que sin esto sería un
+      // desbalance sin explicación.
+      contexto: {
+        categoria: gasto.categoria,
+        servicio: servicioDelGasto(gasto),
+        sector: sectorDelGasto(gasto),
+      },
     });
-
-    // ─── VALIDACIÓN 3: Suma de montos = montoTotal (cero tolerancia) ───
-    const sumaMontos = distribucion.reduce(
-      (sum, d) => sum.plus(new Decimal(d.monto)),
-      new Decimal(0)
-    );
-
-    if (!sumaMontos.equals(montoTotal)) {
-      // Ajuste de centavos: la diferencia (siempre múltiplo de 0.01) se
-      // imputa a la última UF alcanzada (nota 4 del header).
-      const diferencia = montoTotal.minus(sumaMontos);
-      const ultima = distribucion[ultimaAlcanzada];
-      ultima.monto = new Decimal(ultima.monto).plus(diferencia).toFixed(2);
-
-      // Revalidar
-      const sumaAjustada = distribucion.reduce(
-        (sum, d) => sum.plus(new Decimal(d.monto)),
-        new Decimal(0)
-      );
-
-      if (!sumaAjustada.equals(montoTotal)) {
-        throw new LiquidacionError(
-          'DESBALANCE_LIQUIDACION',
-          `Desbalance en liquidación después de ajuste: ${sumaAjustada} vs ${montoTotal}`,
-          { sumaMontos: sumaAjustada.toString(), montoTotal: montoTotal.toString() }
-        );
-      }
-    }
-
-    return distribucion;
   }
 
   /**
@@ -241,4 +293,4 @@ class LiquidacionError extends Error {
   }
 }
 
-export { LiquidacionEngine, LiquidacionError };
+export { LiquidacionEngine, LiquidacionError, distribuir, pesosDe };

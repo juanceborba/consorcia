@@ -7,7 +7,12 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import Decimal from 'decimal.js';
 
-import { LiquidacionEngine, LiquidacionError } from '../../src/core/liquidacion.engine.js';
+import {
+  distribuir,
+  LiquidacionEngine,
+  LiquidacionError,
+  pesosDe,
+} from '../../src/core/liquidacion.engine.js';
 
 // Mismo fixture del PRD §3.2, con los nombres de campos de schema.prisma
 // (categoriaB / categoriaC). Coeficientes suman exactamente 1.000000.
@@ -233,5 +238,96 @@ describe('LiquidacionEngine.calcularLiquidacion', () => {
         .reduce((s, d) => s.plus(d.montoAsignado), new Decimal(0));
       assert.equal(suma.toFixed(2), new Decimal(gasto.monto).toFixed(2));
     }
+  });
+});
+
+// ─── La primitiva de reparto (S3-18) ───
+//
+// `distribuir(monto, pesos)` es el único camino de cálculo del motor. Estos
+// tests la ejercitan DIRECTAMENTE con los pesos que va a producir el esquema de
+// reparto configurable de S3-20, para que la primitiva esté probada antes de que
+// exista la capa de configuración: exención parcial, coeficiente propio de un
+// sector, partes iguales y cargo a una sola UF (los cuatro escenarios que hoy no
+// se pueden expresar con A/B/C). Ver `docs/investigacion/esquemas-de-reparto.md`.
+describe('distribuir (primitiva de pesos, S3-18)', () => {
+  const pesos = (entradas) => new Map(entradas.map(([id, p]) => [id, new Decimal(p)]));
+
+  it('reparte en proporción a los pesos y cierra exacto', () => {
+    const d = distribuir('1000.00', pesos([['u1', '1'], ['u2', '3']]));
+    assert.equal(montoDe(d, 'u1'), '250.00');
+    assert.equal(montoDe(d, 'u2'), '750.00');
+    assert.ok(sumarMontos(d).equals(new Decimal('1000.00')));
+  });
+
+  it('exención parcial: la UF con peso a la mitad paga la mitad de lo proporcional', () => {
+    // PB (u1) abona el 50% del ascensor: peso = coeficiente × 0.5.
+    const d = distribuir(
+      '900.00',
+      pesos([['u1', '0.05'], ['u2', '0.10'], ['u3', '0.10']]),
+    );
+    // Σpesos = 0.25 → u1 = 900 × 0.05/0.25 = 180, la mitad de los otros dos.
+    assert.equal(montoDe(d, 'u1'), '180.00');
+    assert.equal(montoDe(d, 'u2'), '360.00');
+    assert.equal(montoDe(d, 'u3'), '360.00');
+    assert.ok(sumarMontos(d).equals(new Decimal('900.00')));
+  });
+
+  it('partes iguales: pesos = 1 reparte por UF, no por coeficiente', () => {
+    const d = distribuir('100.00', pesos([['u1', '1'], ['u2', '1'], ['u3', '1']]));
+    // 33.33 + 33.33 + 33.34: el centavo va a la última alcanzada.
+    assert.deepEqual(d.map((x) => x.monto), ['33.33', '33.33', '33.34']);
+    assert.ok(sumarMontos(d).equals(new Decimal('100.00')));
+  });
+
+  it('cargo a una sola UF: el resto queda en cero y no absorbe el ajuste', () => {
+    const d = distribuir('333.33', pesos([['u1', '0'], ['u2', '1'], ['u3', '0']]));
+    assert.equal(montoDe(d, 'u1'), '0.00');
+    assert.equal(montoDe(d, 'u2'), '333.33');
+    assert.equal(montoDe(d, 'u3'), '0.00');
+  });
+
+  it('un peso propio del sector NO es el coeficiente general renormalizado', () => {
+    // El reglamento fija coeficientes propios para Torre A (50/50) aunque los
+    // coeficientes generales de esas UF sean distintos entre sí. Es el caso que
+    // el motor no podía expresar antes de S3-18.
+    const d = distribuir('1000.00', pesos([['u1', '0.5'], ['u4', '0.5']]));
+    assert.equal(montoDe(d, 'u1'), '500.00');
+    assert.equal(montoDe(d, 'u4'), '500.00');
+  });
+
+  it('Σpesos = 0 tira DESBALANCE_LIQUIDACION', () => {
+    assert.throws(
+      () => distribuir('100.00', pesos([['u1', '0'], ['u2', '0']])),
+      (err) => err instanceof LiquidacionError && err.codigo === 'DESBALANCE_LIQUIDACION',
+    );
+  });
+
+  it('el coeficiente devuelto es el peso NORMALIZADO (lo que se persiste y audita)', () => {
+    const d = distribuir('100.00', pesos([['u1', '2'], ['u2', '2']]));
+    assert.equal(d[0].coeficiente, '0.5');
+    const suma = d.reduce((s, x) => s.plus(x.coeficiente), new Decimal(0));
+    assert.ok(suma.equals(1), 'los pesos normalizados suman 1');
+  });
+});
+
+// `pesosDe` traduce la categoría A/B/C a pesos crudos. Es el default que S3-20
+// va a mantener cuando el edificio no tenga esquema configurado.
+describe('pesosDe (A/B/C → pesos, S3-18)', () => {
+  it('categoría A: peso = coeficiente de cada UF', () => {
+    const p = pesosDe({ categoria: 'A' }, unidades);
+    assert.equal(p.get('u1').toString(), '0.076923');
+    assert.equal(p.get('u4').toString(), '0.692308');
+  });
+
+  it('categoría B: peso 0 en las UF sin el servicio', () => {
+    const p = pesosDe({ categoria: 'B', servicioEspecifico: 'ascensor' }, unidades);
+    assert.equal(p.get('u3').toString(), '0');
+    assert.equal(p.get('u1').toString(), '0.076923');
+  });
+
+  it('categoría C: peso 0 fuera del sector', () => {
+    const p = pesosDe({ categoria: 'C', sectorEspecifico: 'torre_b' }, unidades);
+    assert.equal(p.get('u3').toString(), '0.153846');
+    assert.equal(p.get('u1').toString(), '0');
   });
 });
