@@ -87,6 +87,63 @@ export const ESTADOS_VIGENTES = [
 export const estaVigente = (liquidacion) =>
   ESTADOS_VIGENTES.includes(liquidacion?.estado);
 
+// ---------------------------------------------------------------------------
+// Acciones del workflow (S3-10)
+// ---------------------------------------------------------------------------
+//
+// Espejo de `TRANSICIONES` del backend. Cada acción declara desde qué estados
+// se puede ejecutar y cómo se le habla al administrador: `label` es el botón,
+// `confirmacion` es lo que el ConfirmDialog tiene que dejar claro ANTES de
+// apretar (PRD-07-02 §6.3) y `variante` es el peso visual.
+//
+// DECISIÓN: "enviar" se rotula "Generar recibos" y no "Enviar". En el MVP la
+// acción emite los PDFs y los deja disponibles para descargar; el envío por
+// email es AgentMail (post-beta, PRD-04-03 §2 PASO 6). Un botón "Enviar" le
+// prometería al administrador que los propietarios recibieron algo, y no es así.
+// El ESTADO sigue llamándose ENVIADA porque es el nombre del backend y de la
+// máquina de estados del PRD; el rótulo del botón describe lo que el botón hace.
+export const ACCIONES_LIQUIDACION = {
+  aprobar: {
+    label: 'Aprobar',
+    desde: ['BORRADOR', 'PENDIENTE_APROBACION'],
+    hacia: 'APROBADA',
+    variante: 'info',
+    titulo: '¿Aprobar esta liquidación?',
+    confirmacion:
+      'Aprobar es el acto por el que la administración da por buenos estos importes. Después de aprobar no se pueden editar los gastos del período: si aparece un error hay que anular la liquidación y volver a generarla.',
+    confirmText: 'Aprobar liquidación',
+  },
+  enviar: {
+    label: 'Generar recibos',
+    desde: ['APROBADA'],
+    hacia: 'ENVIADA',
+    variante: 'info',
+    titulo: '¿Generar los recibos?',
+    confirmacion:
+      'Se emite un recibo PDF por unidad, con el QR de verificación y la matrícula RPA del administrador (Ley 941). Los recibos emitidos quedan como documentación del consorcio: para corregirlos hay que anular la liquidación y volver a liquidar el período.',
+    confirmText: 'Generar recibos',
+  },
+  anular: {
+    label: 'Anular',
+    desde: ['BORRADOR', 'PENDIENTE_APROBACION', 'APROBADA', 'ENVIADA'],
+    hacia: 'ANULADA',
+    variante: 'danger',
+    titulo: '¿Anular esta liquidación?',
+    confirmacion:
+      'La liquidación queda sin efecto y su período vuelve a estar libre para generar una nueva. Los recibos que ya se hayan emitido no se borran (es documentación del consorcio) pero dejan de corresponder a una liquidación vigente.',
+    confirmText: 'Anular liquidación',
+  },
+};
+
+// Las acciones ofrecibles sobre un estado, en el orden en que se muestran: la
+// que hace avanzar el workflow primero, anular al final. Un estado sin
+// transiciones (COBRADA, ANULADA) devuelve lista vacía.
+export function accionesDeLiquidacion(estado) {
+  return Object.entries(ACCIONES_LIQUIDACION)
+    .filter(([, accion]) => accion.desde.includes(estado))
+    .map(([id, accion]) => ({ id, ...accion }));
+}
+
 // La liquidación con la que comparar: la vigente más reciente ANTERIOR al
 // período que se está viendo. No se exige que sea el mes inmediato anterior —
 // un consorcio puede haber liquidado en marzo y recién en junio, y comparar

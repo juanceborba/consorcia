@@ -483,6 +483,7 @@ export const AYUDA_TOPICS = {
     titulo: 'Liquidaciones',
     relacionados: [
       'liquidaciones/preview',
+      'liquidaciones/recibos',
       'gastos/carga',
       'edificios/unidades/categorias-gastos',
     ],
@@ -514,6 +515,16 @@ export const AYUDA_TOPICS = {
         ],
       },
       {
+        titulo: 'Cómo avanza de un estado al siguiente',
+        cuerpo:
+          'Los botones están en el detalle de la liquidación, arriba, al lado del estado. Cada uno pide confirmación porque los tres son actos de la administración, no ediciones.',
+        items: [
+          'Aprobar (desde borrador): la administración da por buenos los importes. Desde acá no se editan más los gastos del período.',
+          'Generar recibos (desde aprobada): emite el PDF de cada unidad con su QR y la matrícula RPA. Es la acción "oficial" y deja la liquidación en enviada.',
+          'Anular (desde cualquier estado menos cobrada): deja la liquidación sin efecto y libera el período.',
+        ],
+      },
+      {
         titulo: 'Un período, una liquidación',
         cuerpo:
           'Mientras un período tenga una liquidación que no esté anulada, no se puede generar otra para el mismo mes. Si detectás un error —un gasto que faltaba, una categoría mal puesta— el camino es anular la que existe, corregir y volver a generar. No se sobrescribe: los recibos ya emitidos tienen que seguir diciendo con qué se calcularon (Ley 941).',
@@ -521,8 +532,8 @@ export const AYUDA_TOPICS = {
       {
         titulo: '¿Quién puede hacer qué?',
         items: [
-          'Generar y aprobar liquidaciones: solo el administrador de la organización (org_admin).',
-          'Ver las liquidaciones y su detalle por unidad: también el gestor de los edificios que tiene asignados.',
+          'Generar, aprobar, emitir los recibos y anular: solo el administrador de la organización (org_admin).',
+          'Ver las liquidaciones, su detalle por unidad y descargar los recibos ya emitidos: también el gestor de los edificios que tiene asignados.',
         ],
       },
     ],
@@ -535,6 +546,7 @@ export const AYUDA_TOPICS = {
     titulo: 'Cómo leer una liquidación',
     relacionados: [
       'liquidaciones',
+      'liquidaciones/recibos',
       'edificios/esquemas-reparto',
       'edificios/unidades/categorias-gastos',
     ],
@@ -569,6 +581,53 @@ export const AYUDA_TOPICS = {
         titulo: 'Un borrador todavía no se emitió',
         cuerpo:
           'Mientras la liquidación esté en borrador no la vio nadie fuera de la administración y se puede anular sin consecuencias. Revisar el detalle acá es el último momento barato para detectar que una unidad está pagando lo que no le toca: después de aprobar, el número se convierte en un recibo con valor legal.',
+      },
+      {
+        titulo: 'Los botones de arriba',
+        cuerpo:
+          'Al lado del estado aparecen las acciones que ese estado permite: sobre un borrador, "Aprobar" y "Anular"; sobre una aprobada, "Generar recibos" y "Anular". Si un botón no está no es que esté deshabilitado: es que la liquidación no está en un estado donde esa acción tenga sentido. Las tres piden confirmación y explican qué deja de poder hacerse después.',
+      },
+    ],
+  },
+
+  // Recibos emitidos (S3-10, PRD-04-03 §2 PASO 5 · PRD-06-01 §3 Ley 941).
+  // Topic de la card de recibos de la preview.
+  'liquidaciones/recibos': {
+    ruta: ['Liquidaciones', 'Recibos'],
+    titulo: 'Los recibos de expensas',
+    relacionados: ['liquidaciones', 'liquidaciones/preview'],
+    pantallas: ['src/components/liquidaciones/RecibosCard.jsx'],
+    secciones: [
+      {
+        titulo: '¿Qué es un recibo acá?',
+        cuerpo:
+          'El comprobante de UNA unidad funcional para UN período: lo que esa unidad tiene que pagar, con el detalle de ordinarias y extraordinarias separadas. La app emite uno por unidad cuando la administración aprieta "Generar recibos" sobre una liquidación aprobada, y cada uno queda guardado como PDF con su número.',
+      },
+      {
+        titulo: 'Qué lleva el PDF (y por qué)',
+        cuerpo:
+          'El contenido no es decorativo: la Ley 941 de CABA define qué tiene que decir un recibo de expensas.',
+        items: [
+          'Los datos del consorcio y la matrícula RPA del administrador en el Registro Público de Administradores.',
+          'Las expensas ordinarias y las extraordinarias por separado.',
+          'Los datos de la unidad: número, coeficiente y m².',
+          'Un QR escaneable que permite verificar el recibo contra los datos de la liquidación que lo emitió.',
+        ],
+      },
+      {
+        titulo: 'Emitir es un acto, no un guardado',
+        cuerpo:
+          'Los recibos se emiten una sola vez por liquidación: no se regeneran ni se sobrescriben. Si aparece un error después de emitirlos, el camino es anular la liquidación, corregir los gastos y volver a liquidar el período — los recibos viejos no se borran, porque son documentación del consorcio y tienen que seguir diciendo con qué se calcularon.',
+      },
+      {
+        titulo: 'Descargar y compartir',
+        cuerpo:
+          'Cada renglón baja el PDF de esa unidad. Por ahora el envío a los propietarios es manual: la app emite y guarda los recibos, y vos los mandás. El envío automático por email con el link de pago llega más adelante.',
+      },
+      {
+        titulo: 'Si un PDF no está disponible',
+        cuerpo:
+          'Puede pasar que el recibo esté registrado (tiene número y totales) pero su archivo no esté en el almacenamiento. La app lo avisa con ese mensaje puntual porque la salida no es reintentar la descarga: hay que anular la liquidación y volver a emitirla.',
       },
     ],
   },

@@ -43,7 +43,7 @@
   - _Depende de: S3-02, S3-07._
 - [x] **S3-09 Liquidación: generar + preview.** Botón "Generar liquidación" (selector de período) → POST calcular → vista preview según PRD-04-03 §4.1: cards de resumen (ordinarias, extraordinarias, total, cantidad de gastos/UFs), tabla por UF (ordinarias, extraordinarias, total), comparación % vs período anterior si existe liquidación previa. Manejo de 422 `SIN_GASTOS` con CTA a cargar gastos.
   - _Depende de: S3-04._
-- [ ] **S3-10 Workflow aprobación + recibos.** Acciones según estado: BORRADOR → Aprobar (ConfirmDialog) / Anular; APROBADA → "Generar recibos" (ConfirmDialog, es la acción "oficial"); ENVIADA → lista de recibos por UF con descarga de PDF. Badge de estado en la lista de liquidaciones (tokens S2-05). Optimistic update con rollback en las transiciones.
+- [x] **S3-10 Workflow aprobación + recibos.** Acciones según estado: BORRADOR → Aprobar (ConfirmDialog) / Anular; APROBADA → "Generar recibos" (ConfirmDialog, es la acción "oficial"); ENVIADA → lista de recibos por UF con descarga de PDF. Badge de estado en la lista de liquidaciones (tokens S2-05). Optimistic update con rollback en las transiciones.
   - _Depende de: S3-05, S3-09._
 - [x] **S3-14 UI gestión proveedores y rubros.** Lista de proveedores con buscador (razón social/CUIT), alta/edición, badge Global/Propio; árbol de rubros con toggles de visibilidad y alta/edición de propios. Actualizar S3-08 (form gasto): selector de proveedor con autocomplete + alta inline, selector rubro→subrubro en cascada.
   - _Depende de: S3-12, S3-13._

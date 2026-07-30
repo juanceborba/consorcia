@@ -35,10 +35,15 @@
 //    de esconderlo — un descuadre acá es un bug del motor, no un detalle de
 //    presentación.
 //
-// 5. NO HAY BOTONES DE APROBAR / ANULAR. El workflow de estados y los recibos
-//    son S3-10; poner los botones ahora sería dibujar acciones que responden
-//    404. El estado se muestra (badge + qué significa) porque sin él la pantalla
-//    no dice si lo que se está mirando ya se emitió.
+// 5. LAS ACCIONES DEL WORKFLOW VIVEN EN LA CABECERA, JUNTO AL BADGE DE ESTADO
+//    (S3-10). Es el mismo bloque que dice en qué estado está la liquidación, así
+//    que es donde se lee "está en borrador" y se decide "la apruebo". El mockup
+//    del PRD las dibuja en un pie fijo; acá van arriba porque la tabla por unidad
+//    puede tener 40 filas y el administrador que ya verificó el reparto no
+//    debería tener que scrollear hasta el final para aprobar.
+//    Qué botones aparecen lo decide `accionesDeLiquidacion` (espejo del backend)
+//    y solo se ofrecen al org_admin: `cerbos/policies/liquidacion.yaml` le da al
+//    gestor únicamente `read`, igual que con "Generar liquidación" en la lista.
 //
 // 6. LAS ALERTAS DE ANOMALÍAS DEL MOCKUP (§4.1, "este gasto es 50% mayor que el
 //    promedio histórico") NO se implementan: son análisis de IA sobre la serie
@@ -60,10 +65,12 @@ import {
   variacionPorcentual,
   variantDeVariacion,
 } from '@/lib/liquidacion';
+import { SIN_ROLES, useAuthStore } from '@/stores/auth.store';
 import AyudaLink from '@/components/ayuda/AyudaLink';
+import AccionesLiquidacion from '@/components/liquidaciones/AccionesLiquidacion';
+import RecibosCard from '@/components/liquidaciones/RecibosCard';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -150,6 +157,9 @@ export default function LiquidacionPreviewTab() {
   const { edificio } = useOutletContext();
   const { liquidacionId } = useParams();
   const [expandida, setExpandida] = useState(null);
+  // Decisión 5: aprobar/anular/emitir son del administrador de la organización.
+  const roles = useAuthStore((s) => s.user?.roles ?? SIN_ROLES);
+  const puedeOperar = roles.some((r) => ['org_admin', 'superadmin'].includes(r));
 
   const { data, isPending, isError, error } = useQuery({
     queryKey: queryKeys.liquidaciones.detail(liquidacionId),
@@ -264,20 +274,23 @@ export default function LiquidacionPreviewTab() {
             {data.matriculaRPA && ` · Matrícula RPA ${data.matriculaRPA}`}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2 text-sm text-muted-foreground">
-          <p>
-            {data.resumen.cantidadGastos} gasto(s) repartidos entre{' '}
-            {data.resumen.cantidadUnidades} unidad(es).
-            {anterior &&
-              ` Se compara contra la liquidación de ${formatearPeriodo(anterior.periodo)}.`}
-          </p>
-          {/* Decisión 5: las acciones de estado llegan con S3-10. */}
-          {data.estado === 'BORRADOR' && (
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2 text-sm text-muted-foreground">
             <p>
-              Es un borrador: todavía no se emitió nada. Revisá el detalle por
-              unidad antes de aprobarla.
+              {data.resumen.cantidadGastos} gasto(s) repartidos entre{' '}
+              {data.resumen.cantidadUnidades} unidad(es).
+              {anterior &&
+                ` Se compara contra la liquidación de ${formatearPeriodo(anterior.periodo)}.`}
             </p>
-          )}
+            {data.estado === 'BORRADOR' && (
+              <p>
+                Es un borrador: todavía no se emitió nada. Revisá el detalle por
+                unidad antes de aprobarla.
+              </p>
+            )}
+          </div>
+          {/* Decisión 5: las acciones del workflow, según el estado y el rol. */}
+          {puedeOperar && <AccionesLiquidacion liquidacion={data} />}
         </CardContent>
       </Card>
 
@@ -432,6 +445,11 @@ export default function LiquidacionPreviewTab() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Recibos emitidos (S3-10). La card se oculta sola mientras la
+          liquidación no llegó a un estado donde puedan existir. El gestor no
+          los emite pero sí los descarga (`cerbos/policies/recibo.yaml`). */}
+      <RecibosCard liquidacion={data} puedeEmitir={puedeOperar} />
     </div>
   );
 }

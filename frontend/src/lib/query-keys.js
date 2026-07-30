@@ -73,6 +73,11 @@ export const queryKeys = {
       filtros,
     ],
     detail: (id) => [...queryKeys.liquidaciones.all, 'detail', id],
+    // Recibos emitidos de una liquidación (S3-10). Cuelgan de la liquidación y
+    // no de un `recibos.all` propio: no existe una lista de recibos por fuera
+    // de la liquidación que los emitió, y así "generar recibos" invalida el
+    // detalle y sus recibos con el mismo prefijo.
+    recibos: (id) => [...queryKeys.liquidaciones.all, 'detail', id, 'recibos'],
   },
   // Contexto propio del usuario logueado (S4-12): no lleva scope de
   // organización porque el endpoint agrega por `usuarioId` (PRD-04-11 §5.5).
