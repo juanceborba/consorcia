@@ -58,6 +58,14 @@ La ayuda contextual (PRD-07-02 §6.5) es parte de la funcionalidad, no un anexo.
 2. Si la tarea agrega una pantalla o un concepto nuevo de dominio, se evalúa su acceso a ayuda (ícono junto al título, §6.5) — y si corresponde, su topic con sus `pantallas` declaradas.
 3. **Gate automatizado bloqueante:** `npm run check:ayuda` (en `frontend/`, corre también en CI) falla si una pantalla referencia un topic inexistente, si un `relacionados` queda roto, o si una pantalla declarada pierde su acceso a ayuda. El contenido en sí (nivel 1 y 2) lo garantiza la revisión humana/del agente; el gate garantiza la consistencia estructural.
 
+## Regla de frescura del catálogo de usuarios demo
+
+El login (en dev, o con `VITE_DEMO_USUARIOS=1`) muestra el diálogo **"Usuarios de demo"** con las identidades del seed y **qué puede y qué no puede hacer cada rol** (`frontend/src/lib/usuarios-demo.js`). Es documentación viva de la jerarquía de permisos, no un atajo de credenciales:
+
+1. **Si la tarea cambia lo que un rol puede hacer** —una policy de Cerbos, un guard de ruta, un gate de plan, una acción que aparece o desaparece— **se actualiza `usuarios-demo.js` en la misma tarea**. Es la misma regla que la ayuda contextual.
+2. **Gate automatizado bloqueante:** `npm run check:demo` (en `frontend/`, corre en CI) falla si el catálogo ofrece un email que el seed no crea, si el seed crea uno que el catálogo no menciona (hay que agregarlo o declararlo en `USUARIOS_DEMO_OMITIDOS` con su motivo), si el nombre o la password no coinciden con el seed, o si una identidad no declara puede/noPuede. **Corre desde el host o en CI, no dentro del contenedor del frontend**: lee `backend/prisma/seed.js`, que no está montado ahí.
+3. El gate no puede verificar si el contenido de puede/noPuede **sigue siendo cierto**: eso lo garantiza la revisión de la tarea. El E2E `frontend/e2e/usuarios-demo.spec.js` cubre el otro extremo — que la cuenta ofrecida efectivamente entra y ve lo que el diálogo promete.
+
 ## Credenciales demo (seed)
 
 Password de **todos** los usuarios activados: `demo1234`. Reseed idempotente: `make db-seed` (o `docker exec consorcIA-backend node prisma/seed.js`). El seed borra y recrea las dos organizaciones demo por CUIT, limpia el residuo de los specs E2E (`e2e-staff-*`, `e2e-residente-*`) y desactiva las membresías de los usuarios demo en organizaciones ajenas al seed. **Nunca** hace `prisma migrate reset`.

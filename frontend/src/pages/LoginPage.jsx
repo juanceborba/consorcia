@@ -1,6 +1,11 @@
 // frontend/src/pages/LoginPage.jsx — ConsorcIA
 // Login (S1-11): React Hook Form + Zod contra POST /api/auth/login.
-// En modo dev muestra las credenciales demo del seed; errores del server van a toast.
+// Errores del server van a toast.
+//
+// S3-22c: en dev (o con VITE_DEMO_USUARIOS=1) ofrece el diálogo "Usuarios de
+// demo" — el elenco que crea el seed con lo que cada rol puede y no puede
+// hacer, y un click que completa el formulario. Reemplaza a la línea de texto
+// que listaba dos de las doce identidades sin decir para qué sirve cada una.
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -17,6 +22,8 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import UsuariosDemoDialog from '@/components/auth/UsuariosDemoDialog';
+import { PASSWORD_DEMO } from '@/lib/usuarios-demo';
 
 const schema = z.object({
   email: z.email('Ingresá un email válido'),
@@ -32,6 +39,7 @@ export default function LoginPage() {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(schema),
@@ -99,12 +107,12 @@ export default function LoginPage() {
               Creá tu administración
             </Link>
           </p>
-          {import.meta.env.DEV && (
-            <p className="mt-4 text-xs text-muted-foreground">
-              Demo — admin@demo.com / demo1234 (org_admin) · gestor@demo.com /
-              demo1234 (gestor)
-            </p>
-          )}
+          <UsuariosDemoDialog
+            onUsar={(email) => {
+              setValue('email', email, { shouldValidate: true });
+              setValue('password', PASSWORD_DEMO, { shouldValidate: true });
+            }}
+          />
         </CardContent>
       </Card>
     </main>

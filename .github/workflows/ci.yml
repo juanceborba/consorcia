@@ -94,6 +94,13 @@ jobs:
         # Node plano, sin dependencias — no hace falta npm install.
         run: docker run --rm -v ${{ github.workspace }}/frontend:/app -w /app node:20-alpine node scripts/check-ayuda.mjs
 
+      - name: Check de usuarios demo del login (gate)
+        # El catálogo del diálogo "Usuarios de demo" (src/lib/usuarios-demo.js)
+        # contra los usuarios que crea el seed: una identidad ofrecida en el
+        # login que el seed no crea es una promesa que falla al primer intento.
+        # Monta el repo entero: el script lee backend/prisma/seed.js.
+        run: docker run --rm -v ${{ github.workspace }}:/repo -w /repo/frontend node:20-alpine node scripts/check-usuarios-demo.mjs
+
       - name: Build (gate)
         # Corre dentro de node:20-alpine (misma plataforma que el contenedor
         # de desarrollo). El lockfile commiteado tiene las entradas de
