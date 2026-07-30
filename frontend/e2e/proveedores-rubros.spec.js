@@ -45,10 +45,20 @@ test('directorio de proveedores: alta, búsqueda por CUIT y baja', async ({ page
     await page.getByRole('link', { name: 'Proveedores' }).click();
     await expect(page).toHaveURL(/\/configuracion\/proveedores$/);
     // S3-22b: el directorio es de la organización, no de un edificio, así que el
-    // header no ofrece el selector de edificio de trabajo.
+    // header no ofrece el selector de edificio de trabajo, y el breadcrumb dice
+    // dónde está parado (con "Configuración" como texto: esa página no existe).
     await expect(
       page.getByRole('button', { name: /^Edificio de trabajo:/ }),
     ).toHaveCount(0);
+    const breadcrumb = page.getByRole('navigation', { name: 'Breadcrumb' });
+    await expect(breadcrumb).toContainText('Configuración');
+    await expect(
+      breadcrumb.getByRole('link', { name: 'Configuración' }),
+    ).toHaveCount(0);
+    await expect(breadcrumb.getByText('Proveedores')).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
     // Proveedor propio del seed: confirma que el badge de origen se pinta.
     const fila = page.getByRole('row', { name: /Ascensores Otis SA/ });
     await expect(fila).toContainText('Propio');
@@ -111,10 +121,14 @@ test('árbol de rubros: visibilidad, subrubros propios y protección del maestro
 
   await page.getByRole('link', { name: 'Rubros' }).click();
   await expect(page).toHaveURL(/\/configuracion\/rubros$/);
-  // S3-22b: el árbol es de la organización; sin selector de edificio en el header.
+  // S3-22b: el árbol es de la organización; sin selector de edificio en el
+  // header y con breadcrumb propio.
   await expect(
     page.getByRole('button', { name: /^Edificio de trabajo:/ }),
   ).toHaveCount(0);
+  await expect(
+    page.getByRole('navigation', { name: 'Breadcrumb' }).getByText('Rubros'),
+  ).toHaveAttribute('aria-current', 'page');
 
   // Los toasts de sonner repiten el nombre del rubro: los asserts sobre el árbol
   // se acotan a `main` para no matchear la notificación.
