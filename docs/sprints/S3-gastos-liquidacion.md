@@ -32,7 +32,7 @@
   - _Depende de: S3-02._
 - [x] **S3-20 Esquemas de reparto configurables por edificio.** Modelos EsquemaReparto + EsquemaRepartoUnidad + ConfiguracionLiquidacion, resolucion en el motor (esquema del gasto -> del edificio -> default actual), CRUD, UI de configuracion del edificio y override en el gasto, seed y E2E. Resuelve exencion parcial, coeficiente propio por sector, partes iguales y cargo particular a una UF.
   - _Depende de: S3-18._
-- [ ] **S3-21 Fondo de reserva en la liquidacion.** Porcentaje configurable por edificio, item propio en liquidacion y recibo, y uso del fondo para financiar una extraordinaria. Brecha 4 del research.
+- [x] **S3-21 Fondo de reserva en la liquidacion.** Porcentaje configurable por edificio, item propio en liquidacion y recibo, y uso del fondo para financiar una extraordinaria. Brecha 4 del research.
   - _Depende de: S3-04._
 
 ## Frontend — features

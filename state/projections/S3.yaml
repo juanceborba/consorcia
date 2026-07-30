@@ -1,9 +1,9 @@
 # GENERADO por app/state/engine.py — no editar a mano
 sprint: S3
 titulo: "Gastos + motor contable"
-generado: 2026-07-30T17:09:31Z
+generado: 2026-07-30T19:49:41Z
 total: 22
-done: 20
+done: 21
 tareas:
   - id: S3-01
     titulo: "Ajustes de schema + policies Cerbos"
@@ -228,7 +228,7 @@ tareas:
   - id: S3-21
     titulo: "Fondo de reserva en la liquidacion"
     seccion: Backend
-    status: ready
+    status: done
     depende_de: [S3-04]
     desbloquea: []
     issue: 69
