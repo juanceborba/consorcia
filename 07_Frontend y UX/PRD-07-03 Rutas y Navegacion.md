@@ -547,6 +547,15 @@ interface EdificioContextNav {
 > - "Inicio" apunta a `/` (el dashboard); no existe ruta `/dashboard` en el router actual.
 >
 > El ultimo segmento no es link (`aria-current="page"`); los intermedios son `Link` de react-router. Separador: chevron de lucide, texto muted para intermedios.
+>
+> **Criterio unificado (S3-22b): toda ruta del `AppLayout` declara su breadcrumb.** Una pantalla sin breadcrumb no dice dónde está parada ni cómo subir un nivel, y deja al usuario dependiendo del sidebar, que marca el módulo pero no la posición dentro de él. Como la config no falla cuando falta una ruta —simplemente no renderiza nada—, el hueco solo se descubre mirando la pantalla; por eso es parte del checklist de una pantalla nueva y no un extra posterior. Reglas:
+>
+> 1. El patrón se declara en `Breadcrumbs.jsx` **en la misma tarea** en que se declara la ruta en `main.jsx`.
+> 2. Un segmento intermedio lleva `href` **solo si esa ruta existe**; si es un agrupador sin página (hoy `/configuracion`) va como texto. Un link a una ruta inexistente es peor que un texto.
+> 3. El último segmento nunca es link.
+> 4. Los segmentos dinámicos se resuelven **del cache de TanStack Query**, nunca con un fetch propio del breadcrumb, con fallback genérico mientras no haya dato.
+>
+> Cobertura al cierre de S3-22b: `/`, `/mis-unidades` (un solo segmento: el residente no tiene "Inicio" propio), `/edificios`, `/edificios/nuevo`, `/edificios/:id` y sus cinco tabs, `/edificios/:id/liquidaciones/:liquidacionId`, `/configuracion/proveedores|rubros|usuarios` y `/reportes` + `/reportes/gastos`.
 
 ### 5.1 Configuracion de breadcrumbs por ruta
 
