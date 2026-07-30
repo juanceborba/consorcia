@@ -76,18 +76,17 @@ const router = createBrowserRouter([
                     path: '/configuracion/usuarios',
                     element: <ConfiguracionUsuariosPage />,
                   },
-                  // Módulo Reportes (S3-16): hub + reportes del negocio, con el
-                  // alcance de toda la organización (PRD-07-03 §2.1). Detrás de
-                  // RequireRole igual que Usuarios: el primer reporte
-                  // —gastos consolidados— es de org_admin por diseño (a un gestor
-                  // Cerbos le responde 403 sin mirar el plan, precisión 9 de
-                  // PRD-04-02 §3.4), así que el hub le mostraría una sola tarjeta
-                  // que no puede abrir. Se revisa cuando exista un reporte de
-                  // alcance gestor.
-                  { path: '/reportes', element: <ReportesPage /> },
-                  { path: '/reportes/gastos', element: <ReporteGastosPage /> },
                 ],
               },
+              // Módulo Reportes (S3-16): hub + reportes del negocio
+              // (PRD-07-03 §2.1). Bajo `RequireStaff` y NO bajo `RequireRole`
+              // desde S3-22: el tablero de gastos se abre con el alcance de un
+              // edificio, que el gestor lee igual que su listado; lo que sigue
+              // siendo de org_admin y Business+ es la opción "Todos los
+              // edificios", y ese gate lo aplica el backend (precisión 9 de
+              // PRD-04-02 §3.4) mientras la UI la ofrece deshabilitada.
+              { path: '/reportes', element: <ReportesPage /> },
+              { path: '/reportes/gastos', element: <ReporteGastosPage /> },
               // Directorio de proveedores y árbol de rubros (S3-14,
               // PRD-04-02 §1.3/§1.4). A diferencia de /configuracion/usuarios NO
               // van detrás de RequireRole: las policies `proveedor.yaml` y

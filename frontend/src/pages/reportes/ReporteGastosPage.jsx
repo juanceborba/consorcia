@@ -1,26 +1,50 @@
 // frontend/src/pages/reportes/ReporteGastosPage.jsx — ConsorcIA
-// Reporte de gastos consolidados de la organización (S3-16): el dashboard de
-// PRD-04-02 §3 con el alcance "todos los edificios", sobre
-// `GET /api/organizaciones/me/gastos/dashboard` (S3-15, Business+).
+// Reporte de gastos (S3-16, rescopeado en S3-22): el dashboard interactivo de
+// PRD-04-02 §3 —KPIs, evolución mensual, distribución por rubro con drill-down,
+// por categoría y top de proveedores— sobre los dos endpoints de S3-15:
 //
-// ES LA MISMA PANTALLA QUE EL TAB DEL EDIFICIO, con dos diferencias que salen del
-// endpoint y no de una decisión de diseño:
+//   GET /api/edificios/:id/gastos/dashboard          → un edificio
+//   GET /api/organizaciones/me/gastos/dashboard      → toda la administración
 //
-// 1. NO HAY LISTADO DEBAJO. Los gastos se listan por edificio
-//    (`GET /api/edificios/:id/gastos`) y no existe un listado consolidado: pedir
-//    uno acá sería inventar un endpoint. En vez de un listado vacío, el selector
-//    de edificio es la salida — elegir uno lleva a su tab con los filtros puestos,
-//    que es el drill-down natural de "este número me llamó la atención".
+// ES LA ÚNICA CASA DEL TABLERO. Hasta S3-22 el mismo dashboard vivía además
+// arriba del listado en el tab `gastos` del edificio: §3 lo definía como "la
+// entrada al módulo (el tab `gastos`)". Eso fusionaba dos cosas distintas —la
+// pantalla con la que se CARGAN gastos y la que se usa para ANALIZARLOS— en una
+// sola UI. Acá se analiza; el tab quedó operativo (filtros, totalizador del
+// filtro activo y listado con su alta/edición).
 //
-// 2. EL ERROR DE PLAN Y EL DE ROL SE MUESTRAN EN LA PANTALLA, no como un 403
-//    genérico: los explica `GastosDashboard`. La ruta ya está detrás de
-//    `RequireRole org_admin` (el consolidado es de la administración, precisión 9
-//    de §3.4), así que en la práctica el caso que se ve acá es el del plan — el de
-//    rol queda como red de seguridad si alguien entra por URL con un token viejo.
-import { useNavigate, useSearchParams } from 'react-router';
+// DECISIONES:
+//
+// 1. EL ALCANCE ES UN FILTRO MÁS, EN LA URL (`?edificioId=`). El selector ofrece
+//    cada edificio del usuario y "Todos los edificios"; elegir uno cambia el
+//    endpoint y nada más, porque la respuesta tiene la misma forma para los dos
+//    alcances. Antes el selector NAVEGABA al tab del edificio, que era la única
+//    forma de ver un edificio solo mientras el tablero vivía allá; ahora irse de
+//    la pantalla para cambiar de alcance sería perder el análisis en curso.
+//
+// 2. EL DEFAULT ES EL CONSOLIDADO CUANDO SE PUEDE, Y EL PRIMER EDIFICIO CUANDO
+//    NO. "Todos los edificios" es Business+ y de org_admin (precisión 9 de §3.4):
+//    abrirle el reporte a un gestor —o a un plan starter— en el alcance que le va
+//    a responder 403 es mandarlo a un error evitable en la primera pantalla. La
+//    opción sigue visible y deshabilitada con el motivo (decisión 6 de S3-16):
+//    esconderla dejaría al plan menor sin saber que existe.
+//
+// 3. SIN LISTADO DEBAJO, EN NINGÚN ALCANCE. Consolidado no existe endpoint de
+//    listado (los gastos se listan por edificio), y aun para un solo edificio
+//    repetir acá la tabla sería volver a fusionar las dos pantallas. El link al
+//    tab lleva los MISMOS filtros: es el drill-down de "este número me llamó la
+//    atención".
+//
+// 4. EL FILTRO DE TIPO NO SE OFRECE. El dashboard ignora `esOrdinario` por
+//    contrato (precisión 3 de §3.4) y acá no hay listado que sí lo aplique, así
+//    que las tarjetas de ordinarias/extraordinarias son solo lectura.
+import { Link, useSearchParams } from 'react-router';
 import { useEdificios } from '@/hooks/useEdificios';
 import { useFiltrosGastos } from '@/hooks/useFiltrosGastos';
 import { useNombreDeRubro } from '@/hooks/useRubros';
+import { useOrganizacion } from '@/hooks/useOrganizacion';
+import { SIN_ROLES, useAuthStore } from '@/stores/auth.store';
+import { motivoConsolidado, permiteConsolidado } from '@/lib/planes';
 import AyudaLink from '@/components/ayuda/AyudaLink';
 import GastosDashboard from '@/components/gastos/dashboard/GastosDashboard';
 import GastosFiltros, {
@@ -36,8 +60,15 @@ import {
 
 export default function ReporteGastosPage() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const { edificios } = useEdificios();
+  const { organizacion } = useOrganizacion();
+  const roles = useAuthStore((s) => s.user?.roles ?? SIN_ROLES);
+
+  const contextoDePlan = { plan: organizacion?.plan, roles };
+  const consolidado = {
+    disponible: permiteConsolidado(contextoDePlan),
+    motivo: motivoConsolidado(contextoDePlan),
+  };
 
   const {
     valores,
@@ -48,51 +79,80 @@ export default function ReporteGastosPage() {
     limpiar,
   } = useFiltrosGastos();
 
+  // Decisión 1: el alcance viaja en la URL. Decisión 2: el default depende de lo
+  // que el usuario puede pedir sin comerse un 403.
+  const edificioIdDeLaUrl = searchParams.get('edificioId') ?? '';
+  const alcanceElegido =
+    edificioIdDeLaUrl ||
+    (consolidado.disponible ? TODOS_LOS_EDIFICIOS : (edificios[0]?.id ?? ''));
+  const esConsolidado = alcanceElegido === TODOS_LOS_EDIFICIOS;
+  const edificioElegido = edificios.find((e) => e.id === alcanceElegido);
+
   const rubroNombre = useNombreDeRubro(valores.rubroId);
 
-  // Diferencia 1: elegir un edificio es el drill-down, y se lleva los filtros.
-  function irAEdificio(valor) {
-    if (!valor || valor === TODOS_LOS_EDIFICIOS) return;
-    const query = searchParams.toString();
-    navigate(`/edificios/${valor}/gastos${query ? `?${query}` : ''}`);
-  }
+  // Decisión 3: el drill-down se lleva los filtros menos el alcance (el edificio
+  // ya lo dice la ruta destino).
+  const queryDelDetalle = (() => {
+    const params = new URLSearchParams(searchParams);
+    params.delete('edificioId');
+    const query = params.toString();
+    return query ? `?${query}` : '';
+  })();
 
   return (
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-1">
-            Gastos consolidados
-            <AyudaLink variant="icon" topic="reportes/gastos-consolidados" />
+            Gastos
+            <AyudaLink variant="icon" topic="reportes/gastos" />
           </CardTitle>
           <CardDescription>
-            Todos los edificios activos de la administración.{' '}
-            {edificios.length > 0 &&
-              `Elegí un edificio para ver su detalle con los mismos filtros.`}
+            {esConsolidado
+              ? 'Todos los edificios activos de la administración.'
+              : `Indicadores de ${edificioElegido?.nombre ?? 'el edificio elegido'}.`}{' '}
+            Los gastos se cargan y se editan en la pestaña Gastos de cada
+            edificio.
           </CardDescription>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="flex flex-col gap-3">
           <GastosFiltros
             valores={valores}
             modoPeriodo={modoPeriodo}
             periodos={opcionesPeriodo}
-            // La nómina de staff la lee el org_admin, que es quien llega acá.
-            puedeVerAutores
+            // La nómina de staff la lee el org_admin; al gestor el combo de
+            // autores le respondería 403.
+            puedeVerAutores={consolidado.disponible}
+            // Decisión 4.
             mostrarTipo={false}
             edificios={edificios}
-            edificioSeleccionado={TODOS_LOS_EDIFICIOS}
-            consolidado={{ disponible: true }}
-            onEdificio={irAEdificio}
+            edificioSeleccionado={alcanceElegido}
+            consolidado={consolidado}
+            onEdificio={(valor) => setFiltro({ edificioId: valor })}
             rubroNombre={rubroNombre}
             onFiltro={setFiltro}
             onLimpiar={limpiar}
           />
+
+          {/* Decisión 3: el detalle vive en el tab, con los mismos filtros. */}
+          {!esConsolidado && edificioElegido && (
+            <p className="text-sm">
+              <Link
+                to={`/edificios/${edificioElegido.id}/gastos${queryDelDetalle}`}
+                className="text-primary underline-offset-4 hover:underline"
+              >
+                Ver el detalle de {edificioElegido.nombre} con estos filtros
+              </Link>
+            </p>
+          )}
         </CardContent>
       </Card>
 
       <GastosDashboard
-        alcance={{ organizacion: true }}
+        alcance={
+          esConsolidado ? { organizacion: true } : { edificioId: alcanceElegido }
+        }
         filtros={filtrosDashboard}
         modoPeriodo={modoPeriodo}
         valores={valores}

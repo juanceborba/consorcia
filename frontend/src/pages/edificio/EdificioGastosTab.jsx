@@ -96,29 +96,36 @@
 //     el nombre completo en el `title`, porque el nombre entero se lleva el
 //     ancho de una columna de datos.
 //
-// DECISIONES de S3-16 (el tab pasa a ser dashboard, PRD-04-02 §3):
-//
-// 12. EL DASHBOARD VA ARRIBA Y LA LISTA ABAJO, EN LA MISMA PANTALLA, leyendo los
-//     MISMOS search params (`useFiltrosGastos`). Es lo que pide §3 ("el dashboard
-//     es la entrada al módulo… debajo vive el listado") y lo que hace que
-//     `kpis.total` sea el mismo número que la fila TOTAL de la tabla: los dos
-//     endpoints comparten el constructor del `where` en el backend
-//     (`services/gastos-filtros.js`, precisión 1 de §3.4). Cualquier filtro que
-//     mueva uno mueve al otro, con la excepción documentada del tipo.
-//
-// 13. LOS KPIs REEMPLAZAN AL TOTALIZADOR Y A LAS TARJETAS POR CATEGORÍA de
-//     S3-08b, que eran sus antecesores anunciados: los mismos números salen ahora
-//     del endpoint del dashboard junto con el gasto por UF, la cantidad y la
-//     variación, y el corte por categoría pasó al chart de distribución (que
-//     además conserva el copy de "quién paga"). Mantener las dos versiones sería
-//     mostrar dos veces la misma plata con dos requests distintos.
+// DECISIONES de S3-16 que sobreviven:
 //
 // 14. EL SELECTOR DE EDIFICIO NAVEGA CONSERVANDO LOS FILTROS. Cambiar de edificio
 //     con "julio + categoría B" puesto lleva el mismo recorte al edificio nuevo:
 //     el uso real es comparar el mismo período entre dos consorcios. La opción
-//     "Todos los edificios" sale del tab y va al reporte consolidado
-//     (`/reportes/gastos`), que es otro endpoint y otro alcance — el listado no
-//     existe consolidado, así que no podía vivir en esta pantalla.
+//     "Todos los edificios" no tiene listado que mostrar acá, así que abre el
+//     reporte de gastos (`/reportes/gastos`) con los mismos filtros.
+//
+// DECISIONES de S3-22 (el tab vuelve a ser operativo; PRD-04-02 §3 corregido):
+//
+// 15. ESTA PANTALLA ES PARA TRABAJAR CON LOS GASTOS —cargarlos, editarlos,
+//     buscarlos y leer el detalle—, NO PARA ANALIZARLOS. S3-16 le había montado
+//     arriba el dashboard entero (cinco KPIs y cuatro charts) siguiendo §3 al pie
+//     de la letra ("el dashboard es la entrada al módulo… debajo vive el
+//     listado"), y eso fusionó dos funcionalidades distintas en una sola UI: la
+//     operación y el análisis. El análisis es su propio módulo —Reportes →
+//     Gastos, con selector de alcance (un edificio o toda la administración)—,
+//     que es donde PRD-07-03 §2.1 lo ubicaba desde el principio. Una pantalla,
+//     una intención: acá el ruido de cinco paneles se interpone entre el botón
+//     "Nuevo gasto" y la fila que se vino a corregir.
+//
+// 16. VUELVE EL TOTALIZADOR SEGMENTADO de la decisión 9 (S3-16 lo había
+//     reemplazado por los KPI cards). No es analítica: son los tres números que
+//     el administrador necesita MIENTRAS carga —cuánto lleva el filtro, cuánto es
+//     ordinario y cuánto extraordinario— y salen del MISMO request del listado
+//     (`totales`, un solo `where`), así que reconcilian con la fila TOTAL del pie
+//     por construcción y sin un segundo endpoint. Lo que NO vuelve son las
+//     tarjetas por categoría A/B/C de la decisión 11: ese corte es analítico y su
+//     casa es el chart de distribución del reporte. El filtro por categoría sigue
+//     estando, en el panel de filtros.
 import { useMemo, useState } from 'react';
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -141,7 +148,6 @@ import { SIN_ROLES, useAuthStore } from '@/stores/auth.store';
 import { motivoConsolidado, permiteConsolidado } from '@/lib/planes';
 import AyudaLink from '@/components/ayuda/AyudaLink';
 import GastoFormDialog from '@/components/gastos/GastoFormDialog';
-import GastosDashboard from '@/components/gastos/dashboard/GastosDashboard';
 import GastosFiltros, {
   TODOS_LOS_EDIFICIOS,
 } from '@/components/gastos/GastosFiltros';
@@ -212,6 +218,63 @@ function GastosSkeleton() {
       <div className="h-10 rounded bg-muted" />
       {Array.from({ length: 5 }, (_, i) => (
         <div key={i} className="h-8 rounded bg-muted" />
+      ))}
+    </div>
+  );
+}
+
+// Decisión 16: total del filtro, partido en ordinarios y extraordinarios. Los
+// tres números son del backend sobre el mismo `where`, así que la suma cierra.
+// Cada tarjeta es una región con nombre (`role=group`): sin eso, "la tarjeta del
+// total" solo se puede referenciar por la posición de un div.
+function Totalizador({ totales }) {
+  const segmentos = [
+    {
+      clave: 'total',
+      titulo: 'Total del filtro',
+      monto: totales?.monto ?? '0.00',
+      cantidad: totales?.cantidad ?? 0,
+      detalle: 'Ordinarios + extraordinarios',
+    },
+    {
+      clave: 'ordinarios',
+      titulo: 'Ordinarios',
+      monto: totales?.ordinarios?.monto ?? '0.00',
+      cantidad: totales?.ordinarios?.cantidad ?? 0,
+      detalle: 'Expensas del mes a mes',
+    },
+    {
+      clave: 'extraordinarios',
+      titulo: 'Extraordinarios',
+      monto: totales?.extraordinarios?.monto ?? '0.00',
+      cantidad: totales?.extraordinarios?.cantidad ?? 0,
+      detalle: 'Se liquidan aparte',
+    },
+  ];
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      {segmentos.map((segmento) => (
+        <div
+          key={segmento.clave}
+          role="group"
+          aria-label={segmento.titulo}
+          className={`flex flex-col gap-1 rounded-lg border p-4 ${
+            segmento.clave === 'total' ? 'bg-muted/40' : ''
+          }`}
+        >
+          <p className="text-xs font-medium text-muted-foreground uppercase">
+            {segmento.titulo}
+          </p>
+          <p className="text-xl font-semibold tabular-nums">
+            {formatearMonto(segmento.monto)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {segmento.cantidad === 1 ? '1 gasto' : `${segmento.cantidad} gastos`}
+            {' · '}
+            {segmento.detalle}
+          </p>
+        </div>
       ))}
     </div>
   );
@@ -344,14 +407,13 @@ export default function EdificioGastosTab() {
     },
   });
 
-  // Decisión 12: los filtros son los MISMOS para el dashboard y para la lista, y
-  // viven en la URL (`useFiltrosGastos` traduce una vez a los dos contratos).
+  // Los filtros viven en la URL (decisión 2). El hook los comparte con el
+  // reporte de gastos, que lee los mismos search params con otro contrato.
   const {
     valores,
     modoPeriodo,
     opcionesPeriodo,
     filtrosLista,
-    filtrosDashboard,
     hayFiltros,
     setFiltro,
     limpiar: limpiarFiltros,
@@ -531,18 +593,19 @@ export default function EdificioGastosTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Decisión 12: la toolbar manda sobre TODA la pantalla, así que va arriba
-          del dashboard y no adentro de la tarjeta del listado. */}
+      {/* Decisión 15: una sola tarjeta —toolbar, totalizador y tabla—, porque ya
+          no hay un tablero en el medio que justifique partir la pantalla. */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-1">
-            Gastos
-            <AyudaLink variant="icon" topic="gastos/dashboard" />
+            Gastos ({total})
+            <AyudaLink variant="icon" topic="gastos/carga" />
           </CardTitle>
           <CardDescription>
             {rotuloPeriodo}
             {' · '}
             {total === 1 ? '1 gasto' : `${total} gastos`}
+            {' · '}El TOTAL es del filtro completo, no de la página
           </CardDescription>
           {puedeEscribir && (
             <CardAction>
@@ -554,7 +617,7 @@ export default function EdificioGastosTab() {
           )}
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
           {/* Decisión 8: toolbar, no filtros dentro de la tabla. */}
           <GastosFiltros
             valores={valores}
@@ -570,27 +633,11 @@ export default function EdificioGastosTab() {
             onFiltro={setFiltro}
             onLimpiar={limpiarFiltros}
           />
-        </CardContent>
-      </Card>
 
-      {/* Decisión 13: los KPIs y los charts, sobre el mismo filtro que la lista. */}
-      <GastosDashboard
-        alcance={{ edificioId: edificio.id }}
-        filtros={filtrosDashboard}
-        modoPeriodo={modoPeriodo}
-        valores={valores}
-        onFiltro={setFiltro}
-      />
+          {/* Decisión 16: el total del filtro activo, segmentado por tipo. Es el
+              mismo número que la fila TOTAL del pie, del mismo request. */}
+          <Totalizador totales={totales} />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Detalle de gastos ({total})</CardTitle>
-          <CardDescription>
-            El TOTAL del pie es del filtro completo, no de la página
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent className="flex flex-col gap-4">
         {cargando ? (
           <GastosSkeleton />
         ) : error ? (

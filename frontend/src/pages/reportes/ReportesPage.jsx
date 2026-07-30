@@ -3,7 +3,7 @@
 // reporte del negocio. Ruta `/reportes` de PRD-07-03 §2.1, con la entrada
 // "Reportes" del sidebar de §4.1.
 //
-// HOY TIENE UN SOLO REPORTE —gastos consolidados— y aun así es un hub y no la
+// HOY TIENE UN SOLO REPORTE —el tablero de gastos— y aun así es un hub y no la
 // pantalla del reporte: el módulo se va a poblar (morosidad, liquidaciones,
 // benchmarking de PRD-04-10) y una ruta `/reportes` que muestre directamente el
 // reporte de gastos obligaría a mover la URL del primero cuando llegue el
@@ -11,11 +11,14 @@
 //
 // DECISIONES:
 //
-// 1. UN REPORTE NO DISPONIBLE SE MUESTRA, NO SE ESCONDE. El consolidado de
-//    gastos es Business+ (PRD-04-02 §3.2): con un plan menor, la tarjeta aparece
-//    con el badge del plan y el motivo, en vez de desaparecer. Un módulo que se
-//    ve vacío en el plan starter no comunica qué se compra al subir de plan; y el
-//    caso opuesto —ofrecerlo sin señal— manda a un 403.
+// 1. LO QUE ES BUSINESS+ ES EL ALCANCE CONSOLIDADO, NO EL REPORTE (S3-22). El
+//    reporte de gastos se abre siempre —con un edificio como alcance, que es lo
+//    que cualquier staff puede leer— y lo que el badge anuncia es la opción
+//    "Todos los edificios" del selector. Hasta S3-22 la tarjeta entera quedaba
+//    deshabilitada en plan starter, porque el reporte era solo consolidado: eso
+//    dejaba a esos usuarios sin ningún tablero de gastos cuando el tab del
+//    edificio dejó de tener uno. El badge se muestra igual y no se esconde: un
+//    módulo que se ve vacío no comunica qué se compra al subir de plan.
 //
 // 2. LOS REPORTES SE DECLARAN EN UNA LISTA, no en JSX suelto: agregar el próximo
 //    es una entrada más, con su `disponible` y su gate. Es la misma forma que
@@ -43,12 +46,15 @@ export default function ReportesPage() {
   const reportes = [
     {
       id: 'gastos',
-      titulo: 'Gastos consolidados',
+      titulo: 'Gastos',
       descripcion:
-        'Todos los edificios de la administración en un solo tablero: total del período, evolución mensual, distribución por rubro y por categoría, y los proveedores que se llevan la mayor parte.',
+        'El tablero de gastos: total del período, evolución mensual, distribución por rubro y por categoría, y los proveedores que se llevan la mayor parte. Por edificio o, con plan Business, de toda la administración.',
       href: '/reportes/gastos',
       icono: BarChart3,
-      disponible: permiteConsolidado(contexto),
+      // El reporte está disponible para todo el staff; lo que puede faltar es
+      // el alcance consolidado.
+      disponible: true,
+      consolidado: permiteConsolidado(contexto),
       motivo: motivoConsolidado(contexto),
       plan: 'Business',
     },
@@ -75,24 +81,29 @@ export default function ReportesPage() {
                 <span className="flex size-9 items-center justify-center rounded-lg bg-muted">
                   <Icono className="size-4" aria-hidden="true" />
                 </span>
-                {reporte.disponible ? (
+                {reporte.consolidado === false ? (
+                  // El candado habla del alcance "Todos los edificios", no del
+                  // reporte: el `title` lo dice para no dejarlo en un ícono mudo.
+                  <Badge variant="warning" className="gap-1" title={reporte.motivo}>
+                    <Lock aria-hidden="true" />
+                    {reporte.plan}
+                  </Badge>
+                ) : (
                   <ChevronRight
                     className="size-4 text-muted-foreground"
                     aria-hidden="true"
                   />
-                ) : (
-                  <Badge variant="warning" className="gap-1">
-                    <Lock aria-hidden="true" />
-                    {reporte.plan}
-                  </Badge>
                 )}
               </span>
               <span className="font-medium">{reporte.titulo}</span>
               <span className="text-sm text-muted-foreground">
-                {/* Decisión 1: cuando no está disponible, el motivo reemplaza a
-                    la descripción — es la información útil en ese estado. */}
-                {reporte.disponible ? reporte.descripcion : reporte.motivo}
+                {reporte.descripcion}
               </span>
+              {/* Decisión 1: el motivo acompaña, no reemplaza: el reporte se
+                  abre igual, con el alcance de un edificio. */}
+              {reporte.consolidado === false && reporte.motivo && (
+                <span className="text-xs text-muted-foreground">{reporte.motivo}</span>
+              )}
             </>
           );
 

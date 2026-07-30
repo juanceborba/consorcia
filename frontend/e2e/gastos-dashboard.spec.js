@@ -1,27 +1,23 @@
-// frontend/e2e/gastos-dashboard.spec.js — E2E del dashboard de gastos (S3-17,
-// PRD-04-02 §3 y PRD-07-03 §2.2) en browser real.
+// frontend/e2e/gastos-dashboard.spec.js — E2E del reporte de gastos (S3-17,
+// rescopeado en S3-22) sobre PRD-04-02 §3 y PRD-07-03 §2.2.
 //
-// QUÉ VINO A PROBAR ESTE SPEC: que los filtros son UNO SOLO para las dos vistas
-// que los comparten (S3-16). El dashboard y el listado leen los mismos search
-// params por `useFiltrosGastos` pero pegan a dos endpoints con contratos
-// distintos, así que la falla que importa es la de contradicción: los KPIs de un
-// período con la tabla de otro, o un rango conviviendo con un período (el
-// dashboard responde 422 y la tabla sigue andando, precisión 2 de §3.4).
-// Verificarlo pide un browser: la exclusión vive en la URL y en los controles.
+// QUÉ VINO A PROBAR ESTE SPEC: el tablero en su única casa —Reportes → Gastos—
+// y la separación que S3-22 vino a arreglar. Son dos pantallas con dos
+// intenciones: el tab del edificio es la operación (cargar, editar, listar) y el
+// reporte es el análisis (KPIs, evolución, rubros, proveedores). Un test
+// verifica explícitamente que el tab NO tiene tablero, porque esa fusión es
+// justamente el bug que se corrigió.
 //
-// Y el consolidado de la organización (`/reportes/gastos`), que es la MISMA
-// pantalla con otro alcance: acá se ejercita lo que solo se ve por DOM — que el
-// hub muestra el reporte bloqueado en vez de esconderlo, que el 403 por plan se
-// explica en la pantalla, y que elegir un edificio se lleva los filtros puestos.
-//
-// LO QUE NO REPITE: los KPIs de un gasto recién cargado y las tarjetas por
-// categoría ya están en gastos-carga.spec.js, que llega ahí por el formulario.
-// Acá los gastos de partida se crean por API (mismo criterio que
-// liquidacion-preview.spec.js): el recorrido bajo prueba es el de los filtros.
+// Lo que solo se puede verificar por DOM: que los tres modos de período son
+// EXCLUYENTES en la URL (el contrato del dashboard responde 422 si llegan
+// combinados, precisión 2 de §3.4), que el alcance es un filtro más —cambiar de
+// edificio no navega a ninguna parte—, que el drill-down de rubro no filtra y el
+// subrubro sí, y que los dos gates de "Todos los edificios" (plan y rol) se
+// explican en la pantalla en vez de mostrarse como una falla de carga.
 //
 // LOS TRES GASTOS SE MIRAN SIEMPRE CON `q` PUESTO (el sufijo con timestamp).
-// El filtro de concepto viaja a las DOS queries, así que recorta el dashboard y
-// la lista por igual: los totales que este spec afirma son exactos aunque el
+// El filtro de concepto viaja a las dos queries, así que recorta el reporte y la
+// lista por igual: los totales que este spec afirma son exactos aunque el
 // edificio tenga otros gastos del seed o de una corrida anterior sin cleanup.
 //
 // Requiere el stack levantado con el seed (make up && make db-seed).
@@ -166,56 +162,42 @@ async function login(page, email) {
   await expect(page).toHaveURL(/\/edificios$/);
 }
 
-// Los KPIs, por su nombre accesible: el total es una región (`role=group`) y las
-// tarjetas de tipo son botones donde hay listado abajo (decisión 1 de GastosKpis).
-const kpiTotal = (page, rotulo) => page.getByRole('group', { name: rotulo });
-const kpiOrdinarias = (page) =>
-  page.getByRole('button', { name: 'Filtrar la lista por gastos ordinarios' });
-const kpiExtraordinarias = (page) =>
-  page.getByRole('button', { name: 'Filtrar la lista por gastos extraordinarios' });
+// Los KPIs, por su nombre accesible. En el reporte no hay listado que filtrar,
+// así que las tarjetas de tipo son regiones y no botones (decisión 4 de la
+// página / decisión 1 de GastosKpis).
+const kpiTotal = (page, rotulo) =>
+  page.getByRole('group', { name: rotulo, exact: true });
 
-// El detalle, acotado a SU tabla: los charts publican su serie como tabla
-// `sr-only` (la alternativa accesible del SVG), así que un `getByRole('row')` de
-// toda la página traería también esas filas.
-const tablaDetalle = (page) => page.getByRole('table').filter({ hasText: 'Concepto' });
-
-test('el dashboard y la lista comparten un solo filtro, y los modos de período son excluyentes', async ({
+test('el reporte de gastos: alcance por edificio y los tres modos de período excluyentes', async ({
   page,
 }) => {
   await login(page, 'admin@demo.com');
-  await page.goto(`/edificios/${creado.edificioId}/gastos`);
+  await page.goto(`/reportes/gastos?edificioId=${creado.edificioId}`);
 
-  await test.step('el buscador recorta las dos vistas a los gastos del spec', async () => {
+  await test.step('el buscador recorta el tablero a los gastos del spec', async () => {
     // Tiene debounce y pega al backend: se espera el efecto en la URL, que es lo
-    // que dispara las dos queries.
+    // que dispara la query.
     await page.locator('#filtro-concepto').fill(SUFIJO);
     await expect(page).toHaveURL(new RegExp(`q=${SUFIJO}`));
   });
 
-  await test.step('el período elegido mueve los KPIs Y la tabla al mismo tiempo', async () => {
+  await test.step('el período elegido recalcula todos los indicadores', async () => {
     await page.locator('#filtro-periodo').selectOption(PERIODO_A);
     await expect(page).toHaveURL(new RegExp(`periodo=${PERIODO_A}`));
 
     await expect(kpiTotal(page, 'Total del período')).toContainText('$ 40.000,00');
-    await expect(kpiOrdinarias(page)).toContainText('$ 30.000,00');
-    await expect(kpiExtraordinarias(page)).toContainText('$ 10.000,00');
-    await expect(page.getByRole('group', { name: 'Cantidad de gastos' })).toContainText(
-      '2',
-    );
-
-    // La lista de abajo dice lo mismo: dos gastos, no los tres del spec.
-    await expect(page.getByText(`Detalle de gastos (2)`)).toBeVisible();
-    await expect(tablaDetalle(page).getByRole('row')).toHaveCount(4); // header + 2 + TOTAL
+    await expect(kpiTotal(page, 'Ordinarias')).toContainText('$ 30.000,00');
+    await expect(kpiTotal(page, 'Extraordinarias')).toContainText('$ 10.000,00');
+    await expect(kpiTotal(page, 'Cantidad de gastos')).toContainText('2');
   });
 
-  await test.step('cambiar de período recalcula todo, no solo la tabla', async () => {
+  await test.step('cambiar de período trae otro número, no el mismo', async () => {
     await page.locator('#filtro-periodo').selectOption(PERIODO_B);
     await expect(kpiTotal(page, 'Total del período')).toContainText('$ 20.000,00');
-    await expect(kpiExtraordinarias(page)).toContainText('$ 0,00');
-    await expect(page.getByText(`Detalle de gastos (1)`)).toBeVisible();
+    await expect(kpiTotal(page, 'Extraordinarias')).toContainText('$ 0,00');
   });
 
-  await test.step('elegir un rango BORRA el período (o el dashboard daría 422)', async () => {
+  await test.step('elegir un rango BORRA el período (o el contrato daría 422)', async () => {
     await page.locator('#filtro-periodo').selectOption('rango');
     await page.locator('#filtro-desde').fill(`${PERIODO_A}-01`);
     await page.locator('#filtro-hasta').fill(`${PERIODO_B}-28`);
@@ -227,7 +209,6 @@ test('el dashboard y la lista comparten un solo filtro, y los modos de período 
 
     // El rótulo del KPI ES el modo activo, y el rango abarca los dos períodos.
     await expect(kpiTotal(page, 'Total del rango')).toContainText('$ 60.000,00');
-    await expect(page.getByText(`Detalle de gastos (3)`)).toBeVisible();
   });
 
   await test.step('"Todos los períodos" borra el rango y cambia el rótulo', async () => {
@@ -236,8 +217,7 @@ test('el dashboard y la lista comparten un solo filtro, y los modos de período 
     await expect(page).not.toHaveURL(/desde=/);
 
     await expect(kpiTotal(page, 'Total histórico')).toContainText('$ 60.000,00');
-    await expect(kpiOrdinarias(page)).toContainText('$ 50.000,00');
-    await expect(page.getByText(`Detalle de gastos (3)`)).toBeVisible();
+    await expect(kpiTotal(page, 'Ordinarias')).toContainText('$ 50.000,00');
   });
 
   await test.step('la evolución mensual publica su serie como tabla accesible', async () => {
@@ -248,24 +228,13 @@ test('el dashboard y la lista comparten un solo filtro, y los modos de período 
     await expect(serie.getByRole('row').filter({ hasText: '$ 20.000,00' })).toHaveCount(1);
   });
 
-  await test.step('el filtro de tipo mueve SOLO la lista, y lo avisa', async () => {
-    // Precisión 3 de §3.4: el desglose ordinarias/extraordinarias ES ese corte,
-    // así que el dashboard lo ignora a propósito. Sin el aviso, el total que no
-    // coincide con la tabla se lee como un bug.
-    await kpiExtraordinarias(page).click();
-    await expect(page).toHaveURL(/tipo=extraordinario/);
-    await expect(kpiExtraordinarias(page)).toHaveAttribute('aria-pressed', 'true');
-
-    await expect(kpiTotal(page, 'Total histórico')).toContainText('$ 60.000,00');
-    await expect(page.getByText(`Detalle de gastos (1)`)).toBeVisible();
+  await test.step('sin listado abajo, el tipo no se ofrece como filtro', async () => {
+    // Decisión 4: un botón que no puede filtrar nada sería una promesa
+    // incumplida para el teclado.
     await expect(
-      page.getByText(/El filtro de tipo solo se aplica a la lista de abajo/),
-    ).toBeVisible();
-
-    // Volver a clickear la tarjeta lo saca (es un toggle).
-    await kpiExtraordinarias(page).click();
-    await expect(page).not.toHaveURL(/tipo=/);
-    await expect(page.getByText(`Detalle de gastos (3)`)).toBeVisible();
+      page.getByRole('button', { name: 'Filtrar la lista por gastos ordinarios' }),
+    ).toHaveCount(0);
+    await expect(page.getByRole('table').filter({ hasText: 'Concepto' })).toHaveCount(0);
   });
 
   await test.step('el drill-down de rubro baja un nivel sin filtrar, y el subrubro sí filtra', async () => {
@@ -275,11 +244,10 @@ test('el dashboard y la lista comparten un solo filtro, y los modos de período 
     await expect(page).not.toHaveURL(/rubroId=/);
     await expect(kpiTotal(page, 'Total histórico')).toContainText('$ 60.000,00');
 
-    // La hoja sí: filtra la pantalla entera, KPIs y lista incluidos.
+    // La hoja sí: filtra el reporte entero.
     await page.getByRole('button', { name: /^Plomería/ }).click();
     await expect(page).toHaveURL(/rubroId=/);
     await expect(kpiTotal(page, 'Total histórico')).toContainText('$ 30.000,00');
-    await expect(page.getByText(`Detalle de gastos (1)`)).toBeVisible();
 
     // Y el rubro filtrado tiene chip propio, porque su control es el chart.
     await page.getByRole('button', { name: 'Quitar el filtro de rubro' }).click();
@@ -300,7 +268,6 @@ test('el dashboard y la lista comparten un solo filtro, y los modos de período 
     await expect(page).toHaveURL(/proveedorId=/);
     await expect(proveedorMayor).toHaveAttribute('aria-pressed', 'true');
     await expect(kpiTotal(page, 'Total histórico')).toContainText('$ 50.000,00');
-    await expect(page.getByText(`Detalle de gastos (2)`)).toBeVisible();
   });
 
   await test.step('el filtro completo sobrevive a un reload: vive en la URL', async () => {
@@ -308,87 +275,155 @@ test('el dashboard y la lista comparten un solo filtro, y los modos de período 
     await page.reload();
     expect(page.url()).toBe(url);
     await expect(kpiTotal(page, 'Total histórico')).toContainText('$ 50.000,00');
-    await expect(page.getByText(`Detalle de gastos (2)`)).toBeVisible();
+  });
+
+  await test.step('el drill-down al detalle lleva los mismos filtros al tab', async () => {
+    // Decisión 3: el detalle es del edificio, y el link se lleva el recorte.
+    await page.getByRole('link', { name: /Ver el detalle de Torre Palermo/ }).click();
+    await expect(page).toHaveURL(new RegExp(`/edificios/${creado.edificioId}/gastos`));
+    await expect(page).toHaveURL(new RegExp(`q=${SUFIJO}`));
+    await expect(page).toHaveURL(/proveedorId=/);
+    // El alcance no viaja: en el tab lo dice la ruta.
+    await expect(page).not.toHaveURL(/edificioId=/);
   });
 });
 
-test('el consolidado de la organización es el mismo dashboard con otro alcance', async ({
+test('el tab del edificio es la operación, no el tablero', async ({ page }) => {
+  // Decisión 15 de S3-22: es la separación que esta tarea vino a arreglar.
+  await login(page, 'admin@demo.com');
+  await page.goto(`/edificios/${creado.edificioId}/gastos?q=${SUFIJO}&periodo=todos`);
+
+  await test.step('tiene el listado, el totalizador del filtro y el alta', async () => {
+    await expect(page.getByText(`Gastos (3)`)).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Total del filtro', exact: true })).toContainText(
+      '$ 60.000,00',
+    );
+    await expect(page.getByRole('group', { name: 'Ordinarios', exact: true })).toContainText(
+      '$ 50.000,00',
+    );
+    await expect(page.getByRole('group', { name: 'Extraordinarios' })).toContainText(
+      '$ 10.000,00',
+    );
+    await expect(page.getByRole('button', { name: 'Nuevo gasto' })).toBeVisible();
+
+    // header + 3 gastos + TOTAL
+    const tabla = page.getByRole('table').filter({ hasText: 'Concepto' });
+    await expect(tabla.getByRole('row')).toHaveCount(5);
+  });
+
+  await test.step('y NO tiene ninguno de los componentes del tablero', async () => {
+    await expect(page.getByText('Evolución mensual')).toHaveCount(0);
+    await expect(page.getByText('Distribución por rubro')).toHaveCount(0);
+    await expect(page.getByText('Distribución por categoría')).toHaveCount(0);
+    await expect(page.getByText('Top proveedores')).toHaveCount(0);
+    await expect(page.getByRole('group', { name: 'Gasto por UF' })).toHaveCount(0);
+  });
+
+  await test.step('el filtro de tipo mueve la lista, que es lo que esta pantalla tiene', async () => {
+    await page.getByRole('button', { name: /Filtros/ }).click();
+    await page.locator('#filtro-tipo').selectOption('extraordinario');
+    await expect(page.getByText(`Gastos (1)`)).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Total del filtro', exact: true })).toContainText(
+      '$ 10.000,00',
+    );
+  });
+});
+
+test('el consolidado de la organización es el mismo reporte con otro alcance', async ({
   page,
 }) => {
   await login(page, 'admin@demo.com');
 
-  await test.step('el hub de reportes ofrece el consolidado con el plan Business', async () => {
+  await test.step('el hub de reportes lleva al tablero', async () => {
     await page.getByRole('link', { name: 'Reportes' }).click();
     await expect(page).toHaveURL(/\/reportes$/);
-    await page.getByRole('link', { name: /Gastos consolidados/ }).click();
+    // Por la descripción de la tarjeta: "Gastos" a secas también matchea la
+    // entrada del sidebar, que lleva al tab del edificio.
+    await page.getByRole('link', { name: /El tablero de gastos/ }).click();
     await expect(page).toHaveURL(/\/reportes\/gastos$/);
   });
 
-  await test.step('los mismos filtros dan los mismos números, sumando todos los edificios', async () => {
+  await test.step('abre en "Todos los edificios" y suma toda la administración', async () => {
+    // Decisión 2: con plan Business y org_admin, el default es el consolidado.
+    await expect(page.locator('#filtro-edificio')).toHaveValue('todos');
+
     await page.locator('#filtro-concepto').fill(SUFIJO);
     await expect(page).toHaveURL(new RegExp(`q=${SUFIJO}`));
     await page.locator('#filtro-periodo').selectOption(PERIODO_A);
 
     // Los gastos del spec están todos en Torre Palermo, así que el consolidado
-    // de la organización tiene que dar exactamente lo mismo que su tab.
+    // tiene que dar exactamente lo mismo que el alcance de ese edificio.
     await expect(kpiTotal(page, 'Total del período')).toContainText('$ 40.000,00');
-    await expect(
-      page.getByRole('group', { name: 'Ordinarias', exact: true }),
-    ).toContainText('$ 30.000,00');
   });
 
-  await test.step('sin listado abajo, las tarjetas de tipo no son botones', async () => {
-    // `filtroDeTipo={false}`: un botón que no puede filtrar nada sería una
-    // promesa incumplida para el teclado.
-    await expect(kpiOrdinarias(page)).toHaveCount(0);
-    await expect(page.getByText('Detalle de gastos')).toHaveCount(0);
-  });
-
-  await test.step('elegir un edificio es el drill-down, y se lleva los filtros puestos', async () => {
+  await test.step('cambiar el alcance a un edificio NO se va de la pantalla', async () => {
+    // Decisión 1: el alcance es un filtro más, en la URL.
     await page.locator('#filtro-edificio').selectOption({ label: 'Torre Palermo' });
-    await expect(page).toHaveURL(new RegExp(`/edificios/${creado.edificioId}/gastos`));
-    await expect(page).toHaveURL(new RegExp(`q=${SUFIJO}`));
+    await expect(page).toHaveURL(/\/reportes\/gastos/);
+    await expect(page).toHaveURL(/edificioId=/);
     await expect(page).toHaveURL(new RegExp(`periodo=${PERIODO_A}`));
     await expect(kpiTotal(page, 'Total del período')).toContainText('$ 40.000,00');
   });
 });
 
-test('el consolidado en un plan menor se explica, no se rompe', async ({ page }) => {
-  // Org B ("Administración Sur S.R.L.") está en plan starter y el consolidado es
-  // Business+ (§3.2): es el caso 403 PLAN_INSUFICIENTE del seed.
+test('el consolidado en un plan menor se explica, y el reporte sigue sirviendo', async ({
+  page,
+}) => {
+  // Org B ("Administración Sur S.R.L.") está en plan starter y "Todos los
+  // edificios" es Business+ (§3.2): es el caso 403 PLAN_INSUFICIENTE del seed.
   await login(page, 'admin.sur@demo.com');
 
-  await test.step('el hub muestra el reporte bloqueado en vez de esconderlo', async () => {
+  await test.step('el hub ofrece el reporte igual, con el badge del plan', async () => {
     await page.getByRole('link', { name: 'Reportes' }).click();
     await expect(page).toHaveURL(/\/reportes$/);
-    // Decisión 1 de ReportesPage: la tarjeta está, con el badge del plan y el
-    // motivo, pero no es un link.
-    await expect(page.getByText('Gastos consolidados')).toBeVisible();
-    await expect(page.getByRole('link', { name: /Gastos consolidados/ })).toHaveCount(0);
+    // Decisión 1 del hub (S3-22): lo que está bloqueado es el alcance, no el
+    // reporte, así que la tarjeta SÍ es un link.
+    // Por la descripción de la tarjeta: "Gastos" a secas también matchea la
+    // entrada del sidebar, que lleva al tab del edificio.
+    await page.getByRole('link', { name: /El tablero de gastos/ }).click();
+    await expect(page).toHaveURL(/\/reportes\/gastos$/);
   });
 
-  await test.step('entrar por URL muestra el motivo, no un error genérico', async () => {
-    await page.goto('/reportes/gastos');
+  await test.step('abre en su edificio y el consolidado queda deshabilitado', async () => {
+    // Decisión 2: no se abre en el alcance que va a responder 403.
+    await expect(page.locator('#filtro-edificio')).not.toHaveValue('todos');
+    await expect(kpiTotal(page, 'Total del período')).toBeVisible();
+    await expect(
+      page.locator('#filtro-edificio option[value="todos"]'),
+    ).toBeDisabled();
+  });
+
+  await test.step('forzar el alcance por URL muestra el motivo, no un error genérico', async () => {
+    await page.goto('/reportes/gastos?edificioId=todos');
     await expect(
       page.getByText('El consolidado de la organización necesita otro plan'),
     ).toBeVisible();
     // El backend manda los dos planes en el error justamente para este copy.
     await expect(page.getByText(/plan es\s+starter/)).toBeVisible();
     await expect(page.getByText(/desde el plan\s+business/)).toBeVisible();
-    // Y no se muestra como falla de carga.
     await expect(page.getByText('No se pudieron cargar los indicadores')).toHaveCount(0);
   });
 });
 
-test('el gestor no llega al consolidado: es un reporte de la administración', async ({
+test('el gestor analiza sus edificios, pero no la administración entera', async ({
   page,
 }) => {
-  // Precisión 9 de §3.4: el alcance del gestor son sus edificios asignados, así
-  // que el hub ni aparece en su sidebar y la ruta está detrás de RequireRole.
+  // Precisión 9 de §3.4: "todos los edificios" es la vista que un gestor con
+  // edificios asignados no debe ver. Lo que sí puede es el tablero de SU
+  // edificio, que lee los mismos datos que su listado (S3-22).
   await login(page, 'gestor@demo.com');
 
-  await expect(page.getByRole('link', { name: 'Reportes' })).toHaveCount(0);
+  await page.getByRole('link', { name: 'Reportes' }).click();
+  await expect(page).toHaveURL(/\/reportes$/);
+  await page.getByRole('link', { name: /El tablero de gastos/ }).click();
+  await expect(page).toHaveURL(/\/reportes\/gastos$/);
 
-  await page.goto('/reportes/gastos');
-  await expect(page).toHaveURL(/\/edificios$/);
+  await expect(page.locator('#filtro-edificio')).toHaveValue(creado.edificioId);
+  await expect(kpiTotal(page, 'Total del período')).toBeVisible();
+  await expect(page.locator('#filtro-edificio option[value="todos"]')).toBeDisabled();
+
+  // Y si lo fuerza por URL, el 403 de Cerbos se explica como alcance, no como
+  // falla de carga.
+  await page.goto('/reportes/gastos?edificioId=todos');
+  await expect(page.getByText('Este reporte es de la administración')).toBeVisible();
 });
