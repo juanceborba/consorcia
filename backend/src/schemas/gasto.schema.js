@@ -123,6 +123,11 @@ const camposGasto = {
   // Decisión 3: plan de cuotas. `periodo` es el de la primera cuota y las N-1
   // siguientes son los meses consecutivos. El tope de 120 son 10 años: más que
   // eso no es un plan de pago de una obra, es un error de tipeo.
+  // S3-20: el esquema de reparto propio del gasto. NULL/ausente = el gasto adopta
+  // lo que el edificio tenga configurado para su categoría/servicio/sector, y si
+  // no hay nada, el coeficiente de siempre. Que el esquema sea de ESTE edificio
+  // se valida en la ruta (depende de la DB).
+  esquemaRepartoId: opcional(z.string().uuid('esquemaRepartoId: UUID requerido')),
   cuotasTotal: opcional(
     z.coerce
       .number({ invalid_type_error: 'cuotasTotal: número entero' })

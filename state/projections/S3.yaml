@@ -1,7 +1,7 @@
 # GENERADO por app/state/engine.py — no editar a mano
 sprint: S3
 titulo: "Gastos + motor contable"
-generado: 2026-07-30T02:03:45Z
+generado: 2026-07-30T02:10:58Z
 total: 21
 done: 12
 tareas:
@@ -217,13 +217,13 @@ tareas:
   - id: S3-20
     titulo: "Esquemas de reparto configurables por edificio"
     seccion: Backend
-    status: ready
+    status: in-progress
     depende_de: [S3-18]
     desbloquea: []
     issue: 68
     lote: G
     fuente: [PRD-02-05, PRD-04-01]
-    claimed_by: null
+    claimed_by: claude
     score: 5.0
   - id: S3-21
     titulo: "Fondo de reserva en la liquidacion"

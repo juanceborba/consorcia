@@ -164,6 +164,12 @@ async function limpiarOrganizacionDemo(cuit) {
   await prisma.unidadUsuario.deleteMany({ where: { organizacionId: orgId } });
   await prisma.gestorEdificio.deleteMany({ where: { edificio: { organizacionId: orgId } } });
   await prisma.unidad.deleteMany({ where: { organizacionId: orgId } });
+  // Esquemas de reparto (S3-20) DESPUÉS de gastos y liquidaciones —que los
+  // referencian con FK RESTRICT— y ANTES de los edificios, que también los
+  // referencian con RESTRICT. La configuración cae por CASCADE con el edificio,
+  // pero se borra explícita porque referencia al esquema general con RESTRICT.
+  await prisma.configuracionLiquidacion.deleteMany({ where: { organizacionId: orgId } });
+  await prisma.esquemaReparto.deleteMany({ where: { organizacionId: orgId } });
   await prisma.edificio.deleteMany({ where: { organizacionId: orgId } });
 
   const miembros = await prisma.organizacionUsuario.findMany({
@@ -329,6 +335,40 @@ async function main() {
   const unidadesLomas = await crearUnidades(lomas, UNIDADES_LOMAS);
   console.log(
     `Unidades creadas: ${UNIDADES_TORRE_PALERMO.length} + ${UNIDADES_SAN_MARTIN.length} (Org A), ${UNIDADES_LOMAS.length} (Org B)`
+  );
+
+  // --- Esquemas de reparto (S3-20) ------------------------------------------
+  //
+  // UN esquema en UN edificio, a propósito: Torre Palermo tiene la exención
+  // parcial del art. 12 de su reglamento (PB abona el 50% del ascensor) y San
+  // Martín no tiene nada configurado. Así el seed muestra las dos mitades del
+  // diseño: el edificio configurado y el que liquida por coeficiente sin que
+  // nadie haya tocado un setup — que es el default y el caso mayoritario.
+  //
+  // Tampoco se configura `ConfiguracionLiquidacion`: dejar el esquema general en
+  // NULL es lo que demuestra que no hace falta configurar nada para liquidar.
+  const esquemaAscensor = await prisma.esquemaReparto.create({
+    data: {
+      organizacionId: torrePalermo.organizacionId,
+      edificioId: torrePalermo.id,
+      nombre: 'Ascensor (PB al 50%)',
+      base: 'COEFICIENTE',
+      alcance: 'SERVICIO',
+      alcanceValor: 'ascensor',
+      clausulaReglamento: 'art. 12 del reglamento de copropiedad',
+      pesos: {
+        create: [
+          {
+            organizacionId: torrePalermo.organizacionId,
+            unidadId: unidadesPalermo.PB.id,
+            peso: '0.500000',
+          },
+        ],
+      },
+    },
+  });
+  console.log(
+    `Esquemas de reparto: "${esquemaAscensor.nombre}" en ${torrePalermo.nombre} (CCyC art. 2049) · ${sanMartin.nombre} sin configurar (default)`
   );
 
   // --- Usuarios -------------------------------------------------------------

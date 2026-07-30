@@ -50,6 +50,25 @@ enum CategoriaGasto {
   C // Sectores específicos → solo UF del sector
 }
 
+// Base de cálculo de un esquema de reparto (S3-20). Es un enum CERRADO a
+// propósito: el reparto tiene que seguir siendo determinístico y auditable, así
+// que no hay fórmulas ni condiciones configurables — solo estas tres bases y una
+// tabla de pesos por UF (ver `EsquemaReparto`).
+enum BaseReparto {
+  COEFICIENTE    // peso = coeficiente de la UF × el factor de la tabla (default 1)
+  PARTES_IGUALES // peso = 1 × el factor de la tabla: por UF, no por coeficiente
+  PESOS_PROPIOS  // peso = el de la tabla: la segunda tabla de coeficientes del reglamento
+}
+
+// A qué UF alcanza un esquema de reparto (S3-20). Fuera del alcance el peso es
+// SIEMPRE 0, cualquiera sea la base.
+enum AlcanceReparto {
+  TODAS     // todas las UF del edificio
+  SERVICIO  // las que tienen el servicio de `alcanceValor` en `Unidad.categoriaB`
+  SECTOR    // las del sector de `alcanceValor` en `Unidad.categoriaC`
+  SELECCION // solo las que tienen fila propia en `EsquemaRepartoUnidad`
+}
+
 enum EstadoLiquidacion {
   BORRADOR
   PENDIENTE_APROBACION
@@ -290,6 +309,8 @@ model Edificio {
   unidades        Unidad[]
   gastos          Gasto[]
   liquidaciones   Liquidacion[]
+  esquemasReparto EsquemaReparto[]
+  configuracionLiquidacion ConfiguracionLiquidacion?
   tickets         Ticket[]
   comunicaciones  Comunicacion[]
   documentos      Documento[]
@@ -329,6 +350,7 @@ model Unidad {
   edificio        Edificio @relation(fields: [edificioId], references: [id])
   usuarios        UnidadUsuario[]
   liquidaciones   LiquidacionDetalle[]
+  pesosReparto    EsquemaRepartoUnidad[]
   cobros          Cobro[]
   recibos         Recibo[]
 
@@ -479,6 +501,13 @@ model Gasto {
   servicioEspecifico String? @map("servicio_especifico") // Para cat B: "ascensor"
   sectorEspecifico   String? @map("sector_especifico")   // Para cat C: "torre_a"
 
+  // Esquema de reparto propio del gasto (S3-20): el OVERRIDE. NULL = el gasto
+  // adopta lo que el edificio tenga configurado para su categoría/servicio/sector
+  // y, si no hay nada, el reparto por coeficiente de siempre. La categoría sigue
+  // clasificando el gasto (recibo, dashboard, Ley 941) aunque el esquema decida
+  // el cálculo: son los dos trabajos que S3-20 separó.
+  esquemaRepartoId String? @map("esquema_reparto_id")
+
   // Clasificación
   esOrdinario     Boolean  @default(true) @map("es_ordinario") // true = ordinario, false = extraordinario
 
@@ -496,6 +525,10 @@ model Gasto {
   edificio        Edificio @relation(fields: [edificioId], references: [id])
   proveedor       Proveedor @relation(fields: [proveedorId], references: [id])
   rubro           Rubro     @relation(fields: [rubroId], references: [id])
+  // Restrict explícito: es lo que hace la FK en la DB (un esquema en uso no se
+  // borra, se desactiva). Sin declararlo, Prisma asumiría `SetNull` por ser una
+  // relación opcional y `migrate diff` marcaría deriva contra la migración.
+  esquemaReparto  EsquemaReparto? @relation(fields: [esquemaRepartoId], references: [id], onDelete: Restrict)
   liquidaciones   LiquidacionDetalle[]
   cuotas          GastoCuota[]
 
@@ -511,6 +544,7 @@ model Gasto {
   @@index([organizacionId, edificioId, esOrdinario])
   @@index([organizacionId, edificioId, proveedorId])
   @@index([organizacionId, edificioId, rubroId])
+  @@index([organizacionId, esquemaRepartoId])
   @@map("gastos")
 }
 
@@ -552,6 +586,139 @@ model GastoCuota {
   @@index([organizacionId, gastoId])
   @@index([organizacionId, periodo])
   @@map("gasto_cuotas")
+}
+
+// ==========================================
+// ESQUEMAS DE REPARTO (S3-20)
+// ==========================================
+
+// El "setup de liquidación" de un edificio (S3-20, diseño en
+// `docs/investigacion/esquemas-de-reparto.md`).
+//
+// LA PRIMITIVA ES UNA SOLA: pesos por unidad funcional. `monto_i = monto × peso_i
+// / Σpesos`. No es un motor de reglas — no hay condiciones ni fórmulas, solo un
+// enum cerrado de bases (`BaseReparto`) y una tabla de pesos. Esa restricción es
+// lo que mantiene el cálculo determinístico y auditable, y es deliberada.
+//
+// La fuente de autoridad es el REGLAMENTO DE COPROPIEDAD, no el criterio del
+// administrador: el CCyC art. 2049, último párrafo, permite eximir parcialmente
+// a las UF sin acceso a un servicio o sector, y lo hace "el reglamento". De ahí
+// `clausulaReglamento` y `documentoUrl`: el esquema guarda con qué cláusula se
+// habilita, que es lo primero que se discute cuando un propietario impugna.
+//
+// El peso de la tabla (`EsquemaRepartoUnidad.peso`) se lee SEGÚN LA BASE:
+//
+//   COEFICIENTE     → FACTOR sobre el coeficiente de la UF. Fila ausente = 1.
+//                     0 = exenta total · 0.5 = "PB abona el 50% del ascensor".
+//   PARTES_IGUALES  → FACTOR sobre 1. Fila ausente = 1.
+//   PESOS_PROPIOS   → el peso ABSOLUTO (el "coeficiente de Torre A" del
+//                     reglamento, que NO es proporcional al general). Fila
+//                     ausente = 0: sin fila, la UF no participa.
+//
+// Y el alcance se aplica ANTES que la base: fuera del alcance el peso es 0.
+//
+// RESOLUCIÓN (una sola función, `resolverEsquema` en services/esquemas-reparto.js):
+// esquema del gasto → esquema del edificio que matchea el servicio/sector →
+// `ConfiguracionLiquidacion.esquemaGeneralId` → NULL. Con NULL el motor calcula
+// EXACTAMENTE lo que calculaba antes de S3-20 (coeficiente, renormalizado en
+// B/C), así que un edificio sin nada configurado liquida igual que siempre: el
+// default sale solo y los esquemas son la excepción que se agrega cuando el
+// reglamento lo pide.
+//
+// Un esquema ad-hoc de UN gasto (el cargo por una rotura) no necesita modelo
+// aparte: es un esquema del edificio con `alcance = SELECCION` que ningún gasto
+// toma automáticamente, porque SELECCION no participa del matcheo — solo llega a
+// un gasto que lo elige por `Gasto.esquemaRepartoId`. Un camino de código, no dos.
+model EsquemaReparto {
+  id              String   @id @default(uuid())
+  organizacionId  String   @map("organizacion_id")
+  edificioId      String   @map("edificio_id") // el reglamento es de un edificio
+
+  nombre          String   // "Ascensor (PB al 50%)", "Torre A", "Partes iguales"
+  base            BaseReparto
+  alcance         AlcanceReparto
+  // El servicio ("ascensor") o el sector ("torre_a") del alcance. Obligatorio en
+  // SERVICIO/SECTOR, NULL en TODAS/SELECCION (CHECK en la migración).
+  alcanceValor    String?  @map("alcance_valor")
+
+  // Trazabilidad legal (CCyC art. 2049): la cláusula que habilita este reparto.
+  clausulaReglamento String? @map("clausula_reglamento")
+  documentoUrl       String? @map("documento_url")
+
+  // Baja lógica, igual que los rubros propios: un esquema ya usado en una
+  // liquidación no se borra (el snapshot lo referencia), se desactiva.
+  activo          Boolean  @default(true)
+
+  // Relaciones
+  edificio        Edificio @relation(fields: [edificioId], references: [id])
+  pesos           EsquemaRepartoUnidad[]
+  gastos          Gasto[]
+  liquidaciones   LiquidacionDetalle[]
+  configuraciones ConfiguracionLiquidacion[]
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // El nombre identifica al esquema en la UI y en el snapshot del recibo.
+  @@unique([organizacionId, edificioId, nombre])
+  // Determinismo del matcheo automático: un solo esquema ACTIVO por
+  // servicio/sector de un edificio. Es un índice único PARCIAL, creado a mano en
+  // la migración (Prisma no los soporta):
+  //   CREATE UNIQUE INDEX esquemas_reparto_alcance_activo_unique
+  //     ON esquemas_reparto (organizacion_id, edificio_id, alcance, alcance_valor)
+  //     WHERE activo AND alcance IN ('SERVICIO', 'SECTOR');
+  @@index([organizacionId, edificioId])
+  @@index([organizacionId, edificioId, activo])
+  @@map("esquemas_reparto")
+}
+
+// El peso de UNA UF en UN esquema. Solo existen las filas que hacen falta: la
+// semántica de la fila ausente depende de la base (ver `EsquemaReparto`), así que
+// un esquema "todas al 100% menos PB al 50%" es UNA fila, no N.
+model EsquemaRepartoUnidad {
+  organizacionId  String   @map("organizacion_id")
+  esquemaId       String   @map("esquema_id")
+  unidadId        String   @map("unidad_id")
+
+  // 0 = exenta · 0.5 = mitad · o el coeficiente propio de la UF en la segunda
+  // tabla del reglamento. Nunca negativo (CHECK en la migración).
+  peso            Decimal  @db.Decimal(12, 6)
+
+  esquema         EsquemaReparto @relation(fields: [esquemaId], references: [id], onDelete: Cascade)
+  unidad          Unidad         @relation(fields: [unidadId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@id([esquemaId, unidadId])
+  @@index([organizacionId, esquemaId])
+  @@index([unidadId])
+  @@map("esquema_reparto_unidades")
+}
+
+// El setup de liquidación del edificio. Hoy solo el esquema general (el default
+// de los gastos de categoría A); S3-21 agrega acá el porcentaje de fondo de
+// reserva, y S5 el día de vencimiento y el interés por mora. Una fila por
+// edificio, creada on-demand: un edificio SIN fila liquida por coeficiente, que
+// es exactamente el comportamiento previo a S3-20.
+model ConfiguracionLiquidacion {
+  id              String   @id @default(uuid())
+  organizacionId  String   @map("organizacion_id")
+  edificioId      String   @unique @map("edificio_id")
+
+  // Default de los gastos que no matchean ningún esquema por servicio/sector.
+  // NULL = reparto por coeficiente sobre todas las UF (el default de siempre).
+  esquemaGeneralId String? @map("esquema_general_id")
+
+  edificio        Edificio        @relation(fields: [edificioId], references: [id], onDelete: Cascade)
+  esquemaGeneral  EsquemaReparto? @relation(fields: [esquemaGeneralId], references: [id], onDelete: Restrict)
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([organizacionId])
+  @@map("configuracion_liquidacion")
 }
 
 // NOTA RLS: `proveedores`, `rubros` y `rubro_visibilidad` son híbridas (ítems
@@ -623,6 +790,15 @@ model LiquidacionDetalle {
   cuotaNumero     Int?     @map("cuota_numero")
   cuotasTotal     Int?     @map("cuotas_total")
 
+  // Esquema de reparto que produjo este peso (S3-20). NULL = reparto por
+  // coeficiente según la categoría, el default. `esquemaNombre` es el SNAPSHOT
+  // del nombre al momento de liquidar, no una vista de `EsquemaReparto`: la
+  // inmutabilidad del recibo emitido es la única defensa contra un cambio de
+  // reglamento o de titularidad posterior. Renombrar o desactivar un esquema NO
+  // puede reescribir un recibo, igual que `coeficienteAplicado` y `cuotaNumero`.
+  esquemaRepartoId String? @map("esquema_reparto_id")
+  esquemaNombre    String? @map("esquema_nombre")
+
   // Distribución
   coeficienteAplicado Decimal @map("coeficiente_aplicado") @db.Decimal(10, 6)
   montoAsignado   Decimal  @db.Decimal(12, 2)
@@ -631,7 +807,8 @@ model LiquidacionDetalle {
   liquidacion     Liquidacion @relation(fields: [liquidacionId], references: [id])
   unidad          Unidad   @relation(fields: [unidadId], references: [id])
   gasto           Gasto    @relation(fields: [gastoId], references: [id])
-  gastoCuota      GastoCuota? @relation(fields: [gastoCuotaId], references: [id])
+  gastoCuota      GastoCuota? @relation(fields: [gastoCuotaId], references: [id], onDelete: Restrict)
+  esquemaReparto  EsquemaReparto? @relation(fields: [esquemaRepartoId], references: [id], onDelete: Restrict)
 
   // Timestamps
   createdAt       DateTime @default(now()) @map("created_at")
@@ -639,6 +816,8 @@ model LiquidacionDetalle {
   @@unique([organizacionId, liquidacionId, unidadId, gastoId])
   @@index([organizacionId, liquidacionId])
   @@index([organizacionId, unidadId])
+  @@index([gastoCuotaId])
+  @@index([esquemaRepartoId])
   @@map("liquidacion_detalles")
 }
 

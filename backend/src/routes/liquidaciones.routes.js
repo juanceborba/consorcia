@@ -118,6 +118,7 @@ import {
   validarParaLiquidacion,
   errorCoeficientes,
 } from '../services/coeficientes.js';
+import { resolutorDeEsquemas } from '../services/esquemas-reparto.js';
 import { emitirRecibos, serializarRecibo, ReciboError } from '../services/recibos.js';
 
 // ---------------------------------------------------------------------------
@@ -247,6 +248,8 @@ async function preview(liquidacion) {
       // que decía cuando se emitió.
       cuotaNumero: true,
       cuotasTotal: true,
+      // S3-20: con qué esquema se calculó este peso, también del snapshot.
+      esquemaNombre: true,
       coeficienteAplicado: true,
       montoAsignado: true,
       unidad: { select: { id: true, numero: true, tipo: true, m2: true, coeficiente: true } },
@@ -289,6 +292,10 @@ async function preview(liquidacion) {
       fila.pesos.push({
         gastoId: d.gastoId,
         pesoAplicado: coeficiente(d.coeficienteAplicado),
+        // S3-20: null = el peso es el coeficiente según la categoría. Con nombre,
+        // es el esquema del reglamento que lo fijó, y es lo que le permite al
+        // administrador verificar el reparto ANTES de aprobar.
+        esquemaNombre: d.esquemaNombre,
         montoAsignado: monto.toFixed(2),
         // S3-19: null en un gasto de imputación única.
         cuotaNumero: d.cuotaNumero,
@@ -410,6 +417,8 @@ liquidacionesDeEdificioRouter.post(
           sectorEspecifico: true,
           esOrdinario: true,
           periodo: true,
+          // S3-20: el override del gasto es la primera opción de la resolución.
+          esquemaRepartoId: true,
           cuotas: {
             where: { periodo },
             select: { id: true, numero: true, cuotasTotal: true, periodo: true, monto: true },
@@ -424,9 +433,16 @@ liquidacionesDeEdificioRouter.post(
       // `imputacionDelPeriodo` devuelve null si al gasto no le toca nada en el
       // período; con el `where` de arriba eso no debería pasar, y el filtro es la
       // red que evita repartir un gasto que no corresponde si alguna vez difieren.
+      // S3-20: el esquema de reparto de cada gasto se resuelve ACÁ (la resolución
+      // pega a la DB; el motor recibe el esquema ya elegido, igual que recibe la
+      // imputación ya elegida). Un resolutor por liquidación, así los N gastos se
+      // resuelven contra la MISMA foto de la configuración del edificio.
+      const resolver = await resolutorDeEsquemas(organizacionId, edificioId);
+
       const gastos = gastosDelPeriodo
         .map((g) => imputacionDelPeriodo(g, periodo))
-        .filter((imputacion) => imputacion !== null);
+        .filter((imputacion) => imputacion !== null)
+        .map((imputacion) => ({ ...imputacion, esquema: resolver(imputacion) }));
 
       if (gastos.length === 0) return res.status(422).json(sinGastos(periodo));
 
@@ -482,6 +498,9 @@ liquidacionesDeEdificioRouter.post(
               gastoCuotaId: d.gastoCuotaId,
               cuotaNumero: d.cuotaNumero,
               cuotasTotal: d.cuotasTotal,
+              // S3-20: snapshot del esquema aplicado (null = por coeficiente).
+              esquemaRepartoId: d.esquemaRepartoId,
+              esquemaNombre: d.esquemaNombre,
               coeficienteAplicado: d.coeficienteAplicado,
               montoAsignado: d.montoAsignado,
             })),

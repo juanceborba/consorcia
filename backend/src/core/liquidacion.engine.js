@@ -41,6 +41,21 @@
 //    (exención parcial, coeficiente propio de un sector, partes iguales, cargo a
 //    una sola UF). Diseño: `docs/investigacion/esquemas-de-reparto.md`.
 //
+// 6. S3-20 — ESQUEMAS DE REPARTO. El seam de la nota 5 ya está usado: si el gasto
+//    llega con un `esquema` resuelto, los pesos salen de él (`pesosDeEsquema`) y
+//    no de la categoría. Tres cosas que NO cambiaron y son deliberadas:
+//
+//    a. El motor no resuelve NADA: recibe el esquema ya elegido, igual que recibe
+//       la imputación ya elegida en las cuotas. La resolución (esquema del gasto →
+//       del edificio → ninguno) pega a la DB y vive en
+//       `services/esquemas-reparto.js`. Así el motor sigue siendo una función
+//       pura y testeable sin base de datos.
+//    b. Sin esquema, el resultado es idéntico al centavo al de S3-03. La
+//       retrocompatibilidad no es una promesa: es el mismo código de siempre.
+//    c. No hay condiciones ni fórmulas configurables. Dos enums cerrados
+//       (`BaseReparto`, `AlcanceReparto`) y una tabla de pesos, porque un motor de
+//       reglas sería intesteable y rompería la auditabilidad del cálculo.
+//
 // 6. S3-19 — CUOTAS: lo que el motor distribuye es una IMPUTACIÓN, no
 //    necesariamente un gasto entero. Un gasto de imputación única es su propia
 //    imputación (el caso por default, idéntico a antes); un gasto con plan de
@@ -216,7 +231,104 @@ function imputacionDelPeriodo(gasto, periodo) {
 // exista `EsquemaReparto` (S3-20) este es el único punto que cambia: la
 // resolución pasa a ser esquema del gasto → esquema del edificio → esta función
 // como default.
+const BASES_VALIDAS = ['COEFICIENTE', 'PARTES_IGUALES', 'PESOS_PROPIOS'];
+const ALCANCES_VALIDOS = ['TODAS', 'SERVICIO', 'SECTOR', 'SELECCION'];
+
+/**
+ * ¿Alcanza el esquema a esta UF? Se evalúa ANTES que la base: fuera del alcance
+ * el peso es 0, cualquiera sea la base y cualquiera sea la fila de la tabla.
+ *
+ * `tienePesoPropio` es lo único que define el alcance SELECCION: la UF participa
+ * si el administrador la puso en la tabla. Es el caso del cargo particular a una
+ * sola UF (una rotura), donde no hay servicio ni sector que la describa.
+ */
+function unidadEnAlcance(esquema, unidad, tienePesoPropio) {
+  switch (esquema.alcance) {
+    case 'TODAS':
+      return true;
+    case 'SERVICIO':
+      return serviciosDeUnidad(unidad).includes(esquema.alcanceValor);
+    case 'SECTOR':
+      return sectorDeUnidad(unidad) === esquema.alcanceValor;
+    case 'SELECCION':
+      return tienePesoPropio;
+    default:
+      throw new LiquidacionError(
+        'ESQUEMA_INVALIDO',
+        `Alcance de reparto inválido: ${esquema.alcance}. Debe ser ${ALCANCES_VALIDOS.join(', ')}.`,
+        { esquemaId: esquema.id ?? null, alcance: esquema.alcance }
+      );
+  }
+}
+
+/**
+ * Los pesos de un ESQUEMA DE REPARTO (S3-20), la primitiva configurable.
+ *
+ * La tabla de pesos (`esquema.pesos`) se lee según la base, y una UF sin fila NO
+ * es una UF con peso 0: es una UF con el default de su base. Es lo que hace que
+ * "todas por coeficiente menos PB al 50%" sea UNA fila y no N.
+ *
+ *   COEFICIENTE    → coeficiente de la UF × factor (fila ausente = factor 1)
+ *   PARTES_IGUALES → factor (fila ausente = 1): por UF, no por coeficiente
+ *   PESOS_PROPIOS  → el peso de la fila (ausente = 0): la segunda tabla de
+ *                    coeficientes del reglamento, que no es proporcional al
+ *                    coeficiente general
+ *
+ * Determinístico y sin fórmulas: dos enums cerrados y una multiplicación.
+ */
+function pesosDeEsquema(esquema, unidades) {
+  if (!BASES_VALIDAS.includes(esquema.base)) {
+    throw new LiquidacionError(
+      'ESQUEMA_INVALIDO',
+      `Base de reparto inválida: ${esquema.base}. Debe ser ${BASES_VALIDAS.join(', ')}.`,
+      { esquemaId: esquema.id ?? null, base: esquema.base }
+    );
+  }
+
+  const propios = new Map(
+    (esquema.pesos ?? []).map((p) => [p.unidadId, new Decimal(p.peso)])
+  );
+
+  const pesos = new Map();
+  for (const unidad of unidades) {
+    const propio = propios.get(unidad.id);
+
+    if (!unidadEnAlcance(esquema, unidad, propio !== undefined)) {
+      pesos.set(unidad.id, new Decimal(0));
+      continue;
+    }
+
+    switch (esquema.base) {
+      case 'COEFICIENTE':
+        pesos.set(unidad.id, new Decimal(unidad.coeficiente).times(propio ?? 1));
+        break;
+      case 'PARTES_IGUALES':
+        pesos.set(unidad.id, propio ?? new Decimal(1));
+        break;
+      case 'PESOS_PROPIOS':
+        pesos.set(unidad.id, propio ?? new Decimal(0));
+        break;
+      // BASES_VALIDAS ya cubrió el default.
+    }
+  }
+  return pesos;
+}
+
+/**
+ * Los pesos con los que se reparte un gasto.
+ *
+ * S3-20: si el gasto llega con un esquema RESUELTO (`gasto.esquema`), manda el
+ * esquema. Si no, el peso es el coeficiente de las UF alcanzadas por la
+ * categoría A/B/C — el comportamiento previo a S3-20, exacto al centavo.
+ *
+ * La resolución (esquema del gasto → del edificio → ninguno) NO vive acá: pega a
+ * la DB y el motor no la toca. Está en `services/esquemas-reparto.js`; el motor
+ * recibe el esquema ya resuelto, igual que recibe la imputación ya elegida en el
+ * caso de las cuotas.
+ */
 function pesosDe(gasto, unidades) {
+  if (gasto.esquema) return pesosDeEsquema(gasto.esquema, unidades);
+
   const pesos = new Map();
   for (const unidad of unidades) {
     pesos.set(
@@ -235,13 +347,15 @@ function distribuir(montoTotal, pesos, { moneda = 'ARS', contexto = {} } = {}) {
   const sumaPesos = [...pesos.values()].reduce((sum, p) => sum.plus(p), new Decimal(0));
 
   if (sumaPesos.lte(0)) {
-    throw new LiquidacionError(
-      'DESBALANCE_LIQUIDACION',
-      contexto.categoria
+    // S3-20: con un esquema configurado el motivo casi nunca es la categoría —
+    // es un alcance que no matchea ninguna UF o una tabla de pesos todos en 0.
+    // Nombrar el esquema es la diferencia entre un error accionable y uno mudo.
+    const motivo = contexto.esquema
+      ? `No hay unidades con peso en el esquema de reparto "${contexto.esquema}".`
+      : contexto.categoria
         ? `No hay unidades alcanzadas por el gasto (categoría ${contexto.categoria}).`
-        : 'No hay unidades alcanzadas por el gasto.',
-      contexto
-    );
+        : 'No hay unidades alcanzadas por el gasto.';
+    throw new LiquidacionError('DESBALANCE_LIQUIDACION', motivo, contexto);
   }
 
   const distribucion = [];
@@ -304,6 +418,10 @@ class LiquidacionEngine {
    *   `montoImputado` (S3-19) es lo que se reparte cuando el gasto se imputa por
    *   cuotas: el reparto es el del gasto padre, el monto es el de la cuota. Si no
    *   viene, se reparte `monto` (imputación única, el caso por default).
+   *   `esquema` (S3-20) es el esquema de reparto YA RESUELTO —
+   *   `{ id, nombre, base, alcance, alcanceValor, pesos: [{ unidadId, peso }] }`—
+   *   y cuando viene manda sobre la categoría para el CÁLCULO (la categoría sigue
+   *   clasificando el gasto). Sin `esquema`, el reparto es el de siempre.
    * @param {Array} unidades - [{ id, coeficiente, categoriaB?: string[], categoriaC?: string }]
    * @returns {Array} - [{ unidadId, coeficiente, monto, moneda }] con monto
    *   exacto a 2 decimales; la suma de montos es EXACTAMENTE el total (cero
@@ -346,6 +464,8 @@ class LiquidacionEngine {
         categoria: gasto.categoria,
         servicio: servicioDelGasto(gasto),
         sector: sectorDelGasto(gasto),
+        // S3-20: null cuando el reparto sale de la categoría (el default).
+        esquema: gasto.esquema?.nombre ?? null,
       },
     });
   }
@@ -376,6 +496,8 @@ class LiquidacionEngine {
     for (const gasto of gastos) {
       const distribucion = this.calcularDistribucion(gasto, unidades);
       const cuota = gasto.cuota ?? null;
+      // S3-20: el esquema que produjo estos pesos, ya resuelto por la ruta.
+      const esquema = gasto.esquema ?? null;
 
       for (const detalle of distribucion) {
         liquidacion.detalles.push({
@@ -386,6 +508,11 @@ class LiquidacionEngine {
           gastoCuotaId: cuota?.id ?? null,
           cuotaNumero: cuota?.numero ?? null,
           cuotasTotal: cuota?.cuotasTotal ?? null,
+          // Snapshot del esquema aplicado, por la misma razón: renombrarlo o
+          // desactivarlo no puede reescribir un recibo emitido. NULL = reparto
+          // por coeficiente según la categoría.
+          esquemaRepartoId: esquema?.id ?? null,
+          esquemaNombre: esquema?.nombre ?? null,
           coeficienteAplicado: detalle.coeficiente,
           montoAsignado: detalle.monto,
         });
@@ -428,6 +555,9 @@ export {
   LiquidacionError,
   distribuir,
   pesosDe,
+  pesosDeEsquema,
+  BASES_VALIDAS,
+  ALCANCES_VALIDOS,
   planDeCuotas,
   imputacionDelPeriodo,
   sumarPeriodo,

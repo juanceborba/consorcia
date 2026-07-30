@@ -20,3 +20,4 @@
 {"id": "evt-000114", "ts": "2026-07-30T01:36:57Z", "actor": "claude", "type": "status", "task": "S3-18", "to": "done", "motivo": "motor a pesos por unidad, sin cambio funcional (commit pendiente de sha, issue #66)"}
 {"id": "evt-000115", "ts": "2026-07-30T01:46:43Z", "actor": "claude", "type": "claim", "task": "S3-19"}
 {"id": "evt-000116", "ts": "2026-07-30T02:03:45Z", "actor": "claude", "type": "status", "task": "S3-19", "to": "done"}
+{"id": "evt-000117", "ts": "2026-07-30T02:10:58Z", "actor": "claude", "type": "claim", "task": "S3-20", "motivo": "S3-20 esquemas de reparto configurables por edificio (issue #68)"}

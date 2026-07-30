@@ -149,6 +149,7 @@ const CAMPOS = {
   servicioEspecifico: true,
   sectorEspecifico: true,
   esOrdinario: true,
+  esquemaRepartoId: true,
   comprobanteUrl: true,
   fechaGasto: true,
   periodo: true,
@@ -157,6 +158,11 @@ const CAMPOS = {
   createdBy: true,
   proveedor: { select: { id: true, razonSocial: true, activo: true } },
   rubro: { select: { id: true, nombre: true, parentId: true, activo: true } },
+  // S3-20: el esquema elegido a mano, para que la UI muestre con qué se va a
+  // repartir sin pedir el detalle del esquema aparte. `null` = el del edificio.
+  esquemaReparto: {
+    select: { id: true, nombre: true, base: true, alcance: true, alcanceValor: true, activo: true },
+  },
   // Decisión 11: el plan de cuotas viaja con el gasto (son a lo sumo 120 filas
   // chicas y la UI necesita los períodos para mostrar el plan completo).
   cuotas: {
@@ -189,6 +195,16 @@ const proveedorInvalido = () => ({
   error: {
     code: 'PROVEEDOR_INVALIDO',
     message: 'El proveedor no existe, está inactivo o no es visible para tu organización',
+  },
+});
+
+// S3-20: el override tiene que apuntar a un esquema de ESTE edificio. Un esquema
+// de otro edificio o de otra organización no se distingue de uno inexistente,
+// igual que el proveedor y el rubro.
+const esquemaInvalido = () => ({
+  error: {
+    code: 'ESQUEMA_INVALIDO',
+    message: 'El esquema de reparto no existe o no es de este edificio',
   },
 });
 
@@ -229,9 +245,34 @@ async function proveedorUsable(organizacionId, proveedorId) {
   return proveedor !== null;
 }
 
-// Corre las tres validaciones que no puede hacer Zod (dependen de la DB y de la
+// S3-20: el esquema del override, de ESTE edificio.
+//
+// `exigirActivo` es true solo cuando el esquema VIENE en este request: elegir un
+// esquema desactivado es un error de la UI. Cuando el gasto ya lo tenía y el PUT
+// toca otra cosa, no se exige — si no, desactivar un esquema bloquearía editarle
+// el concepto a todos los gastos que lo eligieron (y el reparto de esos gastos no
+// cambia al desactivarlo: ver la decisión b de services/esquemas-reparto.js).
+async function esquemaUsable(organizacionId, edificioId, esquemaRepartoId, { exigirActivo }) {
+  const esquema = await prisma.esquemaReparto.findFirst({
+    where: {
+      id: esquemaRepartoId,
+      organizacionId,
+      edificioId,
+      ...(exigirActivo ? { activo: true } : {}),
+    },
+    select: { id: true },
+  });
+  return esquema !== null;
+}
+
+// Corre las validaciones que no puede hacer Zod (dependen de la DB y de la
 // organización). Devuelve la respuesta de error o null si todo cierra.
-async function validacionesCruzadas(organizacionId, gasto) {
+async function validacionesCruzadas(
+  organizacionId,
+  edificioId,
+  gasto,
+  { exigirEsquemaActivo = true } = {}
+) {
   const incoherencia = incoherenciaCategoria(gasto) ?? incoherenciaCuotas(gasto);
   if (incoherencia) return { status: 422, body: validacionFallida(incoherencia) };
 
@@ -240,6 +281,14 @@ async function validacionesCruzadas(organizacionId, gasto) {
   }
   if (!(await rubroUsable(organizacionId, gasto.rubroId, { soloHojas: true }))) {
     return { status: 422, body: rubroInvalido() };
+  }
+  if (
+    gasto.esquemaRepartoId &&
+    !(await esquemaUsable(organizacionId, edificioId, gasto.esquemaRepartoId, {
+      exigirActivo: exigirEsquemaActivo,
+    }))
+  ) {
+    return { status: 422, body: esquemaInvalido() };
   }
   return null;
 }
@@ -597,7 +646,11 @@ gastosDeEdificioRouter.post(
   validarBody(crearGastoSchema),
   async (req, res, next) => {
     try {
-      const invalido = await validacionesCruzadas(req.organizacionId, req.body);
+      const invalido = await validacionesCruzadas(
+        req.organizacionId,
+        req.edificio.id,
+        req.body
+      );
       if (invalido) return res.status(invalido.status).json(invalido.body);
 
       // Decisión 11: `cuotasTotal` no es una columna del gasto — es la entrada
@@ -731,7 +784,12 @@ router.put(
         cuotasTotal: cuotasTotalActual,
         ...req.body,
       };
-      const invalido = await validacionesCruzadas(req.organizacionId, resultante);
+      const invalido = await validacionesCruzadas(
+        req.organizacionId,
+        req.gasto.edificioId,
+        resultante,
+        { exigirEsquemaActivo: 'esquemaRepartoId' in req.body }
+      );
       if (invalido) return res.status(invalido.status).json(invalido.body);
 
       const { cuotasTotal: _ignorado, ...campos } = req.body;
